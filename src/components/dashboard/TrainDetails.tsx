@@ -3,14 +3,17 @@ import { Train } from '@/types/railway';
 import { cn } from '@/lib/utils';
 import { 
   X, Clock, MapPin, Gauge, Route, ArrowRight, AlertTriangle, 
-  Play, Pause, Square, Radio, Send, Activity
+  Play, Pause, Square, Radio, Send, Activity, Zap, ArrowUpDown, Flag
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Slider } from '@/components/ui/slider';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useState } from 'react';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useLogAction } from '@/hooks/useAuditLog';
+import { useNotificationSound } from '@/hooks/useNotificationSound';
 
 interface TrainDetailsProps {
   train: Train | null;
@@ -40,7 +43,11 @@ const trainTypeConfig = {
 
 export const TrainDetails = ({ train, onClose }: TrainDetailsProps) => {
   const [isActioning, setIsActioning] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [targetSpeed, setTargetSpeed] = useState(train?.speed || 0);
+  const [newPriority, setNewPriority] = useState(train?.priority || 'medium');
   const { logAction } = useLogAction();
+  const { playSound } = useNotificationSound();
 
   const handleCommand = async (command: 'proceed' | 'hold' | 'stop') => {
     if (!train) return;
@@ -70,7 +77,7 @@ export const TrainDetails = ({ train, onClose }: TrainDetailsProps) => {
         variant: 'destructive',
       });
     } else {
-      // Log the action
+      playSound('success');
       await logAction(
         'command',
         'train',
@@ -83,6 +90,50 @@ export const TrainDetails = ({ train, onClose }: TrainDetailsProps) => {
         title: 'Command Sent',
         description: `${command.charAt(0).toUpperCase() + command.slice(1)} command sent to ${train.number}.`,
       });
+    }
+  };
+
+  const handleSpeedChange = async () => {
+    if (!train) return;
+    setIsActioning(true);
+
+    const { error } = await supabase
+      .from('trains')
+      .update({ speed: targetSpeed })
+      .eq('id', train.id);
+
+    setIsActioning(false);
+
+    if (error) {
+      toast({ title: 'Speed Change Failed', description: error.message, variant: 'destructive' });
+    } else {
+      playSound('success');
+      await logAction('speed_change', 'train', 
+        `Changed speed of ${train.number} from ${train.speed} to ${targetSpeed} km/h`, 
+        train.id, { previousSpeed: train.speed, newSpeed: targetSpeed });
+      toast({ title: 'Speed Updated', description: `Target speed set to ${targetSpeed} km/h.` });
+    }
+  };
+
+  const handlePriorityChange = async () => {
+    if (!train || newPriority === train.priority) return;
+    setIsActioning(true);
+
+    const { error } = await supabase
+      .from('trains')
+      .update({ priority: newPriority })
+      .eq('id', train.id);
+
+    setIsActioning(false);
+
+    if (error) {
+      toast({ title: 'Priority Change Failed', description: error.message, variant: 'destructive' });
+    } else {
+      playSound('success');
+      await logAction('priority_change', 'train',
+        `Changed priority of ${train.number} from ${train.priority} to ${newPriority}`,
+        train.id, { previousPriority: train.priority, newPriority });
+      toast({ title: 'Priority Updated', description: `Train priority changed to ${newPriority}.` });
     }
   };
 
@@ -232,7 +283,19 @@ export const TrainDetails = ({ train, onClose }: TrainDetailsProps) => {
 
           {/* Command Buttons */}
           <div className="mt-4 pt-4 border-t border-border">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-3">Train Commands</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Train Commands</p>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 text-[10px] px-2"
+                onClick={() => setShowAdvanced(!showAdvanced)}
+              >
+                {showAdvanced ? 'Basic' : 'Advanced'}
+              </Button>
+            </div>
+            
+            {/* Basic Commands */}
             <div className="grid grid-cols-3 gap-2">
               <Button
                 variant="outline"
@@ -265,6 +328,72 @@ export const TrainDetails = ({ train, onClose }: TrainDetailsProps) => {
                 Stop
               </Button>
             </div>
+
+            {/* Advanced Controls */}
+            {showAdvanced && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="mt-4 space-y-4"
+              >
+                {/* Speed Control */}
+                <div className="p-3 bg-muted/30 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Zap className="w-3.5 h-3.5 text-primary" />
+                    <span className="text-xs font-medium">Speed Control</span>
+                    <span className="ml-auto font-mono text-xs text-foreground">{targetSpeed} km/h</span>
+                  </div>
+                  <Slider
+                    value={[targetSpeed]}
+                    onValueChange={(v) => setTargetSpeed(v[0])}
+                    max={160}
+                    step={5}
+                    className="mb-3"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full h-8 text-xs"
+                    onClick={handleSpeedChange}
+                    disabled={isActioning || targetSpeed === train.speed}
+                  >
+                    <Gauge className="w-3.5 h-3.5 mr-1.5" />
+                    Set Target Speed
+                  </Button>
+                </div>
+
+                {/* Priority Change */}
+                <div className="p-3 bg-muted/30 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Flag className="w-3.5 h-3.5 text-warning" />
+                    <span className="text-xs font-medium">Priority Level</span>
+                  </div>
+                  <div className="flex gap-2">
+                    <Select value={newPriority} onValueChange={(v: any) => setNewPriority(v)}>
+                      <SelectTrigger className="h-8 text-xs flex-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="critical">Critical</SelectItem>
+                        <SelectItem value="high">High</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="low">Low</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs px-3"
+                      onClick={handlePriorityChange}
+                      disabled={isActioning || newPriority === train.priority}
+                    >
+                      <ArrowUpDown className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
           </div>
         </motion.div>
       )}
