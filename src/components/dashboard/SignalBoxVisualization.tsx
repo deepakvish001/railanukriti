@@ -1,6 +1,11 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Train, TrackSection } from '@/types/railway';
 import { cn } from '@/lib/utils';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
+import { useLogAction } from '@/hooks/useAuditLog';
 
 interface SignalBoxVisualizationProps {
   sections: TrackSection[];
@@ -9,21 +14,96 @@ interface SignalBoxVisualizationProps {
   onTrainSelect: (id: string) => void;
 }
 
-// Signal component
-const Signal = ({ status, direction = 'up' }: { status: 'clear' | 'caution' | 'danger'; direction?: 'up' | 'down' }) => {
+type SignalStatus = 'clear' | 'caution' | 'danger';
+
+interface SignalState {
+  [key: string]: SignalStatus;
+}
+
+// Signal component with interactive controls
+const Signal = ({ 
+  id,
+  status, 
+  direction = 'up',
+  onStatusChange,
+  disabled = false
+}: { 
+  id: string;
+  status: SignalStatus; 
+  direction?: 'up' | 'down';
+  onStatusChange: (newStatus: SignalStatus) => void;
+  disabled?: boolean;
+}) => {
+  const [open, setOpen] = useState(false);
+
   const colors = {
     clear: 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]',
     caution: 'bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.8)]',
     danger: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]',
   };
 
+  const statusLabels = {
+    clear: 'Clear',
+    caution: 'Caution',
+    danger: 'Danger',
+  };
+
+  const handleStatusChange = (newStatus: SignalStatus) => {
+    onStatusChange(newStatus);
+    setOpen(false);
+  };
+
   return (
-    <div className={cn('flex flex-col items-center gap-0.5', direction === 'down' && 'rotate-180')}>
-      <div className="w-3 h-6 bg-zinc-800 rounded-sm flex flex-col items-center justify-center gap-0.5 p-0.5">
-        <div className={cn('w-2 h-2 rounded-full transition-all', colors[status])} />
-      </div>
-      <div className="w-0.5 h-3 bg-zinc-600" />
-    </div>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          disabled={disabled}
+          className={cn(
+            'flex flex-col items-center gap-0.5 cursor-pointer transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-primary/50 rounded',
+            direction === 'down' && 'rotate-180',
+            disabled && 'opacity-50 cursor-not-allowed hover:scale-100'
+          )}
+        >
+          <div className="w-3 h-6 bg-zinc-800 rounded-sm flex flex-col items-center justify-center gap-0.5 p-0.5 border border-zinc-600 hover:border-primary/50 transition-colors">
+            <motion.div 
+              className={cn('w-2 h-2 rounded-full transition-all', colors[status])}
+              animate={{ scale: [1, 1.1, 1] }}
+              transition={{ duration: 2, repeat: Infinity }}
+            />
+          </div>
+          <div className="w-0.5 h-3 bg-zinc-600" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-48 p-2" side="top">
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-foreground mb-2">Set Signal {id}</p>
+          <div className="flex flex-col gap-1">
+            {(['clear', 'caution', 'danger'] as SignalStatus[]).map((s) => (
+              <Button
+                key={s}
+                variant={status === s ? 'default' : 'ghost'}
+                size="sm"
+                className={cn(
+                  'justify-start gap-2 h-8',
+                  status === s && s === 'clear' && 'bg-green-600 hover:bg-green-700',
+                  status === s && s === 'caution' && 'bg-yellow-600 hover:bg-yellow-700',
+                  status === s && s === 'danger' && 'bg-red-600 hover:bg-red-700'
+                )}
+                onClick={() => handleStatusChange(s)}
+              >
+                <div className={cn(
+                  'w-3 h-3 rounded-full',
+                  s === 'clear' && 'bg-green-500',
+                  s === 'caution' && 'bg-yellow-500',
+                  s === 'danger' && 'bg-red-500'
+                )} />
+                <span className="text-xs">{statusLabels[s]}</span>
+              </Button>
+            ))}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 };
 
@@ -32,7 +112,9 @@ const BlockIndicator = ({
   number, 
   occupied, 
   hasSignal,
+  signalId,
   signalStatus,
+  onSignalChange,
   hasTrain,
   train,
   isSelected,
@@ -41,7 +123,9 @@ const BlockIndicator = ({
   number: number; 
   occupied: boolean;
   hasSignal: boolean;
-  signalStatus: 'clear' | 'caution' | 'danger';
+  signalId?: string;
+  signalStatus: SignalStatus;
+  onSignalChange?: (newStatus: SignalStatus) => void;
   hasTrain?: boolean;
   train?: Train;
   isSelected?: boolean;
@@ -49,9 +133,13 @@ const BlockIndicator = ({
 }) => {
   return (
     <div className="flex flex-col items-center">
-      {hasSignal && (
+      {hasSignal && signalId && onSignalChange && (
         <div className="mb-1">
-          <Signal status={signalStatus} />
+          <Signal 
+            id={signalId}
+            status={signalStatus} 
+            onStatusChange={onSignalChange}
+          />
         </div>
       )}
       <div className="relative">
@@ -131,24 +219,96 @@ export const SignalBoxVisualization = ({
   selectedTrain, 
   onTrainSelect 
 }: SignalBoxVisualizationProps) => {
+  const { logAction } = useLogAction();
+  
+  // Local signal states that can be overridden by operator
+  const [signalOverrides, setSignalOverrides] = useState<SignalState>({});
+
   // Get train at specific section
   const getTrainAtSection = (sectionNum: number) => {
     return trains.find(t => t.currentSection === sectionNum);
   };
 
-  // Determine signal status based on section
-  const getSignalStatus = (section: TrackSection): 'clear' | 'caution' | 'danger' => {
+  // Determine signal status based on section or override
+  const getSignalStatus = (signalId: string, section: TrackSection): SignalStatus => {
+    // Check for manual override first
+    if (signalOverrides[signalId]) {
+      return signalOverrides[signalId];
+    }
+    // Otherwise use automatic status based on section
     if (section.status === 'blocked') return 'danger';
     if (section.status === 'occupied') return 'caution';
     return 'clear';
   };
 
+  // Handle signal status change
+  const handleSignalChange = (signalId: string, sectionId: number, newStatus: SignalStatus) => {
+    setSignalOverrides(prev => ({
+      ...prev,
+      [signalId]: newStatus
+    }));
+
+    // Log the action
+    logAction(
+      'signal_change',
+      'signal',
+      `Signal ${signalId} manually set to ${newStatus.toUpperCase()}`,
+      signalId,
+      { sectionId, previousStatus: signalOverrides[signalId] || 'auto', newStatus }
+    );
+
+    toast.success(`Signal ${signalId} set to ${newStatus.toUpperCase()}`, {
+      description: `Section ${sectionId} signal manually overridden`
+    });
+  };
+
+  // Reset all signals to automatic
+  const resetAllSignals = () => {
+    setSignalOverrides({});
+    logAction(
+      'signal_reset',
+      'signal',
+      'All signals reset to automatic control',
+      'all',
+      {}
+    );
+    toast.info('All signals reset to automatic control');
+  };
+
+  // Count manual overrides
+  const overrideCount = Object.keys(signalOverrides).length;
+
   return (
     <div className="h-full flex flex-col bg-zinc-900/50 rounded-lg overflow-hidden">
       {/* Header */}
-      <div className="px-3 py-2 border-b border-border/30 bg-zinc-800/50">
-        <h3 className="text-xs font-semibold text-foreground">Block Section Diagram</h3>
-        <p className="text-[10px] text-muted-foreground">Kanpur - Allahabad Section</p>
+      <div className="px-3 py-2 border-b border-border/30 bg-zinc-800/50 flex items-center justify-between">
+        <div>
+          <h3 className="text-xs font-semibold text-foreground">Block Section Diagram</h3>
+          <p className="text-[10px] text-muted-foreground">Kanpur - Allahabad Section</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {overrideCount > 0 && (
+            <span className="text-[9px] px-2 py-0.5 rounded-full bg-warning/20 text-warning border border-warning/30">
+              {overrideCount} manual override{overrideCount > 1 ? 's' : ''}
+            </span>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 text-[10px] px-2"
+            onClick={resetAllSignals}
+            disabled={overrideCount === 0}
+          >
+            Reset Signals
+          </Button>
+        </div>
+      </div>
+
+      {/* Control hint */}
+      <div className="px-3 py-1.5 bg-primary/5 border-b border-border/30">
+        <p className="text-[9px] text-primary/80">
+          💡 Click on any signal to manually override its state
+        </p>
       </div>
 
       {/* Main visualization */}
@@ -169,13 +329,17 @@ export const SignalBoxVisualization = ({
               <div className="w-4 h-0.5 bg-zinc-600" />
               {sections.slice(0, 4).map((section, idx) => {
                 const train = getTrainAtSection(section.id);
+                const signalId = `UP-S${section.id}`;
+                const hasSignal = idx % 2 === 0;
                 return (
                   <div key={section.id} className="flex items-center">
                     <BlockIndicator
                       number={section.id}
                       occupied={section.status === 'occupied'}
-                      hasSignal={idx % 2 === 0}
-                      signalStatus={getSignalStatus(section)}
+                      hasSignal={hasSignal}
+                      signalId={hasSignal ? signalId : undefined}
+                      signalStatus={getSignalStatus(signalId, section)}
+                      onSignalChange={hasSignal ? (status) => handleSignalChange(signalId, section.id, status) : undefined}
                       hasTrain={!!train}
                       train={train}
                       isSelected={train?.id === selectedTrain}
@@ -190,14 +354,18 @@ export const SignalBoxVisualization = ({
               </div>
               {sections.slice(4).map((section, idx) => {
                 const train = getTrainAtSection(section.id);
+                const signalId = `UP-S${section.id}`;
+                const hasSignal = idx % 2 === 0;
                 return (
                   <div key={section.id} className="flex items-center">
                     <TrackLine status={section.status === 'occupied' ? 'occupied' : 'clear'} />
                     <BlockIndicator
                       number={section.id}
                       occupied={section.status === 'occupied'}
-                      hasSignal={idx % 2 === 0}
-                      signalStatus={getSignalStatus(section)}
+                      hasSignal={hasSignal}
+                      signalId={hasSignal ? signalId : undefined}
+                      signalStatus={getSignalStatus(signalId, section)}
+                      onSignalChange={hasSignal ? (status) => handleSignalChange(signalId, section.id, status) : undefined}
                       hasTrain={!!train}
                       train={train}
                       isSelected={train?.id === selectedTrain}
@@ -217,23 +385,30 @@ export const SignalBoxVisualization = ({
             </div>
             <div className="flex items-center gap-1 bg-zinc-800/30 rounded p-2">
               <div className="w-4 h-0.5 bg-zinc-600" />
-              {[...Array(8)].map((_, idx) => (
-                <div key={`dn-${idx}`} className="flex items-center">
-                  <BlockIndicator
-                    number={idx + 9}
-                    occupied={false}
-                    hasSignal={idx % 3 === 0}
-                    signalStatus="clear"
-                  />
-                  <TrackLine />
-                </div>
-              ))}
+              {[...Array(8)].map((_, idx) => {
+                const blockNum = idx + 9;
+                const signalId = `DN-S${blockNum}`;
+                const hasSignal = idx % 3 === 0;
+                return (
+                  <div key={`dn-${idx}`} className="flex items-center">
+                    <BlockIndicator
+                      number={blockNum}
+                      occupied={false}
+                      hasSignal={hasSignal}
+                      signalId={hasSignal ? signalId : undefined}
+                      signalStatus={signalOverrides[signalId] || 'clear'}
+                      onSignalChange={hasSignal ? (status) => handleSignalChange(signalId, blockNum, status) : undefined}
+                    />
+                    <TrackLine />
+                  </div>
+                );
+              })}
               <div className="w-4 h-0.5 bg-zinc-600" />
             </div>
           </div>
 
           {/* Legend */}
-          <div className="flex items-center justify-center gap-4 pt-3 border-t border-border/30">
+          <div className="flex flex-wrap items-center justify-center gap-4 pt-3 border-t border-border/30">
             <div className="flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full bg-green-500" />
               <span className="text-[9px] text-muted-foreground">Clear</span>
