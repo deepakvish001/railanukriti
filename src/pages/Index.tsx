@@ -14,9 +14,10 @@ import { ConflictDetection } from '@/components/dashboard/ConflictDetection';
 import { TrainScheduleGantt } from '@/components/dashboard/TrainScheduleGantt';
 import { ExportPanel } from '@/components/dashboard/ExportPanel';
 import { AnalyticsDashboard } from '@/components/dashboard/AnalyticsDashboard';
+import { KPIDashboard } from '@/components/dashboard/KPIDashboard';
 import { useTrains, useTrackSections, useAIRecommendations, useSectionMetrics } from '@/hooks/useRailwayData';
 import { Helmet } from 'react-helmet-async';
-import { Loader2, FlaskConical, Bell, History, BarChart3, AlertTriangle, GanttChart, Download, TrendingUp } from 'lucide-react';
+import { Loader2, FlaskConical, Bell, History, BarChart3, AlertTriangle, GanttChart, Download, TrendingUp, Target } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -148,6 +149,10 @@ const Index = () => {
                       <TrendingUp className="w-3 h-3 mr-1" />
                       Analytics
                     </TabsTrigger>
+                    <TabsTrigger value="kpis" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                      <Target className="w-3 h-3 mr-1" />
+                      KPIs
+                    </TabsTrigger>
                   </TabsList>
                 </div>
                 
@@ -185,6 +190,10 @@ const Index = () => {
                 
                 <TabsContent value="analytics" className="flex-1 mt-3 min-h-0 overflow-auto">
                   <AnalyticsDashboard />
+                </TabsContent>
+                
+                <TabsContent value="kpis" className="flex-1 mt-3 min-h-0 overflow-auto">
+                  <KPIDashboard />
                 </TabsContent>
               </Tabs>
             </div>
