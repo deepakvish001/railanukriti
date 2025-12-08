@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -6,12 +6,13 @@ import { motion } from 'framer-motion';
 import { Helmet } from 'react-helmet-async';
 import { 
   ArrowLeft, Maximize2, Minimize2, Layers, Train, 
-  Radio, ZoomIn, ZoomOut, LocateFixed, Loader2
+  Radio, ZoomIn, ZoomOut, LocateFixed, Loader2, Navigation
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useTrains, useTrackSections } from '@/hooks/useRailwayData';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
+import { Train as TrainType } from '@/types/railway';
 
 // Track coordinates (Kanpur to Allahabad line - approximate)
 const trackCoordinates: [number, number][] = [
@@ -34,16 +35,62 @@ const stations = [
   { name: 'Allahabad Junction', code: 'ALD', coords: [81.8463, 25.4358] as [number, number] },
 ];
 
+const typeColors: Record<string, string> = {
+  express: '#00d4ff',
+  freight: '#f59e0b',
+  local: '#22c55e',
+  special: '#a855f7',
+};
+
+const statusColors: Record<string, string> = {
+  'on-time': '#22c55e',
+  delayed: '#ef4444',
+  halted: '#f59e0b',
+  approaching: '#00d4ff',
+};
+
+// Calculate position along track for a train
+const calculateTrainPosition = (train: TrainType): { lng: number; lat: number; bearing: number } => {
+  const progress = train.currentSection / 6;
+  const coordIndex = Math.min(
+    Math.floor(progress * (trackCoordinates.length - 1)),
+    trackCoordinates.length - 2
+  );
+  const localProgress = (progress * (trackCoordinates.length - 1)) % 1;
+
+  const startCoord = trackCoordinates[coordIndex];
+  const endCoord = trackCoordinates[coordIndex + 1];
+
+  const lng = startCoord[0] + (endCoord[0] - startCoord[0]) * localProgress;
+  const lat = startCoord[1] + (endCoord[1] - startCoord[1]) * localProgress;
+  
+  // Calculate bearing for train direction
+  const bearing = Math.atan2(endCoord[0] - startCoord[0], endCoord[1] - startCoord[1]) * (180 / Math.PI);
+
+  return { lng, lat, bearing };
+};
+
+interface TrainMarkerData {
+  marker: mapboxgl.Marker;
+  element: HTMLDivElement;
+  currentPos: { lng: number; lat: number };
+  targetPos: { lng: number; lat: number };
+  bearing: number;
+  trail: [number, number][];
+}
+
 const Map = () => {
   const navigate = useNavigate();
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
-  const markersRef = useRef<mapboxgl.Marker[]>([]);
+  const trainMarkersRef = useRef<globalThis.Map<string, TrainMarkerData>>(new globalThis.Map());
+  const animationFrameRef = useRef<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapToken, setMapToken] = useState<string | null>(null);
   const [tokenError, setTokenError] = useState(false);
+  const [selectedTrain, setSelectedTrain] = useState<string | null>(null);
 
   const { trains } = useTrains();
   const { sections } = useTrackSections();
@@ -64,6 +111,99 @@ const Map = () => {
     };
     fetchToken();
   }, []);
+
+  // Create train marker element
+  const createTrainMarkerElement = useCallback((train: TrainType, bearing: number): HTMLDivElement => {
+    const el = document.createElement('div');
+    el.className = 'train-marker-container cursor-pointer';
+    el.style.transition = 'transform 0.1s ease-out';
+    
+    const isMoving = train.status !== 'halted' && train.speed > 0;
+    const pulseClass = isMoving ? 'animate-ping' : '';
+    
+    el.innerHTML = `
+      <div class="relative" style="transform: rotate(${bearing}deg)">
+        <div class="absolute -inset-3 rounded-full ${pulseClass} opacity-20" style="background: ${typeColors[train.type]}"></div>
+        <div class="relative w-10 h-10 rounded-full flex items-center justify-center shadow-lg transition-all duration-300" 
+             style="background: linear-gradient(135deg, ${typeColors[train.type]}, ${typeColors[train.type]}99); box-shadow: 0 0 25px ${typeColors[train.type]}80">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(-${bearing}deg)">
+            <path d="M12 2L4 9l8 6 8-6-8-7z"/>
+            <path d="M4 15l8 6 8-6"/>
+            <path d="M4 9v6"/>
+            <path d="M20 9v6"/>
+          </svg>
+        </div>
+        <div class="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-card flex items-center justify-center" 
+             style="background: ${statusColors[train.status]}">
+          ${train.speed > 0 ? `<span class="text-[8px] font-bold text-white">${Math.round(train.speed / 10)}</span>` : ''}
+        </div>
+        ${train.delay > 5 ? `
+          <div class="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-destructive flex items-center justify-center animate-pulse">
+            <span class="text-[8px] font-bold text-white">!</span>
+          </div>
+        ` : ''}
+      </div>
+    `;
+    
+    return el;
+  }, []);
+
+  // Update trail visualization
+  const updateTrailLayer = useCallback(() => {
+    if (!map.current || !mapLoaded) return;
+
+    const trailFeatures = Array.from(trainMarkersRef.current.entries()).map(([id, data]) => ({
+      type: 'Feature' as const,
+      properties: {
+        trainId: id,
+        color: typeColors[trains.find(t => t.id === id)?.type || 'express']
+      },
+      geometry: {
+        type: 'LineString' as const,
+        coordinates: data.trail.length > 1 ? data.trail : [[data.currentPos.lng, data.currentPos.lat], [data.currentPos.lng, data.currentPos.lat]]
+      }
+    }));
+
+    const source = map.current.getSource('train-trails') as mapboxgl.GeoJSONSource;
+    if (source) {
+      source.setData({
+        type: 'FeatureCollection',
+        features: trailFeatures
+      });
+    }
+  }, [mapLoaded, trains]);
+
+  // Smooth animation loop
+  const animateTrains = useCallback(() => {
+    const lerp = (start: number, end: number, t: number) => start + (end - start) * t;
+    
+    trainMarkersRef.current.forEach((data, trainId) => {
+      const lerpFactor = 0.08; // Smooth interpolation
+      
+      // Interpolate position
+      const newLng = lerp(data.currentPos.lng, data.targetPos.lng, lerpFactor);
+      const newLat = lerp(data.currentPos.lat, data.targetPos.lat, lerpFactor);
+      
+      // Update current position
+      data.currentPos = { lng: newLng, lat: newLat };
+      
+      // Update marker position
+      data.marker.setLngLat([newLng, newLat]);
+      
+      // Add to trail (limit trail length)
+      if (data.trail.length === 0 || 
+          Math.abs(data.trail[data.trail.length - 1][0] - newLng) > 0.001 ||
+          Math.abs(data.trail[data.trail.length - 1][1] - newLat) > 0.001) {
+        data.trail.push([newLng, newLat]);
+        if (data.trail.length > 50) {
+          data.trail.shift();
+        }
+      }
+    });
+
+    updateTrailLayer();
+    animationFrameRef.current = requestAnimationFrame(animateTrains);
+  }, [updateTrailLayer]);
 
   // Initialize map
   useEffect(() => {
@@ -100,6 +240,15 @@ const Map = () => {
             coordinates: trackCoordinates,
           },
         },
+      });
+
+      // Add train trails source
+      map.current.addSource('train-trails', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: []
+        }
       });
 
       // Track glow effect
@@ -152,6 +301,23 @@ const Map = () => {
         },
       });
 
+      // Train trail layer with gradient effect
+      map.current.addLayer({
+        id: 'train-trails-layer',
+        type: 'line',
+        source: 'train-trails',
+        layout: {
+          'line-join': 'round',
+          'line-cap': 'round',
+        },
+        paint: {
+          'line-color': ['get', 'color'],
+          'line-width': 3,
+          'line-opacity': 0.6,
+          'line-blur': 2,
+        },
+      });
+
       // Add stations
       stations.forEach((station) => {
         const el = document.createElement('div');
@@ -173,93 +339,114 @@ const Map = () => {
           .setPopup(popup)
           .addTo(map.current!);
       });
+
+      // Start animation loop
+      animationFrameRef.current = requestAnimationFrame(animateTrains);
     });
 
     return () => {
-      markersRef.current.forEach(m => m.remove());
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      trainMarkersRef.current.forEach((data) => data.marker.remove());
+      trainMarkersRef.current.clear();
       map.current?.remove();
     };
-  }, [mapToken]);
+  }, [mapToken, animateTrains]);
 
-  // Update train markers
+  // Update train markers and target positions
   useEffect(() => {
     if (!map.current || !mapLoaded || trains.length === 0) return;
 
-    // Remove old markers
-    markersRef.current.forEach(m => m.remove());
-    markersRef.current = [];
-
-    // Add train markers
-    trains.forEach((train) => {
-      const progress = train.currentSection / 6;
-      const coordIndex = Math.min(
-        Math.floor(progress * (trackCoordinates.length - 1)),
-        trackCoordinates.length - 2
-      );
-      const localProgress = (progress * (trackCoordinates.length - 1)) % 1;
-
-      const startCoord = trackCoordinates[coordIndex];
-      const endCoord = trackCoordinates[coordIndex + 1];
-
-      const lng = startCoord[0] + (endCoord[0] - startCoord[0]) * localProgress;
-      const lat = startCoord[1] + (endCoord[1] - startCoord[1]) * localProgress;
-
-      const typeColors: Record<string, string> = {
-        express: '#00d4ff',
-        freight: '#f59e0b',
-        local: '#22c55e',
-        special: '#a855f7',
-      };
-
-      const statusColors: Record<string, string> = {
-        'on-time': '#22c55e',
-        delayed: '#ef4444',
-        halted: '#f59e0b',
-        approaching: '#00d4ff',
-      };
-
-      const el = document.createElement('div');
-      el.className = 'train-marker-container';
-      el.innerHTML = `
-        <div class="relative">
-          <div class="absolute -inset-2 rounded-full animate-ping opacity-30" style="background: ${typeColors[train.type]}"></div>
-          <div class="relative w-8 h-8 rounded-full flex items-center justify-center shadow-lg" style="background: ${typeColors[train.type]}; box-shadow: 0 0 20px ${typeColors[train.type]}80">
-            <span class="text-xs font-bold text-black">${train.type[0].toUpperCase()}</span>
-          </div>
-          <div class="absolute -bottom-1 -right-1 w-3 h-3 rounded-full border border-black" style="background: ${statusColors[train.status]}"></div>
-        </div>
-      `;
-
-      const popup = new mapboxgl.Popup({ offset: 25, closeButton: false })
-        .setHTML(`
-          <div class="bg-card p-3 rounded-lg border border-border min-w-[180px]">
-            <div class="flex items-center justify-between mb-2">
-              <span class="font-mono font-bold text-foreground">${train.number}</span>
-              <span class="text-xs px-2 py-0.5 rounded-full" style="background: ${statusColors[train.status]}20; color: ${statusColors[train.status]}">${train.status}</span>
-            </div>
-            <p class="text-sm text-foreground mb-1">${train.name}</p>
-            <p class="text-xs text-muted-foreground">${train.origin} → ${train.destination}</p>
-            <div class="mt-2 pt-2 border-t border-border grid grid-cols-2 gap-2 text-xs">
-              <div>
-                <span class="text-muted-foreground">Speed</span>
-                <p class="font-mono text-foreground">${train.speed} km/h</p>
-              </div>
-              <div>
-                <span class="text-muted-foreground">Delay</span>
-                <p class="font-mono" style="color: ${train.delay > 0 ? '#ef4444' : '#22c55e'}">${train.delay > 0 ? '+' : ''}${train.delay} min</p>
-              </div>
-            </div>
-          </div>
-        `);
-
-      const marker = new mapboxgl.Marker(el)
-        .setLngLat([lng, lat])
-        .setPopup(popup)
-        .addTo(map.current!);
-
-      markersRef.current.push(marker);
+    const currentTrainIds = new Set(trains.map(t => t.id));
+    
+    // Remove markers for trains that no longer exist
+    trainMarkersRef.current.forEach((data, trainId) => {
+      if (!currentTrainIds.has(trainId)) {
+        data.marker.remove();
+        trainMarkersRef.current.delete(trainId);
+      }
     });
-  }, [trains, mapLoaded]);
+
+    // Update or create markers for each train
+    trains.forEach((train) => {
+      const position = calculateTrainPosition(train);
+      const existingData = trainMarkersRef.current.get(train.id);
+
+      if (existingData) {
+        // Update target position for smooth interpolation
+        existingData.targetPos = { lng: position.lng, lat: position.lat };
+        existingData.bearing = position.bearing;
+        
+        // Update marker element content
+        const newElement = createTrainMarkerElement(train, position.bearing);
+        existingData.element.innerHTML = newElement.innerHTML;
+        
+        // Update popup content
+        existingData.marker.getPopup()?.setHTML(createPopupContent(train));
+      } else {
+        // Create new marker
+        const element = createTrainMarkerElement(train, position.bearing);
+        
+        const popup = new mapboxgl.Popup({ offset: 25, closeButton: false })
+          .setHTML(createPopupContent(train));
+
+        const marker = new mapboxgl.Marker(element)
+          .setLngLat([position.lng, position.lat])
+          .setPopup(popup)
+          .addTo(map.current!);
+
+        element.addEventListener('click', () => {
+          setSelectedTrain(train.id);
+          map.current?.flyTo({
+            center: [position.lng, position.lat],
+            zoom: 11,
+            duration: 1000
+          });
+        });
+
+        trainMarkersRef.current.set(train.id, {
+          marker,
+          element,
+          currentPos: { lng: position.lng, lat: position.lat },
+          targetPos: { lng: position.lng, lat: position.lat },
+          bearing: position.bearing,
+          trail: [[position.lng, position.lat]]
+        });
+      }
+    });
+  }, [trains, mapLoaded, createTrainMarkerElement]);
+
+  const createPopupContent = (train: TrainType): string => {
+    return `
+      <div class="bg-card p-3 rounded-lg border border-border min-w-[200px]">
+        <div class="flex items-center justify-between mb-2">
+          <span class="font-mono font-bold text-foreground">${train.number}</span>
+          <span class="text-xs px-2 py-0.5 rounded-full" style="background: ${statusColors[train.status]}20; color: ${statusColors[train.status]}">${train.status}</span>
+        </div>
+        <p class="text-sm text-foreground mb-1">${train.name}</p>
+        <p class="text-xs text-muted-foreground">${train.origin} → ${train.destination}</p>
+        <div class="mt-2 pt-2 border-t border-border grid grid-cols-3 gap-2 text-xs">
+          <div>
+            <span class="text-muted-foreground">Speed</span>
+            <p class="font-mono text-foreground">${train.speed} km/h</p>
+          </div>
+          <div>
+            <span class="text-muted-foreground">Delay</span>
+            <p class="font-mono" style="color: ${train.delay > 0 ? '#ef4444' : '#22c55e'}">${train.delay > 0 ? '+' : ''}${train.delay} min</p>
+          </div>
+          <div>
+            <span class="text-muted-foreground">ETA</span>
+            <p class="font-mono text-foreground">${train.eta}</p>
+          </div>
+        </div>
+        <div class="mt-2 pt-2 border-t border-border text-xs">
+          <span class="text-muted-foreground">Next Station</span>
+          <p class="font-mono text-foreground">${train.nextStation}</p>
+        </div>
+      </div>
+    `;
+  };
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -274,12 +461,25 @@ const Map = () => {
   const handleZoomIn = () => map.current?.zoomIn();
   const handleZoomOut = () => map.current?.zoomOut();
   const handleResetView = () => {
+    setSelectedTrain(null);
     map.current?.flyTo({
       center: [81.0, 26.0],
       zoom: 8,
       pitch: 45,
       bearing: -15,
     });
+  };
+
+  const followTrain = (trainId: string) => {
+    const data = trainMarkersRef.current.get(trainId);
+    if (data) {
+      setSelectedTrain(trainId);
+      map.current?.flyTo({
+        center: [data.currentPos.lng, data.currentPos.lat],
+        zoom: 12,
+        duration: 1000
+      });
+    }
   };
 
   if (!mapToken && !tokenError) {
@@ -390,6 +590,45 @@ const Map = () => {
             </Button>
           </motion.div>
         </div>
+
+        {/* Train List Panel */}
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="absolute top-20 right-4 z-10 bg-card/90 backdrop-blur-sm border border-border rounded-lg p-3 w-56 max-h-[400px] overflow-y-auto"
+        >
+          <h3 className="text-xs font-semibold text-foreground mb-2 flex items-center gap-2">
+            <Navigation className="w-4 h-4 text-primary" />
+            Track Train
+          </h3>
+          <div className="space-y-1">
+            {trains.map((train) => (
+              <button
+                key={train.id}
+                onClick={() => followTrain(train.id)}
+                className={cn(
+                  "w-full text-left px-2 py-1.5 rounded-md text-xs transition-colors",
+                  selectedTrain === train.id 
+                    ? "bg-primary/20 text-primary" 
+                    : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  <span 
+                    className="w-2 h-2 rounded-full" 
+                    style={{ background: typeColors[train.type] }}
+                  />
+                  <span className="font-mono font-medium">{train.number}</span>
+                  <span 
+                    className="ml-auto w-2 h-2 rounded-full"
+                    style={{ background: statusColors[train.status] }}
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground truncate pl-4">{train.name}</p>
+              </button>
+            ))}
+          </div>
+        </motion.div>
 
         {/* Legend */}
         <motion.div
