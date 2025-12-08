@@ -1,73 +1,123 @@
-# Welcome to your Lovable project
+# RailAnukriti 🚂
 
-## Project info
+**AI-Powered Smart Train Traffic Optimizer for Indian Railways**
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+RailAnukriti is an intelligent railway traffic control system that optimizes train precedence, crossings, and platform allocation using advanced AI techniques including Reinforcement Learning, OR-Tools, and Graph Neural Networks. The system provides real-time simulation, explainable AI recommendations, and human-in-the-loop control for section controllers.
 
-## How can I edit this code?
+![RailAnukriti Dashboard](src/assets/railanukriti-logo.png)
 
-There are several ways of editing your application.
+## 🎯 Core Purpose
 
-**Use Lovable**
+Assist section controllers with real-time, optimized decisions for train precedence and crossings to:
+- Maximize section throughput
+- Minimize train travel time
+- Support rapid re-optimization during disruptions
+- Provide clear AI recommendations with explanation and override capabilities
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+## ✨ Key Features
 
-Changes made via Lovable will be committed automatically to this repo.
+### Real-Time Operations
+- **Live Train Tracking**: Real-time visualization of train positions on track sections
+- **Interactive Map View**: Fullscreen Mapbox-powered map with train movement animations
+- **Conflict Detection**: Automatic identification of train conflicts with severity indicators
+- **Sound Notifications**: Audio alerts for critical events based on severity levels
 
-**Use your preferred IDE**
+### AI-Powered Intelligence
+- **Smart Recommendations**: AI-generated suggestions for train precedence decisions
+- **Delay Prediction**: Forecasts upcoming delays using machine learning analysis
+- **Conflict Resolution**: AI-powered resolution suggestions for detected conflicts
+- **Congestion Forecasting**: Predictive analytics for section congestion
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### Analytics & Monitoring
+- **KPI Dashboard**: Comprehensive metrics tracking across 5 categories
+- **Performance Charts**: Historical trends with interactive visualizations
+- **Schedule Gantt Chart**: Visual comparison of scheduled vs actual timings
+- **Audit Logging**: Complete trail of all controller actions
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+### Simulation & Planning
+- **Scenario Simulation**: What-if analysis for decision planning
+- **Export Capabilities**: Data export for reports and analysis
 
-Follow these steps:
+## 🛠️ Technology Stack
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
+- **Frontend**: React 18, TypeScript, Vite
+- **Styling**: Tailwind CSS, shadcn/ui components
+- **Animations**: Framer Motion
+- **Charts**: Recharts
+- **Maps**: Mapbox GL
+- **Backend**: Supabase (Database, Auth, Edge Functions)
+- **AI**: Lovable AI (Google Gemini integration)
+
+## 🚀 Getting Started
+
+### Prerequisites
+- Node.js 18+ & npm
+
+### Installation
+
+```bash
+# Clone the repository
 git clone <YOUR_GIT_URL>
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+# Navigate to project directory
+cd railanukriti
 
-# Step 3: Install the necessary dependencies.
-npm i
+# Install dependencies
+npm install
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# Start development server
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+The application will be available at `http://localhost:5173`
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## 📊 Dashboard Modules
 
-**Use GitHub Codespaces**
+| Module | Description |
+|--------|-------------|
+| **Overview** | Real-time section status with train positions and track occupancy |
+| **Recommendations** | AI-powered suggestions for optimal train operations |
+| **Conflicts** | Active conflict detection and resolution interface |
+| **Predictions** | Delay forecasting and risk assessment |
+| **Schedule** | Gantt chart visualization of train schedules |
+| **Analytics** | Historical performance metrics and trends |
+| **KPIs** | Key performance indicators across multiple categories |
+| **Charts** | Detailed performance visualizations |
+| **Simulation** | Scenario planning and what-if analysis |
+| **Alerts** | System notifications and warnings |
+| **Audit** | Complete log of controller actions |
+| **Export** | Data export functionality |
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## 🔐 Authentication
 
-## What technologies are used for this project?
+The system uses email/password authentication with user profiles including:
+- Full name
+- Role assignment
+- Section assignment
 
-This project is built with:
+## 🎨 Design System
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+RailAnukriti features a dark industrial aesthetic optimized for control room environments:
+- **Primary**: Electric blue/cyan for AI-powered elements
+- **Warning**: Amber for caution states
+- **Success**: Green for clear status
+- **Danger**: Red for conflicts and issues
 
-## How can I deploy this project?
+## 📱 Responsive Design
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+The dashboard is fully responsive and optimized for:
+- Desktop control room displays
+- Tablet devices for mobile controllers
+- Standard desktop browsers
 
-## Can I connect a custom domain to my Lovable project?
+## 🤝 Contributing
 
-Yes, you can!
+Contributions are welcome! Please feel free to submit issues and pull requests.
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## 📄 License
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+This project is proprietary software developed for Indian Railways.
+
+---
+
+**Built with ❤️ using [Lovable](https://lovable.dev)**
