@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { useLogAction } from '@/hooks/useAuditLog';
 import { useNotificationSound } from '@/hooks/useNotificationSound';
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -1657,10 +1656,6 @@ export const SignalBoxVisualization = ({
         </motion.div>
       )}
 
-      <ResizablePanelGroup direction="vertical" className="flex-1 min-h-0">
-        {/* Top Panel - Controls & Alerts */}
-        <ResizablePanel defaultSize={35} minSize={15} maxSize={60}>
-          <div className="h-full overflow-auto">
       {/* Overstay Alerts Panel */}
       <AnimatePresence>
         {overstayAlerts.length > 0 && showOverstayPanel && (
@@ -2699,15 +2694,10 @@ export const SignalBoxVisualization = ({
           </div>
         </div>
       </div>
-        </div>
-      </ResizablePanel>
-      
-      <ResizableHandle withHandle className="bg-zinc-700 hover:bg-primary/50 transition-colors data-[panel-group-direction=vertical]:h-2" />
-      
-      {/* Bottom Panel - Main Visualization */}
-      <ResizablePanel defaultSize={65} minSize={40}>
-        <div className="h-full p-3 overflow-auto">
-          <div className="min-w-[600px]">
+
+      {/* Main visualization */}
+      <div className="flex-1 p-3 overflow-auto min-h-[300px]">
+        <div className="min-w-[600px]">
           {/* Station markers */}
           <div className="flex justify-between mb-4 px-2">
             <StationMarker name="KANPUR JN" side="left" />
@@ -2937,9 +2927,7 @@ export const SignalBoxVisualization = ({
             </div>
           </div>
         </div>
-          </div>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+      </div>
     </div>
   );
 };
