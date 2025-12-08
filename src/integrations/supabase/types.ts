@@ -64,6 +64,69 @@ export type Database = {
           },
         ]
       }
+      block_sections: {
+        Row: {
+          block_time_minutes: number | null
+          created_at: string
+          distance_km: number
+          electrified: boolean | null
+          from_station_id: number | null
+          gradient: number | null
+          id: number
+          max_speed: number
+          section_code: string
+          signalling_type: string | null
+          to_station_id: number | null
+          track_type: string | null
+          updated_at: string
+        }
+        Insert: {
+          block_time_minutes?: number | null
+          created_at?: string
+          distance_km: number
+          electrified?: boolean | null
+          from_station_id?: number | null
+          gradient?: number | null
+          id?: number
+          max_speed?: number
+          section_code: string
+          signalling_type?: string | null
+          to_station_id?: number | null
+          track_type?: string | null
+          updated_at?: string
+        }
+        Update: {
+          block_time_minutes?: number | null
+          created_at?: string
+          distance_km?: number
+          electrified?: boolean | null
+          from_station_id?: number | null
+          gradient?: number | null
+          id?: number
+          max_speed?: number
+          section_code?: string
+          signalling_type?: string | null
+          to_station_id?: number | null
+          track_type?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "block_sections_from_station_id_fkey"
+            columns: ["from_station_id"]
+            isOneToOne: false
+            referencedRelation: "stations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "block_sections_to_station_id_fkey"
+            columns: ["to_station_id"]
+            isOneToOne: false
+            referencedRelation: "stations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conflicts: {
         Row: {
           ai_suggestion: string | null
@@ -137,6 +200,108 @@ export type Database = {
           },
         ]
       }
+      data_imports: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          data_type: string
+          error_message: string | null
+          file_name: string
+          file_type: string
+          id: string
+          imported_by: string | null
+          records_failed: number | null
+          records_imported: number | null
+          records_total: number | null
+          status: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          data_type: string
+          error_message?: string | null
+          file_name: string
+          file_type: string
+          id?: string
+          imported_by?: string | null
+          records_failed?: number | null
+          records_imported?: number | null
+          records_total?: number | null
+          status?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          data_type?: string
+          error_message?: string | null
+          file_name?: string
+          file_type?: string
+          id?: string
+          imported_by?: string | null
+          records_failed?: number | null
+          records_imported?: number | null
+          records_total?: number | null
+          status?: string | null
+        }
+        Relationships: []
+      }
+      historical_runs: {
+        Row: {
+          actual_arrival: string | null
+          actual_departure: string | null
+          created_at: string
+          delay_reason: string | null
+          destination_station: string
+          id: string
+          load_tonnage: number | null
+          origin_station: string
+          run_date: string
+          scheduled_arrival: string | null
+          scheduled_departure: string | null
+          total_delay_minutes: number | null
+          train_number: string
+          train_type: string
+          wagons_count: number | null
+          weather_condition: string | null
+        }
+        Insert: {
+          actual_arrival?: string | null
+          actual_departure?: string | null
+          created_at?: string
+          delay_reason?: string | null
+          destination_station: string
+          id?: string
+          load_tonnage?: number | null
+          origin_station: string
+          run_date: string
+          scheduled_arrival?: string | null
+          scheduled_departure?: string | null
+          total_delay_minutes?: number | null
+          train_number: string
+          train_type: string
+          wagons_count?: number | null
+          weather_condition?: string | null
+        }
+        Update: {
+          actual_arrival?: string | null
+          actual_departure?: string | null
+          created_at?: string
+          delay_reason?: string | null
+          destination_station?: string
+          id?: string
+          load_tonnage?: number | null
+          origin_station?: string
+          run_date?: string
+          scheduled_arrival?: string | null
+          scheduled_departure?: string | null
+          total_delay_minutes?: number | null
+          train_number?: string
+          train_type?: string
+          wagons_count?: number | null
+          weather_condition?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           assigned_section: string | null
@@ -166,6 +331,63 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      schedules: {
+        Row: {
+          arrival_time: string | null
+          created_at: string
+          day_offset: number | null
+          departure_time: string | null
+          halt_duration_minutes: number | null
+          id: string
+          is_commercial_halt: boolean | null
+          platform_number: number | null
+          sequence_number: number
+          station_id: number | null
+          train_id: string | null
+        }
+        Insert: {
+          arrival_time?: string | null
+          created_at?: string
+          day_offset?: number | null
+          departure_time?: string | null
+          halt_duration_minutes?: number | null
+          id?: string
+          is_commercial_halt?: boolean | null
+          platform_number?: number | null
+          sequence_number: number
+          station_id?: number | null
+          train_id?: string | null
+        }
+        Update: {
+          arrival_time?: string | null
+          created_at?: string
+          day_offset?: number | null
+          departure_time?: string | null
+          halt_duration_minutes?: number | null
+          id?: string
+          is_commercial_halt?: boolean | null
+          platform_number?: number | null
+          sequence_number?: number
+          station_id?: number | null
+          train_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedules_station_id_fkey"
+            columns: ["station_id"]
+            isOneToOne: false
+            referencedRelation: "stations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedules_train_id_fkey"
+            columns: ["train_id"]
+            isOneToOne: false
+            referencedRelation: "trains"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       section_metrics: {
         Row: {
@@ -197,6 +419,146 @@ export type Database = {
           recorded_at?: string
           throughput?: number
           utilization?: number
+        }
+        Relationships: []
+      }
+      signals: {
+        Row: {
+          aspect: string | null
+          block_section_id: number | null
+          created_at: string
+          direction: string | null
+          id: number
+          position_km: number | null
+          signal_code: string
+          signal_type: string
+          station_id: number | null
+          status: string | null
+          updated_at: string
+        }
+        Insert: {
+          aspect?: string | null
+          block_section_id?: number | null
+          created_at?: string
+          direction?: string | null
+          id?: number
+          position_km?: number | null
+          signal_code: string
+          signal_type: string
+          station_id?: number | null
+          status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          aspect?: string | null
+          block_section_id?: number | null
+          created_at?: string
+          direction?: string | null
+          id?: number
+          position_km?: number | null
+          signal_code?: string
+          signal_type?: string
+          station_id?: number | null
+          status?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signals_block_section_id_fkey"
+            columns: ["block_section_id"]
+            isOneToOne: false
+            referencedRelation: "block_sections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "signals_station_id_fkey"
+            columns: ["station_id"]
+            isOneToOne: false
+            referencedRelation: "stations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      speed_profiles: {
+        Row: {
+          block_section_id: number | null
+          created_at: string
+          from_km: number
+          id: number
+          max_speed: number
+          reason: string | null
+          to_km: number
+          train_type: string | null
+        }
+        Insert: {
+          block_section_id?: number | null
+          created_at?: string
+          from_km: number
+          id?: number
+          max_speed: number
+          reason?: string | null
+          to_km: number
+          train_type?: string | null
+        }
+        Update: {
+          block_section_id?: number | null
+          created_at?: string
+          from_km?: number
+          id?: number
+          max_speed?: number
+          reason?: string | null
+          to_km?: number
+          train_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "speed_profiles_block_section_id_fkey"
+            columns: ["block_section_id"]
+            isOneToOne: false
+            referencedRelation: "block_sections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stations: {
+        Row: {
+          code: string
+          created_at: string
+          division: string | null
+          id: number
+          latitude: number | null
+          longitude: number | null
+          name: string
+          platforms: number
+          type: string
+          updated_at: string
+          zone: string | null
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          division?: string | null
+          id?: number
+          latitude?: number | null
+          longitude?: number | null
+          name: string
+          platforms?: number
+          type?: string
+          updated_at?: string
+          zone?: string | null
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          division?: string | null
+          id?: number
+          latitude?: number | null
+          longitude?: number | null
+          name?: string
+          platforms?: number
+          type?: string
+          updated_at?: string
+          zone?: string | null
         }
         Relationships: []
       }
