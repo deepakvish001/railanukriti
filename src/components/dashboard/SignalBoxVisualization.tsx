@@ -794,6 +794,111 @@ export const SignalBoxVisualization = ({
   // Unacknowledged alert count
   const unacknowledgedCount = overstayAlerts.filter(a => !a.acknowledged).length;
 
+  // Congestion forecast state
+  interface CongestionForecast {
+    forecasts: {
+      timeframe: string;
+      timestamp: string;
+      overallCongestion: number;
+      level: 'low' | 'medium' | 'high' | 'critical';
+      sectionForecasts: {
+        sectionId: number;
+        sectionName: string;
+        predictedOccupancy: number;
+        expectedTrains: number;
+        bottleneckRisk: boolean;
+      }[];
+    }[];
+    hotspots: {
+      sectionId: number;
+      sectionName: string;
+      peakTime: string;
+      peakCongestion: number;
+      reason: string;
+    }[];
+    recommendations: {
+      priority: 'low' | 'medium' | 'high';
+      action: string;
+      targetSection: number | null;
+      expectedImpact: string;
+    }[];
+    summary: string;
+  }
+
+  const [congestionForecast, setCongestionForecast] = useState<CongestionForecast | null>(null);
+  const [forecastLoading, setForecastLoading] = useState(false);
+  const [showForecastPanel, setShowForecastPanel] = useState(false);
+  const [lastForecastTime, setLastForecastTime] = useState<Date | null>(null);
+
+  // Fetch congestion forecast
+  const fetchCongestionForecast = async () => {
+    setForecastLoading(true);
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/forecast-congestion`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({
+            trains,
+            sections,
+            occupancyHistory: occupancyHistory.slice(0, 30),
+            currentMetrics: {
+              utilization: sections.filter(s => s.status === 'occupied').length / Math.max(sections.length, 1) * 100,
+              pendingConflicts: 0
+            }
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Forecast request failed');
+      }
+
+      const forecast = await response.json();
+      setCongestionForecast(forecast);
+      setLastForecastTime(new Date());
+      
+      logAction(
+        'forecast_request',
+        'ai',
+        'Congestion forecast generated',
+        'forecast',
+        { summary: forecast.summary }
+      );
+    } catch (error) {
+      console.error('Forecast error:', error);
+      toast.error('Failed to generate forecast', {
+        description: error instanceof Error ? error.message : 'Unknown error'
+      });
+    } finally {
+      setForecastLoading(false);
+    }
+  };
+
+  // Get color for congestion level
+  const getCongestionColor = (level: string) => {
+    switch (level) {
+      case 'critical': return 'text-red-400 bg-red-500/20 border-red-500/50';
+      case 'high': return 'text-amber-400 bg-amber-500/20 border-amber-500/50';
+      case 'medium': return 'text-yellow-400 bg-yellow-500/20 border-yellow-500/50';
+      default: return 'text-green-400 bg-green-500/20 border-green-500/50';
+    }
+  };
+
+  const getCongestionBarColor = (level: string) => {
+    switch (level) {
+      case 'critical': return 'bg-red-500';
+      case 'high': return 'bg-amber-500';
+      case 'medium': return 'bg-yellow-500';
+      default: return 'bg-green-500';
+    }
+  };
+
   // Calculate section occupancy statistics
   const sectionStats = useMemo(() => {
     const stats: Record<number, {
@@ -1411,6 +1516,165 @@ export const SignalBoxVisualization = ({
         </button>
       )}
 
+      {/* Congestion Forecast Panel */}
+      <AnimatePresence>
+        {showForecastPanel && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="border-b border-border/30 overflow-hidden"
+          >
+            <div className="px-3 py-2 bg-gradient-to-r from-cyan-500/5 to-primary/5">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-semibold text-cyan-400">📊 Congestion Forecast</span>
+                  {lastForecastTime && (
+                    <span className="text-[8px] text-muted-foreground">
+                      Updated: {lastForecastTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-5 text-[9px] px-2 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
+                    onClick={fetchCongestionForecast}
+                    disabled={forecastLoading}
+                  >
+                    {forecastLoading ? '⏳ Loading...' : '🔄 Refresh'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 text-[9px] px-2"
+                    onClick={() => setShowForecastPanel(false)}
+                  >
+                    Hide
+                  </Button>
+                </div>
+              </div>
+
+              {forecastLoading ? (
+                <div className="flex items-center justify-center py-4">
+                  <motion.div 
+                    className="w-6 h-6 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full"
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                  />
+                  <span className="ml-2 text-[10px] text-muted-foreground">Analyzing patterns...</span>
+                </div>
+              ) : congestionForecast ? (
+                <div className="space-y-3">
+                  {/* Forecast Timeline */}
+                  <div className="grid grid-cols-4 gap-2">
+                    {congestionForecast.forecasts.map(forecast => (
+                      <div 
+                        key={forecast.timeframe}
+                        className={cn(
+                          'p-2 rounded border text-center',
+                          getCongestionColor(forecast.level)
+                        )}
+                      >
+                        <div className="text-[8px] text-muted-foreground mb-1">+{forecast.timeframe}</div>
+                        <div className="text-[10px] font-mono font-bold">{forecast.timestamp}</div>
+                        <div className="mt-1">
+                          <div className="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                            <motion.div 
+                              initial={{ width: 0 }}
+                              animate={{ width: `${forecast.overallCongestion}%` }}
+                              transition={{ duration: 0.5 }}
+                              className={cn('h-full rounded-full', getCongestionBarColor(forecast.level))}
+                            />
+                          </div>
+                          <div className="text-[9px] font-bold mt-0.5">{forecast.overallCongestion}%</div>
+                        </div>
+                        <div className={cn(
+                          'text-[7px] uppercase font-bold mt-1',
+                          forecast.level === 'critical' && 'text-red-400',
+                          forecast.level === 'high' && 'text-amber-400',
+                          forecast.level === 'medium' && 'text-yellow-400',
+                          forecast.level === 'low' && 'text-green-400'
+                        )}>
+                          {forecast.level}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Hotspots */}
+                  {congestionForecast.hotspots.length > 0 && (
+                    <div className="pt-2 border-t border-zinc-700/50">
+                      <div className="text-[9px] font-semibold text-amber-400 mb-1">🔥 Hotspots</div>
+                      <div className="flex gap-2 flex-wrap">
+                        {congestionForecast.hotspots.map((hotspot, idx) => (
+                          <div 
+                            key={idx}
+                            className="px-2 py-1 rounded bg-amber-500/10 border border-amber-500/30 text-[8px]"
+                          >
+                            <span className="font-semibold text-amber-400">{hotspot.sectionName}</span>
+                            <span className="text-muted-foreground ml-1">@ {hotspot.peakTime}</span>
+                            <span className="ml-1 text-amber-300">({hotspot.peakCongestion}%)</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Recommendations */}
+                  {congestionForecast.recommendations.length > 0 && (
+                    <div className="pt-2 border-t border-zinc-700/50">
+                      <div className="text-[9px] font-semibold text-primary mb-1">💡 Recommendations</div>
+                      <div className="space-y-1">
+                        {congestionForecast.recommendations.slice(0, 3).map((rec, idx) => (
+                          <div 
+                            key={idx}
+                            className={cn(
+                              'px-2 py-1 rounded text-[8px] flex items-start gap-2',
+                              rec.priority === 'high' && 'bg-red-500/10 border border-red-500/30',
+                              rec.priority === 'medium' && 'bg-amber-500/10 border border-amber-500/30',
+                              rec.priority === 'low' && 'bg-zinc-700/30 border border-zinc-600/30'
+                            )}
+                          >
+                            <span className={cn(
+                              'font-bold uppercase text-[7px] px-1 py-0.5 rounded',
+                              rec.priority === 'high' && 'bg-red-500/20 text-red-400',
+                              rec.priority === 'medium' && 'bg-amber-500/20 text-amber-400',
+                              rec.priority === 'low' && 'bg-zinc-600/20 text-zinc-400'
+                            )}>
+                              {rec.priority}
+                            </span>
+                            <span className="text-foreground flex-1">{rec.action}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Summary */}
+                  <div className="pt-2 border-t border-zinc-700/50 text-[9px] text-muted-foreground italic">
+                    {congestionForecast.summary}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-[9px] text-muted-foreground mb-2">No forecast data available</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-[9px] px-3 border-cyan-500/30 text-cyan-400"
+                    onClick={fetchCongestionForecast}
+                  >
+                    Generate Forecast
+                  </Button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <div className="px-3 py-2 border-b border-border/30 bg-zinc-800/50 flex items-center justify-between">
         <div>
@@ -1433,6 +1697,27 @@ export const SignalBoxVisualization = ({
               🛑 EMERGENCY STOP
             </Button>
           </motion.div>
+
+          {/* Forecast Button */}
+          <Button
+            variant={showForecastPanel ? 'secondary' : 'outline'}
+            size="sm"
+            className={cn(
+              'h-7 text-[10px] px-3',
+              showForecastPanel 
+                ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/50' 
+                : 'border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10'
+            )}
+            onClick={() => {
+              setShowForecastPanel(!showForecastPanel);
+              if (!showForecastPanel && !congestionForecast) {
+                fetchCongestionForecast();
+              }
+            }}
+            disabled={forecastLoading}
+          >
+            {forecastLoading ? '⏳' : '📊'} Forecast
+          </Button>
 
           {/* Emergency Stop Confirmation Dialog */}
           <AlertDialog open={showEmergencyConfirm} onOpenChange={setShowEmergencyConfirm}>
