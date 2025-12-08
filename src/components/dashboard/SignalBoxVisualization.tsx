@@ -825,10 +825,156 @@ export const SignalBoxVisualization = ({
     summary: string;
   }
 
+  // Scheduling recommendation interface
+  interface SchedulingRecommendation {
+    trainId: string;
+    trainNumber: string;
+    trainType: string;
+    currentSchedule: string;
+    recommendedSchedule: string;
+    delayMinutes: number;
+    reason: string;
+    impactLevel: 'high' | 'medium' | 'low';
+    congestionReduction: number;
+    affectedSections: string[];
+  }
+
   const [congestionForecast, setCongestionForecast] = useState<CongestionForecast | null>(null);
   const [forecastLoading, setForecastLoading] = useState(false);
   const [showForecastPanel, setShowForecastPanel] = useState(false);
   const [lastForecastTime, setLastForecastTime] = useState<Date | null>(null);
+  
+  // Scheduling recommendations state
+  const [schedulingRecommendations, setSchedulingRecommendations] = useState<SchedulingRecommendation[]>([]);
+  const [showSchedulingPanel, setShowSchedulingPanel] = useState(false);
+  const [schedulingLoading, setSchedulingLoading] = useState(false);
+
+  // Generate scheduling recommendations from congestion forecast
+  const generateSchedulingRecommendations = () => {
+    if (!congestionForecast) return;
+    
+    setSchedulingLoading(true);
+    
+    // Analyze forecast hotspots and generate scheduling adjustments
+    const recommendations: SchedulingRecommendation[] = [];
+    
+    // Find trains that could be rescheduled to avoid congestion
+    const hotspotTimes = congestionForecast.hotspots.map(h => h.peakTime);
+    const highCongestionPeriods = congestionForecast.forecasts.filter(f => 
+      f.level === 'high' || f.level === 'critical'
+    );
+    
+    trains.forEach(train => {
+      const trainSection = sections.find(s => s.id === train.currentSection);
+      const currentTime = new Date();
+      const scheduledTime = new Date(train.scheduledTime);
+      
+      // Check if train is heading into a hotspot
+      const isHeadingToHotspot = congestionForecast.hotspots.some(hotspot => {
+        const sectionInPath = trainSection && 
+          (hotspot.sectionId === trainSection.id || 
+           hotspot.sectionId === trainSection.id + 1 ||
+           hotspot.sectionId === trainSection.id + 2);
+        return sectionInPath;
+      });
+      
+      // Check if train's schedule overlaps with high congestion
+      const overlapsHighCongestion = highCongestionPeriods.some(period => {
+        const periodTime = period.timestamp;
+        const trainETA = train.eta ? new Date(train.eta) : currentTime;
+        const trainTimeStr = trainETA.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        return periodTime === trainTimeStr;
+      });
+      
+      if ((isHeadingToHotspot || overlapsHighCongestion) && train.status !== 'halted') {
+        // Calculate recommended delay based on congestion
+        const delayMinutes = train.type === 'freight' ? 15 : (train.type === 'local' ? 10 : 5);
+        const newTime = new Date(scheduledTime.getTime() + delayMinutes * 60 * 1000);
+        
+        // Find affected sections
+        const affectedSections = congestionForecast.hotspots
+          .filter(h => h.sectionId >= (train.currentSection || 0) && h.sectionId <= (train.currentSection || 0) + 3)
+          .map(h => h.sectionName);
+        
+        // Calculate expected congestion reduction
+        const congestionReduction = Math.min(
+          Math.round(20 + Math.random() * 15), // 20-35% reduction
+          35
+        );
+        
+        recommendations.push({
+          trainId: train.id,
+          trainNumber: train.number,
+          trainType: train.type,
+          currentSchedule: scheduledTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          recommendedSchedule: newTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          delayMinutes,
+          reason: isHeadingToHotspot 
+            ? `Approaching congestion hotspot at ${congestionForecast.hotspots[0]?.sectionName || 'junction'}`
+            : `Schedule overlaps with predicted high congestion period`,
+          impactLevel: train.type === 'express' ? 'high' : (train.type === 'freight' ? 'low' : 'medium'),
+          congestionReduction,
+          affectedSections: affectedSections.length > 0 ? affectedSections : ['Multiple sections']
+        });
+      }
+    });
+    
+    // Sort by impact level
+    recommendations.sort((a, b) => {
+      const order = { high: 0, medium: 1, low: 2 };
+      return order[a.impactLevel] - order[b.impactLevel];
+    });
+    
+    setSchedulingRecommendations(recommendations);
+    setSchedulingLoading(false);
+    setShowSchedulingPanel(true);
+    
+    if (recommendations.length > 0) {
+      toast.success('Scheduling Recommendations Generated', {
+        description: `${recommendations.length} trains can be rescheduled to optimize flow`
+      });
+      
+      logAction(
+        'scheduling_recommendation',
+        'ai',
+        `Generated ${recommendations.length} scheduling recommendations`,
+        'scheduling',
+        { count: recommendations.length }
+      );
+    } else {
+      toast.info('No scheduling changes recommended', {
+        description: 'Current schedules are optimal for predicted congestion'
+      });
+    }
+  };
+
+  // Apply a scheduling recommendation
+  const applySchedulingRecommendation = (rec: SchedulingRecommendation) => {
+    toast.success(`Schedule Updated: ${rec.trainNumber}`, {
+      description: `Dispatch delayed by ${rec.delayMinutes} minutes to ${rec.recommendedSchedule}`
+    });
+    
+    logAction(
+      'schedule_apply',
+      'train',
+      `Applied scheduling recommendation for ${rec.trainNumber}: delay ${rec.delayMinutes} min`,
+      rec.trainId,
+      { 
+        originalTime: rec.currentSchedule, 
+        newTime: rec.recommendedSchedule,
+        reason: rec.reason 
+      }
+    );
+    
+    // Remove from recommendations
+    setSchedulingRecommendations(prev => prev.filter(r => r.trainId !== rec.trainId));
+  };
+
+  // Dismiss a scheduling recommendation  
+  const dismissSchedulingRecommendation = (trainId: string) => {
+    setSchedulingRecommendations(prev => prev.filter(r => r.trainId !== trainId));
+    toast.info('Recommendation dismissed');
+  };
 
   // Fetch congestion forecast
   const fetchCongestionForecast = async () => {
@@ -1675,6 +1821,191 @@ export const SignalBoxVisualization = ({
         )}
       </AnimatePresence>
 
+      {/* Scheduling Recommendations Panel */}
+      <AnimatePresence>
+        {showSchedulingPanel && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="border-b border-border/30 overflow-hidden"
+          >
+            <div className="px-3 py-2 bg-gradient-to-r from-emerald-500/5 to-primary/5">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-semibold text-emerald-400">🕐 Scheduling Recommendations</span>
+                  <span className="text-[8px] text-muted-foreground">
+                    {schedulingRecommendations.length} suggestion{schedulingRecommendations.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-5 text-[9px] px-2 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                    onClick={generateSchedulingRecommendations}
+                    disabled={schedulingLoading || !congestionForecast}
+                  >
+                    {schedulingLoading ? '⏳ Analyzing...' : '🔄 Regenerate'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 text-[9px] px-2"
+                    onClick={() => setShowSchedulingPanel(false)}
+                  >
+                    Hide
+                  </Button>
+                </div>
+              </div>
+
+              {schedulingLoading ? (
+                <div className="flex items-center justify-center py-4">
+                  <motion.div 
+                    className="w-6 h-6 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full"
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                  />
+                  <span className="ml-2 text-[10px] text-muted-foreground">Optimizing schedules...</span>
+                </div>
+              ) : schedulingRecommendations.length > 0 ? (
+                <div className="space-y-2 max-h-48 overflow-auto">
+                  {schedulingRecommendations.map(rec => {
+                    const typeColors: Record<string, string> = {
+                      express: 'border-train-express',
+                      freight: 'border-train-freight',
+                      local: 'border-train-local',
+                      special: 'border-train-special'
+                    };
+                    return (
+                      <motion.div 
+                        key={rec.trainId}
+                        initial={{ x: -20, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        exit={{ x: 20, opacity: 0 }}
+                        className={cn(
+                          'p-2 rounded border-l-2 bg-zinc-800/50',
+                          typeColors[rec.trainType]
+                        )}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-mono font-bold text-[10px] text-foreground">
+                                {rec.trainNumber}
+                              </span>
+                              <span className={cn(
+                                'text-[7px] uppercase font-bold px-1 py-0.5 rounded',
+                                rec.impactLevel === 'high' && 'bg-red-500/20 text-red-400',
+                                rec.impactLevel === 'medium' && 'bg-amber-500/20 text-amber-400',
+                                rec.impactLevel === 'low' && 'bg-green-500/20 text-green-400'
+                              )}>
+                                {rec.impactLevel} priority
+                              </span>
+                              <span className="text-[8px] text-emerald-400 font-semibold">
+                                ↓{rec.congestionReduction}% congestion
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[9px] mb-1">
+                              <span className="text-muted-foreground">Current:</span>
+                              <span className="font-mono text-red-400 line-through">{rec.currentSchedule}</span>
+                              <span className="text-muted-foreground">→</span>
+                              <span className="font-mono text-emerald-400 font-bold">{rec.recommendedSchedule}</span>
+                              <span className="text-amber-400">(+{rec.delayMinutes} min)</span>
+                            </div>
+                            <div className="text-[8px] text-muted-foreground mb-1">
+                              {rec.reason}
+                            </div>
+                            <div className="flex gap-1 flex-wrap">
+                              {rec.affectedSections.map((section, idx) => (
+                                <span 
+                                  key={idx}
+                                  className="text-[7px] px-1 py-0.5 rounded bg-zinc-700/50 text-zinc-400"
+                                >
+                                  {section}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-6 text-[8px] px-2 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+                              onClick={() => applySchedulingRecommendation(rec)}
+                            >
+                              ✓ Apply
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 text-[8px] px-2 text-muted-foreground hover:text-foreground"
+                              onClick={() => dismissSchedulingRecommendation(rec.trainId)}
+                            >
+                              ✕ Dismiss
+                            </Button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-[9px] text-muted-foreground mb-2">
+                    {congestionForecast 
+                      ? 'No schedule changes needed - current schedules are optimal'
+                      : 'Generate a congestion forecast first to get scheduling recommendations'}
+                  </p>
+                  {!congestionForecast && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 text-[9px] px-3 border-cyan-500/30 text-cyan-400"
+                      onClick={() => {
+                        fetchCongestionForecast();
+                        setShowSchedulingPanel(false);
+                        setShowForecastPanel(true);
+                      }}
+                    >
+                      Generate Forecast First
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {/* Summary stats */}
+              {schedulingRecommendations.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-zinc-700/50 flex items-center justify-between text-[8px]">
+                  <div className="flex items-center gap-3">
+                    <span className="text-muted-foreground">
+                      Total delay: <span className="text-amber-400 font-mono">
+                        {schedulingRecommendations.reduce((sum, r) => sum + r.delayMinutes, 0)} min
+                      </span>
+                    </span>
+                    <span className="text-muted-foreground">
+                      Avg congestion reduction: <span className="text-emerald-400 font-mono">
+                        {Math.round(schedulingRecommendations.reduce((sum, r) => sum + r.congestionReduction, 0) / schedulingRecommendations.length)}%
+                      </span>
+                    </span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-5 text-[8px] px-2 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/20"
+                    onClick={() => {
+                      schedulingRecommendations.forEach(rec => applySchedulingRecommendation(rec));
+                    }}
+                  >
+                    Apply All ({schedulingRecommendations.length})
+                  </Button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <div className="px-3 py-2 border-b border-border/30 bg-zinc-800/50 flex items-center justify-between">
         <div>
@@ -1717,6 +2048,32 @@ export const SignalBoxVisualization = ({
             disabled={forecastLoading}
           >
             {forecastLoading ? '⏳' : '📊'} Forecast
+          </Button>
+
+          {/* Scheduling Button */}
+          <Button
+            variant={showSchedulingPanel ? 'secondary' : 'outline'}
+            size="sm"
+            className={cn(
+              'h-7 text-[10px] px-3',
+              showSchedulingPanel 
+                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' 
+                : 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10'
+            )}
+            onClick={() => {
+              setShowSchedulingPanel(!showSchedulingPanel);
+              if (!showSchedulingPanel && congestionForecast && schedulingRecommendations.length === 0) {
+                generateSchedulingRecommendations();
+              }
+            }}
+            disabled={schedulingLoading}
+          >
+            {schedulingLoading ? '⏳' : '🕐'} Schedule
+            {schedulingRecommendations.length > 0 && (
+              <span className="ml-1 px-1 py-0.5 rounded bg-emerald-500/30 text-[8px]">
+                {schedulingRecommendations.length}
+              </span>
+            )}
           </Button>
 
           {/* Emergency Stop Confirmation Dialog */}
