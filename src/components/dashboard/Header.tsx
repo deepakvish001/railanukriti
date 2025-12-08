@@ -1,20 +1,55 @@
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Activity, Radio, Clock, Shield } from 'lucide-react';
+import { Activity, Radio, Clock, Shield, LogOut, User } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { supabase } from '@/integrations/supabase/client';
 
 export const Header = () => {
-  const currentTime = new Date().toLocaleTimeString('en-IN', {
+  const { user, signOut } = useAuth();
+  const [profile, setProfile] = useState<{ full_name: string | null; role: string | null } | null>(null);
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (user) {
+      supabase
+        .from('profiles')
+        .select('full_name, role')
+        .eq('user_id', user.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) setProfile(data);
+        });
+    }
+  }, [user]);
+
+  const timeString = currentTime.toLocaleTimeString('en-IN', {
     hour: '2-digit',
     minute: '2-digit',
     second: '2-digit',
     hour12: false,
   });
 
-  const currentDate = new Date().toLocaleDateString('en-IN', {
+  const dateString = currentTime.toLocaleDateString('en-IN', {
     weekday: 'short',
     day: '2-digit',
     month: 'short',
     year: 'numeric',
   });
+
+  const displayName = profile?.full_name || user?.email?.split('@')[0] || 'Controller';
 
   return (
     <header className="border-b border-border bg-card/50 backdrop-blur-sm">
@@ -82,11 +117,41 @@ export const Header = () => {
             <Clock className="w-4 h-4 text-muted-foreground" />
             <div className="text-right">
               <p className="font-mono text-lg font-semibold text-foreground tabular-nums">
-                {currentTime}
+                {timeString}
               </p>
-              <p className="text-xs text-muted-foreground">{currentDate}</p>
+              <p className="text-xs text-muted-foreground">{dateString}</p>
             </div>
           </motion.div>
+
+          <div className="h-8 w-px bg-border" />
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="flex items-center gap-2 px-3">
+                <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center border border-primary/30">
+                  <User className="w-4 h-4 text-primary" />
+                </div>
+                <div className="text-left hidden md:block">
+                  <p className="text-sm font-medium text-foreground">{displayName}</p>
+                  <p className="text-xs text-muted-foreground capitalize">{profile?.role || 'Controller'}</p>
+                </div>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48 bg-card border-border">
+              <div className="px-2 py-1.5">
+                <p className="text-sm font-medium">{displayName}</p>
+                <p className="text-xs text-muted-foreground">{user?.email}</p>
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem 
+                onClick={signOut}
+                className="text-destructive focus:text-destructive cursor-pointer"
+              >
+                <LogOut className="w-4 h-4 mr-2" />
+                Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </header>
