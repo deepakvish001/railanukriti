@@ -1,5 +1,5 @@
 import { Helmet } from 'react-helmet-async';
-import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
+import { MinimalDashboardLayout } from '@/components/dashboard/MinimalDashboardLayout';
 import { AlertsPanel } from '@/components/dashboard/AlertsPanel';
 
 const Alerts = () => {
@@ -9,9 +9,9 @@ const Alerts = () => {
         <title>Active Alerts | Railway Traffic Management</title>
         <meta name="description" content="Active alerts and notifications for railway operations." />
       </Helmet>
-      <DashboardLayout title="Active Alerts">
+      <MinimalDashboardLayout title="Active Alerts">
         <AlertsPanel className="h-full" />
-      </DashboardLayout>
+      </MinimalDashboardLayout>
     </>
   );
 };

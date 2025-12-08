@@ -1,5 +1,5 @@
 import { Helmet } from 'react-helmet-async';
-import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
+import { MinimalDashboardLayout } from '@/components/dashboard/MinimalDashboardLayout';
 import { ExportPanel } from '@/components/dashboard/ExportPanel';
 
 const Export = () => {
@@ -9,9 +9,9 @@ const Export = () => {
         <title>Export Data | Railway Traffic Management</title>
         <meta name="description" content="Export railway operations data." />
       </Helmet>
-      <DashboardLayout title="Export Data">
+      <MinimalDashboardLayout title="Export Data">
         <ExportPanel />
-      </DashboardLayout>
+      </MinimalDashboardLayout>
     </>
   );
 };

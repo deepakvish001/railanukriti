@@ -1,5 +1,5 @@
 import { Helmet } from 'react-helmet-async';
-import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
+import { MinimalDashboardLayout } from '@/components/dashboard/MinimalDashboardLayout';
 import { ScenarioSimulation } from '@/components/dashboard/ScenarioSimulation';
 import { useTrains } from '@/hooks/useRailwayData';
 
@@ -12,9 +12,9 @@ const Simulation = () => {
         <title>Scenario Simulation | Railway Traffic Management</title>
         <meta name="description" content="What-if scenario simulation for train operations." />
       </Helmet>
-      <DashboardLayout title="Scenario Simulation">
+      <MinimalDashboardLayout title="Scenario Simulation">
         <ScenarioSimulation trains={trains} />
-      </DashboardLayout>
+      </MinimalDashboardLayout>
     </>
   );
 };

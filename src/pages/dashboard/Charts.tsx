@@ -1,5 +1,5 @@
 import { Helmet } from 'react-helmet-async';
-import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
+import { MinimalDashboardLayout } from '@/components/dashboard/MinimalDashboardLayout';
 import { PerformanceCharts } from '@/components/dashboard/PerformanceCharts';
 
 const Charts = () => {
@@ -9,9 +9,9 @@ const Charts = () => {
         <title>Performance Charts | Railway Traffic Management</title>
         <meta name="description" content="Performance charts and analytics for railway operations." />
       </Helmet>
-      <DashboardLayout title="Performance Charts">
+      <MinimalDashboardLayout title="Performance Charts">
         <PerformanceCharts />
-      </DashboardLayout>
+      </MinimalDashboardLayout>
     </>
   );
 };

@@ -1,5 +1,5 @@
 import { Helmet } from 'react-helmet-async';
-import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
+import { MinimalDashboardLayout } from '@/components/dashboard/MinimalDashboardLayout';
 import { ConflictDetection } from '@/components/dashboard/ConflictDetection';
 
 const Conflicts = () => {
@@ -9,9 +9,9 @@ const Conflicts = () => {
         <title>Conflict Detection | Railway Traffic Management</title>
         <meta name="description" content="Real-time conflict detection for train traffic." />
       </Helmet>
-      <DashboardLayout title="Conflict Detection">
+      <MinimalDashboardLayout title="Conflict Detection">
         <ConflictDetection />
-      </DashboardLayout>
+      </MinimalDashboardLayout>
     </>
   );
 };
