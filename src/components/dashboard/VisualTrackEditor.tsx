@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -8,12 +8,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { 
   Pencil, Plus, Save, Trash2, Train, CircleDot, ArrowLeftRight, 
-  Gauge, MapPin, AlertTriangle, Check, X
+  Gauge, MapPin, AlertTriangle, Check, X, Info
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 interface TrackSection {
   id: number;
@@ -38,10 +40,92 @@ interface LoopLine {
   status: string;
 }
 
+interface Crossover {
+  id: number;
+  from_track_id: number;
+  to_track_id: number;
+  position_km: number;
+  crossover_type: string;
+  max_speed: number;
+  status: string;
+}
+
+// Signal spacing constants (in meters for display)
+const SIGNAL_SPACING = {
+  automatic: 1200, // 1.2 km for AT sections
+  'semi-automatic': 800,
+  absolute: 0, // No intermediate signals in AB
+  yard: 130, // 130m in station yards
+};
+
+// Signal component
+const Signal = ({ 
+  type, 
+  position, 
+  label,
+  aspect = 'green'
+}: { 
+  type: 'home' | 'starter' | 'distant' | 'intermediate';
+  position: 'left' | 'right' | 'center';
+  label?: string;
+  aspect?: 'red' | 'yellow' | 'green';
+}) => {
+  const aspectColors = {
+    red: 'bg-red-500 shadow-red-500/50',
+    yellow: 'bg-amber-500 shadow-amber-500/50',
+    green: 'bg-green-500 shadow-green-500/50',
+  };
+
+  const positionClasses = {
+    left: 'left-2',
+    right: 'right-2',
+    center: 'left-1/2 -translate-x-1/2',
+  };
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className={cn(
+            'absolute top-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5 cursor-help',
+            positionClasses[position]
+          )}>
+            <div className={cn(
+              'w-2 h-5 rounded-sm shadow-lg',
+              aspectColors[aspect]
+            )} />
+            {label && (
+              <span className="text-[8px] font-mono text-muted-foreground whitespace-nowrap">
+                {label}
+              </span>
+            )}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="text-xs">
+          <p className="font-medium capitalize">{type} Signal</p>
+          <p className="text-muted-foreground capitalize">Aspect: {aspect}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+};
+
+// Cross line visualization
+const CrossLine = ({ position }: { position: number }) => (
+  <div 
+    className="absolute top-0 h-full w-0.5 bg-gradient-to-b from-transparent via-blue-400/50 to-transparent"
+    style={{ left: `${position}%` }}
+  >
+    <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1 w-2 h-2 rounded-full bg-blue-400/80 border border-blue-300" />
+    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1 w-2 h-2 rounded-full bg-blue-400/80 border border-blue-300" />
+  </div>
+);
+
 export const VisualTrackEditor = () => {
   const [sections, setSections] = useState<TrackSection[]>([]);
   const [selectedSection, setSelectedSection] = useState<TrackSection | null>(null);
   const [loops, setLoops] = useState<LoopLine[]>([]);
+  const [crossovers, setCrossovers] = useState<Crossover[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editedSection, setEditedSection] = useState<Partial<TrackSection>>({});
   const [showLoopDialog, setShowLoopDialog] = useState(false);
@@ -60,6 +144,7 @@ export const VisualTrackEditor = () => {
   useEffect(() => {
     if (selectedSection) {
       loadLoops(selectedSection.id);
+      loadCrossovers(selectedSection.id);
     }
   }, [selectedSection]);
 
@@ -90,6 +175,49 @@ export const VisualTrackEditor = () => {
       setLoops(data as LoopLine[]);
     }
   };
+
+  const loadCrossovers = async (sectionId: number) => {
+    const { data, error } = await supabase
+      .from('crossovers')
+      .select('*')
+      .eq('from_track_id', sectionId);
+
+    if (!error && data) {
+      setCrossovers(data as Crossover[]);
+    }
+  };
+
+  // Calculate signal positions based on signalling type
+  const signalPositions = useMemo(() => {
+    if (!selectedSection) return [];
+    
+    const signalType = selectedSection.signalling_type || 'absolute';
+    const sectionLengthM = selectedSection.length * 1000; // Convert km to m
+    const spacing = SIGNAL_SPACING[signalType as keyof typeof SIGNAL_SPACING] || 0;
+    
+    if (signalType === 'absolute' || spacing === 0) {
+      // AB: Only entry and exit signals
+      return [
+        { position: 5, label: 'S1', type: 'home' },
+        { position: 95, label: 'S2', type: 'starter' },
+      ];
+    }
+    
+    // AT: Calculate intermediate signals
+    const signals: Array<{ position: number; label: string; type: string }> = [
+      { position: 5, label: 'S1', type: 'home' },
+    ];
+    
+    const numIntermediateSignals = Math.floor(sectionLengthM / spacing) - 1;
+    for (let i = 1; i <= Math.min(numIntermediateSignals, 5); i++) {
+      const pos = 5 + (i * (90 / (numIntermediateSignals + 1)));
+      signals.push({ position: pos, label: `S${i + 1}`, type: 'intermediate' });
+    }
+    
+    signals.push({ position: 95, label: `S${signals.length + 1}`, type: 'starter' });
+    
+    return signals;
+  }, [selectedSection]);
 
   const handleSectionSelect = (section: TrackSection) => {
     setSelectedSection(section);
@@ -191,11 +319,22 @@ export const VisualTrackEditor = () => {
   const getSignallingBadge = (type: string) => {
     switch (type) {
       case "automatic":
-        return <Badge className="bg-green-500/20 text-green-400">AT</Badge>;
+        return <Badge className="bg-green-500/20 text-green-400 border-green-500/30">AT</Badge>;
       case "semi-automatic":
-        return <Badge className="bg-blue-500/20 text-blue-400">Semi</Badge>;
+        return <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">Semi-AT</Badge>;
       default:
-        return <Badge className="bg-amber-500/20 text-amber-400">AB</Badge>;
+        return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">AB</Badge>;
+    }
+  };
+
+  const getSignalSpacingLabel = (type: string) => {
+    switch (type) {
+      case "automatic":
+        return "1.2 km signal spacing";
+      case "semi-automatic":
+        return "800m signal spacing";
+      default:
+        return "Station-to-station block";
     }
   };
 
@@ -240,59 +379,219 @@ export const VisualTrackEditor = () => {
       </Card>
 
       {/* Visual Track Display */}
-      <Card className="bg-card/50 backdrop-blur border-border/50">
+      <Card className="bg-card/50 backdrop-blur border-border/50 lg:col-span-1">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-lg">
             <Train className="h-5 w-5 text-primary" />
             Track Visualization
           </CardTitle>
+          {selectedSection && (
+            <CardDescription className="flex items-center gap-2">
+              {getSignallingBadge(selectedSection.signalling_type || 'absolute')}
+              <span className="text-xs">{getSignalSpacingLabel(selectedSection.signalling_type || 'absolute')}</span>
+            </CardDescription>
+          )}
         </CardHeader>
         <CardContent>
           {selectedSection && (
             <div className="space-y-6">
-              {/* Visual Track Diagram */}
-              <div className="relative p-6 bg-muted/30 rounded-lg border border-border/50">
-                {/* Main Track(s) */}
-                <div className="space-y-3">
-                  {Array.from({ length: selectedSection.track_count || 1 }).map((_, i) => (
-                    <div key={i} className="relative">
-                      <div className="h-3 bg-gradient-to-r from-muted via-primary/30 to-muted rounded-full border border-border/50" />
-                      {/* Signals */}
-                      <div className="absolute left-4 top-1/2 -translate-y-1/2">
-                        <div className="w-2 h-4 bg-green-500 rounded-sm" title="Home Signal" />
-                      </div>
-                      <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                        <div className="w-2 h-4 bg-amber-500 rounded-sm" title="Starter Signal" />
-                      </div>
-                      {/* Track label */}
-                      <span className="absolute -left-2 top-1/2 -translate-y-1/2 -translate-x-full text-xs text-muted-foreground">
-                        {i === 0 ? "UP" : "DN"}
+              {/* Enhanced Visual Track Diagram */}
+              <div className="relative p-4 bg-muted/30 rounded-lg border border-border/50 min-h-[200px]">
+                {/* Section Type Label */}
+                <div className="absolute top-2 left-2 flex items-center gap-2">
+                  <Badge 
+                    variant="outline" 
+                    className={cn(
+                      "text-[10px] font-mono",
+                      selectedSection.signalling_type === 'automatic' 
+                        ? "border-green-500/50 text-green-400 bg-green-500/10" 
+                        : "border-amber-500/50 text-amber-400 bg-amber-500/10"
+                    )}
+                  >
+                    {selectedSection.signalling_type === 'automatic' ? 'AT Section' : 'AB Section'}
+                  </Badge>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <Info className="h-3 w-3 text-muted-foreground" />
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-[200px]">
+                        {selectedSection.signalling_type === 'automatic' ? (
+                          <p className="text-xs">Automatic Block: Signals change automatically based on track occupancy. Multiple trains can travel with safe spacing.</p>
+                        ) : (
+                          <p className="text-xs">Absolute Block: Only one train allowed in a block section at a time. Requires manual permission.</p>
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+
+                {/* Signal Spacing Indicator */}
+                <div className="absolute top-2 right-2 text-[10px] text-muted-foreground font-mono">
+                  {selectedSection.signalling_type === 'automatic' && (
+                    <span className="flex items-center gap-1">
+                      <span className="w-4 h-0.5 bg-primary/50" />
+                      1.2 km
+                    </span>
+                  )}
+                  {selectedSection.signalling_type === 'absolute' && (
+                    <span className="flex items-center gap-1">
+                      <span className="w-8 h-0.5 bg-amber-500/50" />
+                      Full block
+                    </span>
+                  )}
+                </div>
+
+                {/* Main Track(s) with Signals */}
+                <div className="mt-8 space-y-6">
+                  {Array.from({ length: selectedSection.track_count || 1 }).map((_, trackIndex) => (
+                    <div key={trackIndex} className="relative">
+                      {/* Track Label */}
+                      <span className="absolute -left-1 top-1/2 -translate-y-1/2 -translate-x-full text-xs font-mono text-muted-foreground bg-background px-1">
+                        {trackIndex === 0 ? "Main" : "Add'l"}
                       </span>
+
+                      {/* Track Line */}
+                      <div className="h-4 bg-gradient-to-r from-muted via-foreground/20 to-muted rounded-full border border-border/50 relative overflow-visible">
+                        {/* Signals along the track */}
+                        {signalPositions.map((signal, idx) => (
+                          <div 
+                            key={idx}
+                            className="absolute top-1/2 -translate-y-1/2 flex flex-col items-center"
+                            style={{ left: `${signal.position}%` }}
+                          >
+                            <div className={cn(
+                              "w-2 h-5 rounded-sm shadow-lg -translate-y-3",
+                              signal.type === 'home' ? "bg-green-500 shadow-green-500/50" :
+                              signal.type === 'starter' ? "bg-amber-500 shadow-amber-500/50" :
+                              "bg-green-400 shadow-green-400/30"
+                            )} />
+                            <span className="text-[8px] font-mono text-muted-foreground mt-4">
+                              {signal.label}
+                            </span>
+                          </div>
+                        ))}
+
+                        {/* Signal spacing markers for AT sections */}
+                        {selectedSection.signalling_type === 'automatic' && signalPositions.length > 2 && (
+                          <>
+                            {signalPositions.slice(0, -1).map((signal, idx) => {
+                              const nextSignal = signalPositions[idx + 1];
+                              if (!nextSignal) return null;
+                              const midPoint = (signal.position + nextSignal.position) / 2;
+                              return (
+                                <div
+                                  key={`spacing-${idx}`}
+                                  className="absolute top-full translate-y-6 text-[8px] text-primary/70 font-mono"
+                                  style={{ left: `${midPoint}%`, transform: 'translateX(-50%) translateY(1.5rem)' }}
+                                >
+                                  1.2km
+                                </div>
+                              );
+                            })}
+                          </>
+                        )}
+                      </div>
+
+                      {/* Direction arrow */}
+                      <div className="absolute right-0 top-1/2 translate-x-2 -translate-y-1/2">
+                        <span className="text-xs text-muted-foreground">→</span>
+                      </div>
                     </div>
                   ))}
+
+                  {/* Cross Lines connecting tracks */}
+                  {(selectedSection.track_count || 1) > 1 && selectedSection.has_crossover && (
+                    <div className="relative h-0 -mt-4">
+                      <CrossLine position={30} />
+                      <CrossLine position={70} />
+                      <div className="absolute left-[30%] -translate-x-1/2 top-2 text-[8px] text-blue-400 font-mono">
+                        X1
+                      </div>
+                      <div className="absolute left-[70%] -translate-x-1/2 top-2 text-[8px] text-blue-400 font-mono">
+                        X2
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Loop Lines */}
                 {loops.length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-dashed border-border/50">
-                    <p className="text-xs text-muted-foreground mb-2">Loop Lines</p>
+                  <div className="mt-8 pt-4 border-t border-dashed border-border/50">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-[10px] text-muted-foreground font-medium">LOOP LINES</span>
+                      <Badge variant="outline" className="text-[8px] h-4">130m yard spacing</Badge>
+                    </div>
                     {loops.map((loop, i) => (
-                      <div key={loop.id || i} className="relative mb-2">
-                        <div className="h-2 bg-gradient-to-r from-transparent via-amber-500/50 to-transparent rounded-full border border-amber-500/30 mx-8" />
-                        <span className="absolute left-1/2 -translate-x-1/2 -bottom-4 text-[10px] text-muted-foreground">
-                          {loop.loop_name}
-                        </span>
+                      <div key={loop.id || i} className="relative mb-4">
+                        {/* Loop track */}
+                        <div className="h-3 bg-gradient-to-r from-transparent via-amber-500/40 to-transparent rounded-full border border-amber-500/30 mx-12 relative">
+                          {/* Loop entry/exit points */}
+                          <div className="absolute -left-2 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-amber-500/60 border border-amber-400" />
+                          <div className="absolute -right-2 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-amber-500/60 border border-amber-400" />
+                          
+                          {/* Yard signals */}
+                          <div className="absolute left-[15%] top-1/2 -translate-y-1/2">
+                            <div className="w-1.5 h-3 bg-amber-400 rounded-sm -translate-y-2" />
+                          </div>
+                          <div className="absolute left-[85%] top-1/2 -translate-y-1/2">
+                            <div className="w-1.5 h-3 bg-amber-400 rounded-sm -translate-y-2" />
+                          </div>
+                        </div>
+                        
+                        {/* Loop label */}
+                        <div className="flex items-center justify-center mt-1 gap-2">
+                          <span className="text-[10px] text-amber-400 font-medium">{loop.loop_name}</span>
+                          <span className="text-[8px] text-muted-foreground">({loop.length_m}m • {loop.max_speed}km/h)</span>
+                        </div>
+
+                        {/* Cross line to main */}
+                        <div className="absolute left-10 top-0 w-0.5 h-3 bg-gradient-to-b from-blue-400/50 to-transparent -translate-y-full" />
+                        <div className="absolute right-10 top-0 w-0.5 h-3 bg-gradient-to-b from-blue-400/50 to-transparent -translate-y-full" />
                       </div>
                     ))}
                   </div>
                 )}
 
-                {/* Crossover */}
-                {selectedSection.has_crossover && (
-                  <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-                    <ArrowLeftRight className="h-6 w-6 text-blue-400" />
+                {/* Crossover indicator for single track */}
+                {selectedSection.has_crossover && (selectedSection.track_count || 1) === 1 && (
+                  <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 mt-4">
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <ArrowLeftRight className="h-5 w-5 text-blue-400" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="text-xs">Crossover point for track switching</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
                   </div>
                 )}
+
+                {/* Legend */}
+                <div className="mt-6 pt-3 border-t border-border/30 flex flex-wrap gap-3 text-[9px] text-muted-foreground">
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-3 bg-green-500 rounded-sm" />
+                    <span>Home Signal</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-3 bg-amber-500 rounded-sm" />
+                    <span>Starter Signal</span>
+                  </div>
+                  {selectedSection.signalling_type === 'automatic' && (
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-3 bg-green-400 rounded-sm" />
+                      <span>Intermediate (AT)</span>
+                    </div>
+                  )}
+                  {selectedSection.has_crossover && (
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full bg-blue-400" />
+                      <span>Cross Line</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Section Stats */}
@@ -310,12 +609,15 @@ export const VisualTrackEditor = () => {
                   <div className="font-mono text-lg">{selectedSection.block_length_km || 10} km</div>
                 </div>
                 <div className="p-3 bg-muted/30 rounded-lg">
-                  <div className="text-xs text-muted-foreground">Signalling</div>
-                  <div className="mt-1">{getSignallingBadge(selectedSection.signalling_type || 'absolute')}</div>
+                  <div className="text-xs text-muted-foreground">Signal Spacing</div>
+                  <div className="font-mono text-lg">
+                    {selectedSection.signalling_type === 'automatic' ? '1.2 km' : 
+                     selectedSection.signalling_type === 'semi-automatic' ? '800 m' : 'N/A'}
+                  </div>
                 </div>
               </div>
 
-              {/* Loop List */}
+              {/* Loop List with delete */}
               {loops.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
