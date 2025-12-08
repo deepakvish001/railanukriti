@@ -7,7 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { Train, AlertCircle, Loader2, Activity, Shield, Zap, BarChart3, Mail, Lock, User } from 'lucide-react';
+import { 
+  Train, AlertCircle, Loader2, Activity, Shield, Zap, BarChart3, 
+  Mail, Lock, User, CheckCircle2, Eye, EyeOff 
+} from 'lucide-react';
 import { z } from 'zod';
 
 const loginSchema = z.object({
@@ -54,6 +57,8 @@ const Auth = () => {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -152,6 +157,22 @@ const Auth = () => {
     }
   };
 
+  // Password strength indicator
+  const getPasswordStrength = (password: string) => {
+    if (password.length === 0) return { strength: 0, label: '', color: '' };
+    if (password.length < 6) return { strength: 25, label: 'Weak', color: 'bg-destructive' };
+    if (password.length < 8) return { strength: 50, label: 'Fair', color: 'bg-warning' };
+    if (password.length < 12 && /[A-Z]/.test(password) && /[0-9]/.test(password)) {
+      return { strength: 75, label: 'Good', color: 'bg-primary' };
+    }
+    if (password.length >= 12 && /[A-Z]/.test(password) && /[0-9]/.test(password) && /[^A-Za-z0-9]/.test(password)) {
+      return { strength: 100, label: 'Strong', color: 'bg-success' };
+    }
+    return { strength: 50, label: 'Fair', color: 'bg-warning' };
+  };
+
+  const passwordStrength = getPasswordStrength(signupPassword);
+
   if (authLoading) {
     return (
       <div className="min-h-screen bg-railway-dark flex items-center justify-center">
@@ -159,6 +180,8 @@ const Auth = () => {
       </div>
     );
   }
+
+  const inputClasses = "pl-10 bg-railway-darker border-railway-gray/40 text-white placeholder:text-railway-gray/50 focus:border-railway-blue focus:ring-1 focus:ring-railway-blue/30 h-12 rounded-xl";
 
   return (
     <div className="min-h-screen bg-railway-dark flex">
@@ -247,7 +270,7 @@ const Auth = () => {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.3 + index * 0.1 }}
-                  className="p-4 rounded-lg bg-railway-darker/50 border border-railway-gray/20 backdrop-blur-sm hover:border-railway-blue/30 transition-colors"
+                  className="p-4 rounded-xl bg-railway-darker/50 border border-railway-gray/20 backdrop-blur-sm hover:border-railway-blue/30 transition-colors"
                 >
                   <feature.icon className="w-5 h-5 text-railway-blue mb-2" />
                   <h3 className="text-sm font-semibold text-white mb-1">{feature.title}</h3>
@@ -302,43 +325,44 @@ const Auth = () => {
             </div>
           </div>
 
-          <div className="bg-railway-darker/80 border border-railway-gray/20 rounded-2xl p-8 backdrop-blur-xl shadow-2xl">
-            <div className="text-center mb-8">
-              <h2 className="text-2xl font-bold text-white mb-2">Welcome Back</h2>
-              <p className="text-railway-gray">Sign in to access your control panel</p>
-            </div>
-
+          <div className="bg-railway-darker/90 border border-railway-gray/20 rounded-2xl p-8 backdrop-blur-xl shadow-2xl">
             <Tabs defaultValue="login" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 bg-railway-dark/50 p-1 rounded-lg mb-6">
+              <TabsList className="grid w-full grid-cols-2 bg-railway-dark p-1.5 rounded-xl mb-8 h-12">
                 <TabsTrigger 
                   value="login"
-                  className="rounded-md data-[state=active]:bg-railway-blue data-[state=active]:text-white transition-all"
+                  className="rounded-lg h-full text-sm font-medium data-[state=active]:bg-gradient-to-r data-[state=active]:from-railway-blue data-[state=active]:to-railway-cyan data-[state=active]:text-white data-[state=active]:shadow-lg transition-all"
                 >
                   Sign In
                 </TabsTrigger>
                 <TabsTrigger 
                   value="signup"
-                  className="rounded-md data-[state=active]:bg-railway-blue data-[state=active]:text-white transition-all"
+                  className="rounded-lg h-full text-sm font-medium data-[state=active]:bg-gradient-to-r data-[state=active]:from-railway-blue data-[state=active]:to-railway-cyan data-[state=active]:text-white data-[state=active]:shadow-lg transition-all"
                 >
                   Register
                 </TabsTrigger>
               </TabsList>
 
+              {/* Login Tab */}
               <TabsContent value="login" className="mt-0">
+                <div className="text-center mb-6">
+                  <h2 className="text-2xl font-bold text-white mb-2">Welcome Back</h2>
+                  <p className="text-railway-gray text-sm">Sign in to access your control panel</p>
+                </div>
+
                 <form onSubmit={handleLogin} className="space-y-5">
                   <div className="space-y-2">
-                    <Label htmlFor="login-email" className="text-railway-light text-sm">
+                    <Label htmlFor="login-email" className="text-railway-light text-sm font-medium">
                       Email Address
                     </Label>
                     <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-railway-gray/50" />
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-railway-gray/60" />
                       <Input
                         id="login-email"
                         type="email"
                         placeholder="controller@railways.gov.in"
                         value={loginEmail}
                         onChange={(e) => setLoginEmail(e.target.value)}
-                        className="pl-10 bg-railway-dark/50 border-railway-gray/30 text-white placeholder:text-railway-gray/40 focus:border-railway-blue focus:ring-railway-blue/20 h-12 rounded-lg"
+                        className={inputClasses}
                       />
                     </div>
                     {errors.email && (
@@ -350,19 +374,26 @@ const Auth = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="login-password" className="text-railway-light text-sm">
+                    <Label htmlFor="login-password" className="text-railway-light text-sm font-medium">
                       Password
                     </Label>
                     <div className="relative">
-                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-railway-gray/50" />
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-railway-gray/60" />
                       <Input
                         id="login-password"
-                        type="password"
-                        placeholder="••••••••"
+                        type={showPassword ? 'text' : 'password'}
+                        placeholder="Enter your password"
                         value={loginPassword}
                         onChange={(e) => setLoginPassword(e.target.value)}
-                        className="pl-10 bg-railway-dark/50 border-railway-gray/30 text-white placeholder:text-railway-gray/40 focus:border-railway-blue focus:ring-railway-blue/20 h-12 rounded-lg"
+                        className={`${inputClasses} pr-10`}
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-railway-gray/60 hover:text-railway-gray"
+                      >
+                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
                     </div>
                     {errors.password && (
                       <p className="text-sm text-destructive flex items-center gap-1">
@@ -374,12 +405,12 @@ const Auth = () => {
 
                   <Button
                     type="submit"
-                    className="w-full h-12 bg-gradient-to-r from-railway-blue to-railway-cyan hover:opacity-90 text-white font-semibold rounded-lg transition-all shadow-lg shadow-railway-blue/25"
+                    className="w-full h-12 bg-gradient-to-r from-railway-blue to-railway-cyan hover:opacity-90 text-white font-semibold rounded-xl transition-all shadow-lg shadow-railway-blue/25 mt-2"
                     disabled={isLoading}
                   >
                     {isLoading ? (
                       <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                         Signing in...
                       </>
                     ) : (
@@ -389,22 +420,31 @@ const Auth = () => {
                 </form>
               </TabsContent>
 
+              {/* Register Tab */}
               <TabsContent value="signup" className="mt-0">
+                <div className="text-center mb-6">
+                  <h2 className="text-2xl font-bold text-white mb-2">Create Account</h2>
+                  <p className="text-railway-gray text-sm">Join the railway control network</p>
+                </div>
+
                 <form onSubmit={handleSignup} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="signup-name" className="text-railway-light text-sm">
+                    <Label htmlFor="signup-name" className="text-railway-light text-sm font-medium">
                       Full Name
                     </Label>
                     <div className="relative">
-                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-railway-gray/50" />
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-railway-gray/60" />
                       <Input
                         id="signup-name"
                         type="text"
-                        placeholder="Rajesh Kumar"
+                        placeholder="Enter your full name"
                         value={signupFullName}
                         onChange={(e) => setSignupFullName(e.target.value)}
-                        className="pl-10 bg-railway-dark/50 border-railway-gray/30 text-white placeholder:text-railway-gray/40 focus:border-railway-blue h-11 rounded-lg"
+                        className={inputClasses}
                       />
+                      {signupFullName.length >= 2 && (
+                        <CheckCircle2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-success" />
+                      )}
                     </div>
                     {errors.fullName && (
                       <p className="text-sm text-destructive flex items-center gap-1">
@@ -415,19 +455,22 @@ const Auth = () => {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="signup-email" className="text-railway-light text-sm">
+                    <Label htmlFor="signup-email" className="text-railway-light text-sm font-medium">
                       Email Address
                     </Label>
                     <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-railway-gray/50" />
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-railway-gray/60" />
                       <Input
                         id="signup-email"
                         type="email"
-                        placeholder="controller@railways.gov.in"
+                        placeholder="your.email@railways.gov.in"
                         value={signupEmail}
                         onChange={(e) => setSignupEmail(e.target.value)}
-                        className="pl-10 bg-railway-dark/50 border-railway-gray/30 text-white placeholder:text-railway-gray/40 focus:border-railway-blue h-11 rounded-lg"
+                        className={inputClasses}
                       />
+                      {signupEmail.includes('@') && signupEmail.includes('.') && (
+                        <CheckCircle2 className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-success" />
+                      )}
                     </div>
                     {errors.email && (
                       <p className="text-sm text-destructive flex items-center gap-1">
@@ -437,62 +480,94 @@ const Auth = () => {
                     )}
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-password" className="text-railway-light text-sm">
-                        Password
-                      </Label>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-railway-gray/50" />
-                        <Input
-                          id="signup-password"
-                          type="password"
-                          placeholder="••••••"
-                          value={signupPassword}
-                          onChange={(e) => setSignupPassword(e.target.value)}
-                          className="pl-10 bg-railway-dark/50 border-railway-gray/30 text-white placeholder:text-railway-gray/40 focus:border-railway-blue h-11 rounded-lg"
-                        />
-                      </div>
-                      {errors.password && (
-                        <p className="text-xs text-destructive flex items-center gap-1">
-                          <AlertCircle className="h-3 w-3" />
-                          {errors.password}
-                        </p>
-                      )}
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-password" className="text-railway-light text-sm font-medium">
+                      Password
+                    </Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-railway-gray/60" />
+                      <Input
+                        id="signup-password"
+                        type={showPassword ? 'text' : 'password'}
+                        placeholder="Create a strong password"
+                        value={signupPassword}
+                        onChange={(e) => setSignupPassword(e.target.value)}
+                        className={`${inputClasses} pr-10`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-railway-gray/60 hover:text-railway-gray"
+                      >
+                        {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
                     </div>
+                    {signupPassword.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-1.5 bg-railway-dark rounded-full overflow-hidden">
+                            <motion.div
+                              className={`h-full ${passwordStrength.color}`}
+                              initial={{ width: 0 }}
+                              animate={{ width: `${passwordStrength.strength}%` }}
+                              transition={{ duration: 0.3 }}
+                            />
+                          </div>
+                          <span className={`text-xs font-medium ${passwordStrength.color.replace('bg-', 'text-')}`}>
+                            {passwordStrength.label}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {errors.password && (
+                      <p className="text-sm text-destructive flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3" />
+                        {errors.password}
+                      </p>
+                    )}
+                  </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="signup-confirm" className="text-railway-light text-sm">
-                        Confirm
-                      </Label>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-railway-gray/50" />
-                        <Input
-                          id="signup-confirm"
-                          type="password"
-                          placeholder="••••••"
-                          value={signupConfirmPassword}
-                          onChange={(e) => setSignupConfirmPassword(e.target.value)}
-                          className="pl-10 bg-railway-dark/50 border-railway-gray/30 text-white placeholder:text-railway-gray/40 focus:border-railway-blue h-11 rounded-lg"
-                        />
-                      </div>
-                      {errors.confirmPassword && (
-                        <p className="text-xs text-destructive flex items-center gap-1">
-                          <AlertCircle className="h-3 w-3" />
-                          {errors.confirmPassword}
-                        </p>
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-confirm" className="text-railway-light text-sm font-medium">
+                      Confirm Password
+                    </Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-railway-gray/60" />
+                      <Input
+                        id="signup-confirm"
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        placeholder="Confirm your password"
+                        value={signupConfirmPassword}
+                        onChange={(e) => setSignupConfirmPassword(e.target.value)}
+                        className={`${inputClasses} pr-10`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-railway-gray/60 hover:text-railway-gray"
+                      >
+                        {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                      </button>
+                      {signupConfirmPassword.length > 0 && signupPassword === signupConfirmPassword && (
+                        <CheckCircle2 className="absolute right-10 top-1/2 -translate-y-1/2 w-5 h-5 text-success" />
                       )}
                     </div>
+                    {errors.confirmPassword && (
+                      <p className="text-sm text-destructive flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3" />
+                        {errors.confirmPassword}
+                      </p>
+                    )}
                   </div>
 
                   <Button
                     type="submit"
-                    className="w-full h-12 bg-gradient-to-r from-railway-blue to-railway-cyan hover:opacity-90 text-white font-semibold rounded-lg transition-all shadow-lg shadow-railway-blue/25"
+                    className="w-full h-12 bg-gradient-to-r from-railway-blue to-railway-cyan hover:opacity-90 text-white font-semibold rounded-xl transition-all shadow-lg shadow-railway-blue/25 mt-2"
                     disabled={isLoading}
                   >
                     {isLoading ? (
                       <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                         Creating account...
                       </>
                     ) : (
