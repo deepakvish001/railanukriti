@@ -17,6 +17,14 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
+// Train position tracking for animation
+interface TrainPosition {
+  trainId: string;
+  sectionIndex: number;
+  progress: number; // 0-1 progress within section
+  previousPositions: number[]; // For trail effect
+}
+
 interface SignalBoxVisualizationProps {
   sections: TrackSection[];
   trains: Train[];
@@ -26,7 +34,6 @@ interface SignalBoxVisualizationProps {
 
 type SignalStatus = 'clear' | 'caution' | 'danger';
 type PointPosition = 'normal' | 'reverse';
-type BlockStatus = 'line_clear' | 'occupied' | 'line_blocked';
 
 interface SignalState {
   [key: string]: SignalStatus;
@@ -36,6 +43,7 @@ interface PointState {
   [key: string]: PointPosition;
 }
 
+// Route lock interface for interlocking
 interface RouteLock {
   id: string;
   trainId: string;
@@ -48,393 +56,498 @@ interface RouteLock {
   status: 'setting' | 'locked' | 'releasing';
 }
 
-// Block Instrument Gauge (like in the reference image)
-const BlockInstrument = ({ 
-  label, 
-  status,
-  onToggle
-}: { 
-  label: string;
-  status: BlockStatus;
-  onToggle?: () => void;
-}) => {
-  const getGaugeAngle = () => {
-    switch(status) {
-      case 'line_clear': return -45;
-      case 'occupied': return 0;
-      case 'line_blocked': return 45;
-    }
-  };
-
-  return (
-    <div className="flex flex-col items-center">
-      <div 
-        className="w-24 h-24 rounded-lg border-4 border-amber-800 bg-gradient-to-b from-amber-100 to-amber-200 relative overflow-hidden cursor-pointer shadow-lg"
-        onClick={onToggle}
-      >
-        {/* Gauge background */}
-        <div className="absolute inset-2 rounded bg-gradient-to-b from-white to-gray-100 border-2 border-gray-400">
-          {/* Color zones */}
-          <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full">
-            {/* Red zone */}
-            <path d="M50 50 L20 20 A42 42 0 0 1 50 8 Z" fill="#ef4444" opacity="0.8" />
-            {/* Yellow zone */}
-            <path d="M50 50 L50 8 A42 42 0 0 1 80 20 Z" fill="#eab308" opacity="0.8" />
-            {/* Green zone */}
-            <path d="M50 50 L80 20 A42 42 0 0 1 92 50 Z" fill="#22c55e" opacity="0.8" />
-            
-            {/* Needle */}
-            <motion.line
-              x1="50" y1="50" x2="50" y2="15"
-              stroke="#1a1a1a"
-              strokeWidth="3"
-              strokeLinecap="round"
-              animate={{ rotate: getGaugeAngle() }}
-              style={{ transformOrigin: '50px 50px' }}
-              transition={{ type: 'spring', stiffness: 100 }}
-            />
-            <circle cx="50" cy="50" r="6" fill="#333" />
-          </svg>
-        </div>
-        
-        {/* Labels */}
-        <div className="absolute bottom-1 left-0 right-0 flex justify-between px-1 text-[6px] font-bold">
-          <span className="text-red-600">BLOCKED</span>
-          <span className="text-green-600">CLEAR</span>
-        </div>
-      </div>
-      
-      {/* Control buttons */}
-      <div className="flex gap-1 mt-2">
-        <button 
-          className={cn(
-            "px-2 py-1 text-[8px] font-bold border-2 rounded transition-all",
-            status === 'occupied' 
-              ? "bg-red-600 text-white border-red-800" 
-              : "bg-gray-200 text-gray-700 border-gray-400 hover:bg-gray-300"
-          )}
-        >
-          OCCUP
-        </button>
-        <button 
-          className={cn(
-            "px-2 py-1 text-[8px] font-bold border-2 rounded transition-all",
-            status === 'line_clear' 
-              ? "bg-green-600 text-white border-green-800" 
-              : "bg-gray-200 text-gray-700 border-gray-400 hover:bg-gray-300"
-          )}
-        >
-          CLEAR
-        </button>
-      </div>
-      <button className="mt-1 px-2 py-1 text-[7px] font-bold bg-amber-700 text-white rounded border-2 border-amber-900 hover:bg-amber-600">
-        LINE BLOCKED
-      </button>
-      <button className="mt-1 px-3 py-1 text-[7px] font-bold bg-blue-800 text-white rounded border-2 border-blue-900 hover:bg-blue-700">
-        TELEGRAPH
-      </button>
-      <p className="text-[9px] font-semibold text-gray-600 mt-1">{label}</p>
-    </div>
-  );
-};
-
-// Signal Lever component (traditional style)
-const SignalLever = ({ 
-  number, 
-  color,
-  position,
-  onToggle,
+// Signal component with interactive controls
+const Signal = ({ 
+  id,
+  status, 
+  direction = 'up',
+  onStatusChange,
+  disabled = false,
   locked = false,
-  label
+  lockedBy
 }: { 
-  number: number;
-  color: 'red' | 'yellow' | 'white' | 'blue' | 'black';
-  position: 'normal' | 'reverse';
-  onToggle: () => void;
+  id: string;
+  status: SignalStatus; 
+  direction?: 'up' | 'down';
+  onStatusChange: (newStatus: SignalStatus) => void;
+  disabled?: boolean;
   locked?: boolean;
-  label?: string;
+  lockedBy?: string;
 }) => {
-  const colorClasses = {
-    red: 'bg-gradient-to-b from-red-400 to-red-600 border-red-800',
-    yellow: 'bg-gradient-to-b from-yellow-300 to-yellow-500 border-yellow-700',
-    white: 'bg-gradient-to-b from-gray-100 to-gray-300 border-gray-500',
-    blue: 'bg-gradient-to-b from-blue-400 to-blue-600 border-blue-800',
-    black: 'bg-gradient-to-b from-gray-600 to-gray-800 border-gray-900',
+  const [open, setOpen] = useState(false);
+
+  const colors = {
+    clear: 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]',
+    caution: 'bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.8)]',
+    danger: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]',
+  };
+
+  const statusLabels = {
+    clear: 'Clear',
+    caution: 'Caution',
+    danger: 'Danger',
+  };
+
+  const handleStatusChange = (newStatus: SignalStatus) => {
+    onStatusChange(newStatus);
+    setOpen(false);
   };
 
   return (
-    <div className="flex flex-col items-center">
-      {label && <span className="text-[7px] text-gray-500 mb-0.5 font-medium">L</span>}
-      <button 
-        onClick={onToggle}
-        disabled={locked}
-        className={cn(
-          "relative w-4 h-16 rounded-sm border-2 transition-all cursor-pointer",
-          colorClasses[color],
-          locked && "opacity-50 cursor-not-allowed",
-          position === 'reverse' && "shadow-inner"
-        )}
-      >
-        {/* Lever handle */}
-        <motion.div 
-          className="absolute left-1/2 -translate-x-1/2 w-3 h-6 bg-gradient-to-b from-gray-700 to-gray-900 rounded-full border border-gray-500"
-          animate={{ 
-            top: position === 'normal' ? '2px' : 'calc(100% - 26px)'
-          }}
-          transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-        />
-      </button>
-      <span className="text-[9px] font-bold mt-1 text-gray-700">{String(number).padStart(2, '0')}</span>
-    </div>
-  );
-};
-
-// Track Block Section (bottom panel style)
-const TrackBlockSection = ({
-  sections,
-  signalOverrides,
-  occupiedSections
-}: {
-  sections: number[];
-  signalOverrides: SignalState;
-  occupiedSections: Set<number>;
-}) => {
-  return (
-    <div className="flex items-end gap-0.5 bg-gradient-to-t from-gray-700 to-gray-600 p-2 rounded">
-      {sections.map((num) => {
-        const signalId = `UP-S${num}`;
-        const status = signalOverrides[signalId] || 'clear';
-        const isOccupied = occupiedSections.has(num);
-        
-        return (
-          <div key={num} className="flex flex-col items-center">
-            {/* Signal indicator light */}
-            <div className={cn(
-              "w-2 h-3 rounded-sm mb-0.5 border border-gray-800",
-              status === 'clear' && 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.8)]',
-              status === 'caution' && 'bg-yellow-500 shadow-[0_0_6px_rgba(234,179,8,0.8)]',
-              status === 'danger' && 'bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.8)]'
-            )} />
-            {/* Block */}
-            <div className={cn(
-              "w-6 h-8 rounded-sm border-2 flex items-center justify-center text-[8px] font-mono font-bold",
-              isOccupied 
-                ? "bg-red-500 border-red-700 text-white" 
-                : "bg-gray-400 border-gray-600 text-gray-800"
-            )}>
-              {String(num).padStart(2, '0')}
-            </div>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          disabled={disabled || locked}
+          className={cn(
+            'flex flex-col items-center gap-0.5 cursor-pointer transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-primary/50 rounded relative',
+            direction === 'down' && 'rotate-180',
+            (disabled || locked) && 'opacity-50 cursor-not-allowed hover:scale-100'
+          )}
+        >
+          <div className={cn(
+            'w-3 h-6 bg-zinc-800 rounded-sm flex flex-col items-center justify-center gap-0.5 p-0.5 border transition-colors',
+            locked ? 'border-cyan-500/50' : 'border-zinc-600 hover:border-primary/50'
+          )}>
+            <motion.div 
+              className={cn('w-2 h-2 rounded-full transition-all', colors[status])}
+              animate={{ scale: [1, 1.1, 1] }}
+              transition={{ duration: 2, repeat: Infinity }}
+            />
           </div>
-        );
-      })}
-    </div>
+          <div className="w-0.5 h-3 bg-zinc-600" />
+          {/* Lock indicator */}
+          {locked && (
+            <motion.div 
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="absolute -top-1 -right-1 w-2 h-2 bg-cyan-500 rounded-full"
+            />
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-48 p-2" side="top">
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-foreground mb-2">Signal {id}</p>
+          {locked ? (
+            <p className="text-[10px] text-cyan-400 bg-cyan-500/10 p-2 rounded">
+              🔒 Locked by route for {lockedBy}
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {(['clear', 'caution', 'danger'] as SignalStatus[]).map((s) => (
+                <Button
+                  key={s}
+                  variant={status === s ? 'default' : 'ghost'}
+                  size="sm"
+                  className={cn(
+                    'justify-start gap-2 h-8',
+                    status === s && s === 'clear' && 'bg-green-600 hover:bg-green-700',
+                    status === s && s === 'caution' && 'bg-yellow-600 hover:bg-yellow-700',
+                    status === s && s === 'danger' && 'bg-red-600 hover:bg-red-700'
+                  )}
+                  onClick={() => handleStatusChange(s)}
+                >
+                  <div className={cn(
+                    'w-3 h-3 rounded-full',
+                    s === 'clear' && 'bg-green-500',
+                    s === 'caution' && 'bg-yellow-500',
+                    s === 'danger' && 'bg-red-500'
+                  )} />
+                  <span className="text-xs">{statusLabels[s]}</span>
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 };
 
-// Traditional Track Line View
-const TraditionalTrackView = ({
-  sections,
-  trains,
-  selectedTrain,
-  onTrainSelect,
-  signalOverrides,
-  pointPositions,
+// Block section indicator
+const BlockIndicator = ({ 
+  number, 
+  occupied, 
+  hasSignal,
+  signalId,
+  signalStatus,
   onSignalChange,
-  onPointToggle,
-  getSignalStatus,
-  isSignalLocked,
-  handleTrainRouteSet,
-  trainPositions
-}: {
-  sections: TrackSection[];
-  trains: Train[];
-  selectedTrain: string | null;
-  onTrainSelect: (id: string) => void;
-  signalOverrides: SignalState;
-  pointPositions: PointState;
-  onSignalChange: (signalId: string, sectionId: number, status: SignalStatus) => void;
-  onPointToggle: (pointId: string) => void;
-  getSignalStatus: (signalId: string, section: TrackSection) => SignalStatus;
-  isSignalLocked: (signalId: string) => RouteLock | undefined;
-  handleTrainRouteSet: (train: Train) => void;
-  trainPositions: Map<string, { progress: number; moving: boolean }>;
+  hasTrain,
+  train,
+  isSelected,
+  onTrainClick,
+  onRouteSet,
+  trainProgress = 0,
+  signalLocked,
+  signalLockedBy
+}: { 
+  number: number; 
+  occupied: boolean;
+  hasSignal: boolean;
+  signalId?: string;
+  signalStatus: SignalStatus;
+  onSignalChange?: (newStatus: SignalStatus) => void;
+  hasTrain?: boolean;
+  train?: Train;
+  isSelected?: boolean;
+  onTrainClick?: () => void;
+  onRouteSet?: () => void;
+  trainProgress?: number;
+  signalLocked?: boolean;
+  signalLockedBy?: string;
 }) => {
-  const getTrainAtSection = (sectionNum: number) => {
-    return trains.find(t => t.currentSection === sectionNum);
-  };
-
-  const typeColors = {
-    express: 'bg-cyan-500',
-    freight: 'bg-amber-600',
-    local: 'bg-green-600',
-    special: 'bg-purple-500'
-  };
-
   return (
-    <div className="relative bg-gray-300 rounded-lg p-4">
-      {/* Platform labels */}
-      <div className="absolute top-2 left-4">
-        <div className="px-3 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded">Via Platform 2</div>
-        <div className="px-3 py-1 bg-emerald-500/50 text-emerald-800 text-[10px] font-bold rounded mt-1">Via Platform 3</div>
-      </div>
-      <div className="absolute top-2 right-4">
-        <div className="px-3 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded">Via Platform 1</div>
-      </div>
-
-      {/* Title */}
-      <div className="text-center mb-4">
-        <h2 className="text-lg font-bold text-gray-800">Block Section Example</h2>
-        <p className="text-sm text-gray-600">(with signal box levers)</p>
-      </div>
-
-      {/* Main track layout */}
-      <svg viewBox="0 0 1000 250" className="w-full h-48">
-        {/* Main horizontal line - UP */}
-        <line x1="20" y1="100" x2="980" y2="100" stroke="#333" strokeWidth="3" />
+    <div className="flex flex-col items-center relative">
+      {hasSignal && signalId && onSignalChange && (
+        <div className="mb-1">
+          <Signal 
+            id={signalId}
+            status={signalStatus} 
+            onStatusChange={onSignalChange}
+            locked={signalLocked}
+            lockedBy={signalLockedBy}
+          />
+        </div>
+      )}
+      <div className="relative">
+        <motion.div 
+          className={cn(
+            'w-6 h-8 rounded-sm border-2 flex items-center justify-center text-[8px] font-mono font-bold transition-all',
+            occupied 
+              ? 'bg-red-500/20 border-red-500 text-red-400' 
+              : 'bg-zinc-800 border-zinc-600 text-zinc-400'
+          )}
+          animate={occupied ? { borderColor: ['#ef4444', '#f87171', '#ef4444'] } : {}}
+          transition={{ duration: 1, repeat: Infinity }}
+        >
+          {String(number).padStart(2, '0')}
+        </motion.div>
         
-        {/* Main horizontal line - DN */}
-        <line x1="20" y1="180" x2="980" y2="180" stroke="#333" strokeWidth="3" />
-        
-        {/* Direction arrows */}
-        <polygon points="10,100 25,95 25,105" fill="#333" />
-        <polygon points="990,100 975,95 975,105" fill="#333" />
-        <polygon points="10,180 25,175 25,185" fill="#333" />
-        <polygon points="990,180 975,175 975,185" fill="#333" />
-
-        {/* Platform area connections */}
-        {/* Upper platform line */}
-        <line x1="300" y1="100" x2="350" y2="60" stroke="#333" strokeWidth="2" />
-        <line x1="350" y1="60" x2="650" y2="60" stroke="#333" strokeWidth="3" />
-        <line x1="650" y1="60" x2="700" y2="100" stroke="#333" strokeWidth="2" />
-        
-        {/* Middle platform */}
-        <line x1="400" y1="100" x2="450" y2="130" stroke="#333" strokeWidth="2" />
-        <line x1="450" y1="130" x2="550" y2="130" stroke="#333" strokeWidth="3" />
-        <line x1="550" y1="130" x2="600" y2="100" stroke="#333" strokeWidth="2" />
-        
-        {/* Platform labels */}
-        <rect x="470" y="52" width="80" height="16" rx="2" fill="#4ade80" />
-        <text x="510" y="64" textAnchor="middle" className="text-[10px] font-bold fill-white">Platforms 2/3</text>
-        
-        <rect x="460" y="155" width="60" height="14" rx="2" fill="#4ade80" />
-        <text x="490" y="166" textAnchor="middle" className="text-[9px] font-bold fill-white">Platform 1</text>
-
-        {/* Points/switches */}
-        {/* Left points */}
-        <circle cx="300" cy="100" r="4" fill={pointPositions['PT-1'] === 'reverse' ? '#f59e0b' : '#22c55e'} />
-        <circle cx="400" cy="100" r="4" fill={pointPositions['PT-2'] === 'reverse' ? '#f59e0b' : '#22c55e'} />
-        
-        {/* Right points */}
-        <circle cx="600" cy="100" r="4" fill={pointPositions['PT-3'] === 'reverse' ? '#f59e0b' : '#22c55e'} />
-        <circle cx="700" cy="100" r="4" fill={pointPositions['PT-4'] === 'reverse' ? '#f59e0b' : '#22c55e'} />
-
-        {/* Signals on track */}
-        {sections.slice(0, 4).map((section, idx) => {
-          const x = 80 + idx * 60;
-          const signalId = `UP-S${section.id}`;
-          const status = getSignalStatus(signalId, section);
-          const train = getTrainAtSection(section.id);
-          const progress = train ? (trainPositions.get(train.id)?.progress || 0) : 0;
-          
-          return (
-            <g key={section.id}>
-              {/* Signal post */}
-              <line x1={x} y1="70" x2={x} y2="95" stroke="#333" strokeWidth="2" />
-              <circle 
-                cx={x} 
-                cy="65" 
-                r="8"
-                fill={status === 'clear' ? '#22c55e' : status === 'caution' ? '#eab308' : '#ef4444'}
-                stroke="#333"
-                strokeWidth="1"
-              />
-              <text x={x} y={110} textAnchor="middle" className="text-[8px] font-mono fill-gray-700">
-                {String(section.id).padStart(2, '0')}
-              </text>
+        {/* Animated train position */}
+        <AnimatePresence>
+          {hasTrain && train && (
+            <motion.div
+              className="absolute -top-8 left-0 right-0 flex justify-center"
+              style={{ 
+                x: `${(trainProgress - 0.5) * 30}px` // Animate position within block
+              }}
+            >
+              {/* Trail effect */}
+              <TrainTrail train={train} />
               
               {/* Train marker */}
-              {train && (
-                <g 
-                  onClick={() => onTrainSelect(train.id)}
-                  onDoubleClick={() => handleTrainRouteSet(train)}
-                  className="cursor-pointer"
-                >
-                  <motion.circle 
-                    cx={x + progress * 30} 
-                    cy="100" 
-                    r="10"
-                    className={typeColors[train.type]}
-                    fill={train.type === 'express' ? '#06b6d4' : train.type === 'freight' ? '#d97706' : train.type === 'local' ? '#16a34a' : '#a855f7'}
-                    stroke={selectedTrain === train.id ? '#fff' : '#333'}
-                    strokeWidth={selectedTrain === train.id ? 3 : 1}
-                  />
-                  <text x={x + progress * 30} y="104" textAnchor="middle" className="text-[7px] font-bold fill-white pointer-events-none">
-                    {train.type[0].toUpperCase()}
-                  </text>
-                  {/* Speed indicator */}
-                  <text x={x + progress * 30} y="120" textAnchor="middle" className="text-[7px] font-mono fill-gray-600">
-                    {train.speed}
-                  </text>
-                </g>
-              )}
-            </g>
-          );
-        })}
-
-        {sections.slice(4).map((section, idx) => {
-          const x = 750 + idx * 60;
-          const signalId = `UP-S${section.id}`;
-          const status = getSignalStatus(signalId, section);
-          const train = getTrainAtSection(section.id);
-          const progress = train ? (trainPositions.get(train.id)?.progress || 0) : 0;
-          
-          return (
-            <g key={section.id}>
-              <line x1={x} y1="70" x2={x} y2="95" stroke="#333" strokeWidth="2" />
-              <circle 
-                cx={x} 
-                cy="65" 
-                r="8"
-                fill={status === 'clear' ? '#22c55e' : status === 'caution' ? '#eab308' : '#ef4444'}
-                stroke="#333"
-                strokeWidth="1"
+              <AnimatedTrainMarker
+                train={train}
+                isSelected={isSelected || false}
+                onClick={() => onTrainClick?.()}
+                onDoubleClick={() => onRouteSet?.()}
+                animatedProgress={trainProgress}
               />
-              <text x={x} y={110} textAnchor="middle" className="text-[8px] font-mono fill-gray-700">
-                {String(section.id).padStart(2, '0')}
-              </text>
-              
-              {train && (
-                <g 
-                  onClick={() => onTrainSelect(train.id)}
-                  onDoubleClick={() => handleTrainRouteSet(train)}
-                  className="cursor-pointer"
-                >
-                  <motion.circle 
-                    cx={x + progress * 30} 
-                    cy="100" 
-                    r="10"
-                    fill={train.type === 'express' ? '#06b6d4' : train.type === 'freight' ? '#d97706' : train.type === 'local' ? '#16a34a' : '#a855f7'}
-                    stroke={selectedTrain === train.id ? '#fff' : '#333'}
-                    strokeWidth={selectedTrain === train.id ? 3 : 1}
-                  />
-                  <text x={x + progress * 30} y="104" textAnchor="middle" className="text-[7px] font-bold fill-white pointer-events-none">
-                    {train.type[0].toUpperCase()}
-                  </text>
-                  <text x={x + progress * 30} y="120" textAnchor="middle" className="text-[7px] font-mono fill-gray-600">
-                    {train.speed}
-                  </text>
-                </g>
-              )}
-            </g>
-          );
-        })}
-
-        {/* Point labels */}
-        <text x="300" y="115" textAnchor="middle" className="text-[8px] fill-amber-700 font-bold">03</text>
-        <text x="350" y="50" textAnchor="middle" className="text-[8px] fill-amber-700 font-bold">S</text>
-        <text x="700" y="115" textAnchor="middle" className="text-[8px] fill-amber-700 font-bold">20</text>
-      </svg>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
+  );
+};
+
+// Track line segment
+const TrackLine = ({ length = 'normal', status = 'clear' }: { length?: 'short' | 'normal' | 'long'; status?: 'clear' | 'occupied' }) => {
+  const widths = {
+    short: 'w-4',
+    normal: 'w-8',
+    long: 'w-12',
+  };
+  
+  return (
+    <div className={cn(
+      'h-1 rounded-full',
+      widths[length],
+      status === 'occupied' ? 'bg-red-500' : 'bg-zinc-500'
+    )} />
+  );
+};
+
+// Platform marker
+const Platform = ({ number, active }: { number: number; active?: boolean }) => (
+  <div className={cn(
+    'px-2 py-1 rounded text-[9px] font-bold border',
+    active 
+      ? 'bg-primary/20 border-primary text-primary' 
+      : 'bg-zinc-800 border-zinc-600 text-zinc-400'
+  )}>
+    Platform {number}
+  </div>
+);
+
+// Station marker
+const StationMarker = ({ name, side }: { name: string; side: 'left' | 'right' }) => (
+  <div className={cn(
+    'px-2 py-1 rounded text-[10px] font-semibold bg-emerald-500/20 border border-emerald-500/50 text-emerald-400',
+    side === 'left' ? 'mr-auto' : 'ml-auto'
+  )}>
+    {name}
+  </div>
+);
+
+// Point/Switch indicator with toggle control
+const PointSwitch = ({ 
+  id,
+  position, 
+  onToggle,
+  label,
+  locked,
+  lockedBy
+}: { 
+  id: string;
+  position: PointPosition;
+  onToggle: () => void;
+  label?: string;
+  locked?: boolean;
+  lockedBy?: string;
+}) => {
+  const [open, setOpen] = useState(false);
+
+  const handleToggle = () => {
+    onToggle();
+    setOpen(false);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          disabled={locked}
+          className={cn(
+            'flex flex-col items-center gap-0.5 cursor-pointer transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-primary/50 rounded group relative',
+            locked && 'opacity-50 cursor-not-allowed hover:scale-100'
+          )}
+        >
+          {label && (
+            <span className="text-[7px] font-mono text-muted-foreground mb-0.5">{label}</span>
+          )}
+          <div className={cn(
+            'relative w-8 h-6 bg-zinc-800 rounded border transition-colors overflow-hidden',
+            locked ? 'border-cyan-500/50' : 'border-zinc-600 group-hover:border-primary/50'
+          )}>
+            {/* Track lines showing switch position */}
+            <svg viewBox="0 0 32 24" className="w-full h-full">
+              {/* Main track */}
+              <line 
+                x1="0" y1="12" x2="32" y2="12" 
+                stroke="#52525b" 
+                strokeWidth="2"
+              />
+              {/* Diverging track */}
+              <line 
+                x1="16" y1="12" x2="32" y2={position === 'reverse' ? '4' : '20'} 
+                stroke="#52525b" 
+                strokeWidth="2"
+                strokeDasharray={position === 'normal' ? '2,2' : 'none'}
+              />
+              {/* Switch blade - animated position */}
+              <motion.line 
+                x1="10" y1="12" x2="22" 
+                animate={{ y2: position === 'normal' ? 12 : (position === 'reverse' ? 6 : 18) }}
+                transition={{ duration: 0.3 }}
+                stroke={position === 'normal' ? '#22c55e' : '#f59e0b'}
+                strokeWidth="3"
+                strokeLinecap="round"
+              />
+              {/* Position indicator dot */}
+              <motion.circle 
+                cx="16" cy="12" r="3"
+                animate={{ 
+                  fill: position === 'normal' ? '#22c55e' : '#f59e0b',
+                  cy: position === 'normal' ? 12 : 9
+                }}
+                transition={{ duration: 0.3 }}
+              />
+            </svg>
+          </div>
+          <span className={cn(
+            'text-[8px] font-bold px-1.5 py-0.5 rounded',
+            position === 'normal' 
+              ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
+              : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+          )}>
+            {position === 'normal' ? 'N' : 'R'}
+          </span>
+          {/* Lock indicator */}
+          {locked && (
+            <motion.div 
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="absolute -top-1 -right-1 w-2 h-2 bg-cyan-500 rounded-full"
+            />
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-44 p-2" side="top">
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-foreground">Point {id}</p>
+          {locked ? (
+            <p className="text-[10px] text-cyan-400 bg-cyan-500/10 p-2 rounded">
+              🔒 Locked by route for {lockedBy}
+            </p>
+          ) : (
+            <>
+              <p className="text-[10px] text-muted-foreground">
+                Current: {position === 'normal' ? 'Normal (Main Line)' : 'Reverse (Diverging)'}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn(
+                  'w-full h-8 text-xs',
+                  position === 'normal' 
+                    ? 'hover:bg-amber-500/20 hover:text-amber-400 hover:border-amber-500/50' 
+                    : 'hover:bg-green-500/20 hover:text-green-400 hover:border-green-500/50'
+                )}
+                onClick={handleToggle}
+              >
+                Set to {position === 'normal' ? 'Reverse' : 'Normal'}
+              </Button>
+            </>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+};
+
+// Animated train marker component
+const AnimatedTrainMarker = ({
+  train,
+  isSelected,
+  onClick,
+  onDoubleClick,
+  animatedProgress = 0
+}: {
+  train: Train;
+  isSelected: boolean;
+  onClick: () => void;
+  onDoubleClick?: () => void;
+  animatedProgress?: number;
+}) => {
+  const typeColors = {
+    express: 'bg-train-express',
+    freight: 'bg-train-freight',
+    local: 'bg-train-local',
+    special: 'bg-train-special'
+  };
+
+  // Speed thresholds for color coding
+  const getSpeedColor = (speed: number) => {
+    if (speed === 0) return { bg: 'bg-red-500', text: 'text-red-400', label: 'STOP' };
+    if (speed < 30) return { bg: 'bg-amber-500', text: 'text-amber-400', label: 'SLOW' };
+    if (speed < 80) return { bg: 'bg-yellow-500', text: 'text-yellow-400', label: 'MED' };
+    return { bg: 'bg-green-500', text: 'text-green-400', label: 'NORM' };
+  };
+
+  const speedInfo = getSpeedColor(train.speed);
+
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <motion.button
+        onClick={onClick}
+        onDoubleClick={onDoubleClick}
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ 
+          scale: 1, 
+          opacity: 1,
+          x: animatedProgress * 100 // Animate within block
+        }}
+        exit={{ scale: 0.8, opacity: 0 }}
+        whileHover={{ scale: 1.15 }}
+        transition={{ 
+          type: "spring", 
+          stiffness: 300, 
+          damping: 25,
+          x: { duration: 2, ease: "linear" }
+        }}
+        className={cn(
+          'relative w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold cursor-pointer z-10',
+          typeColors[train.type],
+          'text-white shadow-lg',
+          isSelected && 'ring-2 ring-white ring-offset-2 ring-offset-background'
+        )}
+        title={`${train.number} - ${train.speed} km/h - Double-click to set route`}
+      >
+        {train.type[0].toUpperCase()}
+        {/* Movement indicator pulse */}
+        {train.status === 'on-time' && train.speed > 0 && (
+          <motion.div
+            className="absolute inset-0 rounded-full bg-white/30"
+            animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
+            transition={{ duration: 1.5, repeat: Infinity }}
+          />
+        )}
+        {/* Direction arrow - only show when moving */}
+        {train.speed > 0 && (
+          <motion.div 
+            className="absolute -right-1 top-1/2 -translate-y-1/2"
+            animate={{ x: [0, 3, 0] }}
+            transition={{ duration: Math.max(0.3, 1 - train.speed / 120), repeat: Infinity }}
+          >
+            <svg width="6" height="6" viewBox="0 0 6 6" fill="currentColor">
+              <path d="M0 0L6 3L0 6V0Z" />
+            </svg>
+          </motion.div>
+        )}
+        {/* Stopped indicator */}
+        {train.speed === 0 && (
+          <motion.div 
+            className="absolute inset-0 rounded-full border-2 border-red-500"
+            animate={{ opacity: [1, 0.5, 1] }}
+            transition={{ duration: 0.5, repeat: Infinity }}
+          />
+        )}
+      </motion.button>
+      
+      {/* Speed indicator badge */}
+      <motion.div
+        initial={{ opacity: 0, y: -5 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={cn(
+          'flex items-center gap-0.5 px-1 py-0.5 rounded text-[7px] font-mono font-bold',
+          'bg-zinc-900/80 border',
+          train.speed === 0 && 'border-red-500/50',
+          train.speed > 0 && train.speed < 30 && 'border-amber-500/50',
+          train.speed >= 30 && train.speed < 80 && 'border-yellow-500/50',
+          train.speed >= 80 && 'border-green-500/50'
+        )}
+      >
+        <motion.div 
+          className={cn('w-1.5 h-1.5 rounded-full', speedInfo.bg)}
+          animate={train.speed > 0 ? { scale: [1, 1.2, 1] } : { opacity: [1, 0.5, 1] }}
+          transition={{ duration: train.speed > 0 ? 0.5 : 0.3, repeat: Infinity }}
+        />
+        <span className={speedInfo.text}>{train.speed}</span>
+      </motion.div>
+    </div>
+  );
+};
+
+// Train trail effect
+const TrainTrail = ({ train }: { train: Train }) => {
+  const typeColors = {
+    express: 'from-train-express/60',
+    freight: 'from-train-freight/60',
+    local: 'from-train-local/60',
+    special: 'from-train-special/60'
+  };
+
+  return (
+    <motion.div
+      initial={{ width: 0, opacity: 0 }}
+      animate={{ width: 40, opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className={cn(
+        'absolute h-1 rounded-full bg-gradient-to-r to-transparent -left-10 top-1/2 -translate-y-1/2',
+        typeColors[train.type]
+      )}
+    />
   );
 };
 
@@ -458,7 +571,7 @@ export const SignalBoxVisualization = ({
         trains.forEach(train => {
           if (train.status === 'on-time' || train.status === 'delayed') {
             const current = newPositions.get(train.id) || { progress: 0, moving: true };
-            const newProgress = (current.progress + 0.005) % 1;
+            const newProgress = (current.progress + 0.005) % 1; // Continuous movement
             newPositions.set(train.id, { progress: newProgress, moving: true });
           } else if (train.status === 'halted') {
             const current = newPositions.get(train.id) || { progress: 0.5, moving: false };
@@ -477,10 +590,10 @@ export const SignalBoxVisualization = ({
     };
   }, [trains]);
   
-  // Local signal states
+  // Local signal states that can be overridden by operator
   const [signalOverrides, setSignalOverrides] = useState<SignalState>({});
   
-  // Point positions
+  // Point/switch positions
   const [pointPositions, setPointPositions] = useState<PointState>({
     'PT-1': 'normal',
     'PT-2': 'normal',
@@ -488,34 +601,36 @@ export const SignalBoxVisualization = ({
     'PT-4': 'normal',
   });
 
-  // Route locks
+  // Route locks for interlocking
   const [routeLocks, setRouteLocks] = useState<RouteLock[]>([]);
-  const [emergencyStopActive, setEmergencyStopActive] = useState(false);
-  const [showEmergencyConfirm, setShowEmergencyConfirm] = useState(false);
 
-  // Check if signal is locked
+  // Check if signal is locked by any route
   const isSignalLocked = (signalId: string): RouteLock | undefined => {
     return routeLocks.find(lock => lock.lockedSignals.includes(signalId) && lock.status === 'locked');
   };
 
-  // Check if point is locked
+  // Check if point is locked by any route
   const isPointLocked = (pointId: string): RouteLock | undefined => {
     return routeLocks.find(lock => lock.lockedPoints.includes(pointId) && lock.status === 'locked');
   };
 
-  // Set route for a train
+  // Set route for a train (locks signals and points)
   const setRoute = (train: Train, fromSection: number, toSection: number) => {
     const routeId = `R-${train.number}-${Date.now()}`;
     
+    // Determine which signals and points to lock based on route
     const lockedSignals: string[] = [];
     const lockedPoints: string[] = [];
     
+    // Lock entrance signal to clear
     lockedSignals.push(`UP-S${fromSection}`);
     
+    // Lock points if route crosses junctions
     if (fromSection <= 4 && toSection >= 5) {
       lockedPoints.push('PT-1', 'PT-2');
     }
     
+    // Check for conflicts with existing locks
     const conflicts = routeLocks.filter(lock => 
       lock.status === 'locked' && (
         lock.lockedSignals.some(s => lockedSignals.includes(s)) ||
@@ -527,10 +642,17 @@ export const SignalBoxVisualization = ({
       toast.error('Route conflict detected!', {
         description: `Cannot set route - conflicting with ${conflicts[0].trainNumber}`
       });
-      logAction('route_conflict', 'route', `Route setting blocked for ${train.number}`, routeId, {});
+      logAction(
+        'route_conflict',
+        'route',
+        `Route setting blocked for ${train.number} due to conflict with ${conflicts[0].trainNumber}`,
+        routeId,
+        { conflictingRoute: conflicts[0].id }
+      );
       return false;
     }
 
+    // Create new route lock
     const newLock: RouteLock = {
       id: routeId,
       trainId: train.id,
@@ -545,25 +667,46 @@ export const SignalBoxVisualization = ({
 
     setRouteLocks(prev => [...prev, newLock]);
 
+    // Set signals for the route
     lockedSignals.forEach(signalId => {
-      setSignalOverrides(prev => ({ ...prev, [signalId]: 'clear' }));
+      setSignalOverrides(prev => ({
+        ...prev,
+        [signalId]: 'clear'
+      }));
     });
 
-    setSignalOverrides(prev => ({ ...prev, [`UP-S${toSection}`]: 'caution' }));
+    // Set exit signals to caution
+    setSignalOverrides(prev => ({
+      ...prev,
+      [`UP-S${toSection}`]: 'caution'
+    }));
 
-    logAction('route_set', 'route', `Route set for ${train.number}: Section ${fromSection} → ${toSection}`, routeId, {});
-    toast.success(`Route set for ${train.number}`, { description: `Sections ${fromSection} → ${toSection} locked` });
+    logAction(
+      'route_set',
+      'route',
+      `Route set for ${train.number}: Section ${fromSection} → ${toSection}`,
+      routeId,
+      { lockedSignals, lockedPoints }
+    );
+
+    toast.success(`Route set for ${train.number}`, {
+      description: `Sections ${fromSection} → ${toSection} locked`
+    });
 
     return true;
   };
 
-  // Release route
+  // Release route lock
   const releaseRoute = (routeId: string) => {
     const lock = routeLocks.find(l => l.id === routeId);
     if (!lock) return;
 
-    setRouteLocks(prev => prev.map(l => l.id === routeId ? { ...l, status: 'releasing' as const } : l));
+    // Update lock status to releasing
+    setRouteLocks(prev => prev.map(l => 
+      l.id === routeId ? { ...l, status: 'releasing' as const } : l
+    ));
 
+    // Set signals back to danger
     lock.lockedSignals.forEach(signalId => {
       setSignalOverrides(prev => {
         const newState = { ...prev };
@@ -572,15 +715,23 @@ export const SignalBoxVisualization = ({
       });
     });
 
+    // Remove lock after brief delay
     setTimeout(() => {
       setRouteLocks(prev => prev.filter(l => l.id !== routeId));
     }, 500);
 
-    logAction('route_release', 'route', `Route released for ${lock.trainNumber}`, routeId, {});
+    logAction(
+      'route_release',
+      'route',
+      `Route released for ${lock.trainNumber}`,
+      routeId,
+      {}
+    );
+
     toast.info(`Route released for ${lock.trainNumber}`);
   };
 
-  // Auto-release routes
+  // Auto-release routes when train clears section
   useEffect(() => {
     routeLocks.forEach(lock => {
       if (lock.status === 'locked') {
@@ -592,274 +743,612 @@ export const SignalBoxVisualization = ({
     });
   }, [trains, routeLocks]);
 
-  // Get signal status
+  // Get train at specific section
+  const getTrainAtSection = (sectionNum: number) => {
+    return trains.find(t => t.currentSection === sectionNum);
+  };
+
+  // Determine signal status based on section or override
   const getSignalStatus = (signalId: string, section: TrackSection): SignalStatus => {
-    if (signalOverrides[signalId]) return signalOverrides[signalId];
+    // Check for manual override first
+    if (signalOverrides[signalId]) {
+      return signalOverrides[signalId];
+    }
+    // Otherwise use automatic status based on section
     if (section.status === 'blocked') return 'danger';
     if (section.status === 'occupied') return 'caution';
     return 'clear';
   };
 
-  // Handle signal change
+  // Handle signal status change
   const handleSignalChange = (signalId: string, sectionId: number, newStatus: SignalStatus) => {
+    // Check if signal is locked
     const lock = isSignalLocked(signalId);
     if (lock) {
-      toast.error(`Signal ${signalId} is locked`, { description: `Route locked for train ${lock.trainNumber}` });
+      toast.error(`Signal ${signalId} is locked`, {
+        description: `Route locked for train ${lock.trainNumber}`
+      });
       return;
     }
 
-    setSignalOverrides(prev => ({ ...prev, [signalId]: newStatus }));
-    logAction('signal_change', 'signal', `Signal ${signalId} manually set to ${newStatus.toUpperCase()}`, signalId, {});
-    toast.success(`Signal ${signalId} set to ${newStatus.toUpperCase()}`);
+    setSignalOverrides(prev => ({
+      ...prev,
+      [signalId]: newStatus
+    }));
+
+    // Log the action
+    logAction(
+      'signal_change',
+      'signal',
+      `Signal ${signalId} manually set to ${newStatus.toUpperCase()}`,
+      signalId,
+      { sectionId, previousStatus: signalOverrides[signalId] || 'auto', newStatus }
+    );
+
+    toast.success(`Signal ${signalId} set to ${newStatus.toUpperCase()}`, {
+      description: `Section ${sectionId} signal manually overridden`
+    });
   };
 
   // Handle point toggle
   const handlePointToggle = (pointId: string) => {
+    // Check if point is locked
     const lock = isPointLocked(pointId);
     if (lock) {
-      toast.error(`Point ${pointId} is locked`, { description: `Route locked for train ${lock.trainNumber}` });
+      toast.error(`Point ${pointId} is locked`, {
+        description: `Route locked for train ${lock.trainNumber}`
+      });
       return;
     }
 
     const currentPosition = pointPositions[pointId] || 'normal';
     const newPosition: PointPosition = currentPosition === 'normal' ? 'reverse' : 'normal';
     
-    setPointPositions(prev => ({ ...prev, [pointId]: newPosition }));
-    logAction('point_change', 'point', `Point ${pointId} set to ${newPosition.toUpperCase()}`, pointId, {});
-    toast.success(`Point ${pointId} set to ${newPosition.toUpperCase()}`);
+    setPointPositions(prev => ({
+      ...prev,
+      [pointId]: newPosition
+    }));
+
+    logAction(
+      'point_change',
+      'point',
+      `Point ${pointId} set to ${newPosition.toUpperCase()}`,
+      pointId,
+      { previousPosition: currentPosition, newPosition }
+    );
+
+    toast.success(`Point ${pointId} set to ${newPosition.toUpperCase()}`, {
+      description: newPosition === 'normal' ? 'Routing to main line' : 'Routing to diverging line'
+    });
   };
 
-  // Handle train route set
+  // Handle train click to set route
   const handleTrainRouteSet = (train: Train) => {
     if (!train.currentSection) return;
     
+    // Check if train already has a route
     const existingRoute = routeLocks.find(l => l.trainId === train.id && l.status === 'locked');
     if (existingRoute) {
-      toast.info(`Route already set for ${train.number}`);
+      toast.info(`Route already set for ${train.number}`, {
+        description: 'Release existing route first to set a new one'
+      });
       return;
     }
 
+    // Set route to next section (simplified - in real system would be more complex)
     const nextSection = train.currentSection + 1;
     if (nextSection <= 8) {
       setRoute(train, train.currentSection, nextSection);
     }
   };
 
-  // Emergency stop
+  // Reset all signals to automatic
+  const resetAllSignals = () => {
+    setSignalOverrides({});
+    logAction(
+      'signal_reset',
+      'signal',
+      'All signals reset to automatic control',
+      'all',
+      {}
+    );
+    toast.info('All signals reset to automatic control');
+  };
+
+  // Reset all points to normal
+  const resetAllPoints = () => {
+    setPointPositions({
+      'PT-1': 'normal',
+      'PT-2': 'normal',
+      'PT-3': 'normal',
+      'PT-4': 'normal',
+    });
+    logAction(
+      'point_reset',
+      'point',
+      'All points reset to normal position',
+      'all',
+      {}
+    );
+    toast.info('All points reset to normal position');
+  };
+
+  // Emergency stop state
+  const [emergencyStopActive, setEmergencyStopActive] = useState(false);
+  const [showEmergencyConfirm, setShowEmergencyConfirm] = useState(false);
+
+  // Emergency stop - halt all trains and set all signals to danger
   const activateEmergencyStop = () => {
     setEmergencyStopActive(true);
 
+    // Set all signals to danger
     const allSignals: SignalState = {};
     sections.forEach(section => {
       allSignals[`UP-S${section.id}`] = 'danger';
       allSignals[`DN-S${section.id}`] = 'danger';
     });
+    // Add any additional signals
     for (let i = 9; i <= 16; i++) {
       allSignals[`DN-S${i}`] = 'danger';
     }
     setSignalOverrides(allSignals);
 
+    // Release all routes
     routeLocks.forEach(lock => {
       if (lock.status === 'locked') {
         setRouteLocks(prev => prev.filter(l => l.id !== lock.id));
       }
     });
 
-    logAction('emergency_stop', 'system', 'EMERGENCY STOP ACTIVATED', 'system', {});
-    toast.error('🚨 EMERGENCY STOP ACTIVATED', { duration: 10000 });
+    logAction(
+      'emergency_stop',
+      'system',
+      'EMERGENCY STOP ACTIVATED - All signals set to DANGER',
+      'system',
+      { 
+        trainsAffected: trains.length,
+        signalsSet: Object.keys(allSignals).length
+      }
+    );
+
+    toast.error('🚨 EMERGENCY STOP ACTIVATED', {
+      description: 'All signals set to DANGER - All trains must halt immediately',
+      duration: 10000
+    });
   };
 
+  // Reset emergency stop
   const resetEmergencyStop = () => {
     setEmergencyStopActive(false);
     setSignalOverrides({});
-    logAction('emergency_reset', 'system', 'Emergency stop reset', 'system', {});
-    toast.success('Emergency stop reset');
+    
+    logAction(
+      'emergency_reset',
+      'system',
+      'Emergency stop reset - Signals returned to automatic control',
+      'system',
+      {}
+    );
+
+    toast.success('Emergency stop reset', {
+      description: 'Signals returned to automatic control'
+    });
   };
 
-  const resetAllSignals = () => {
-    setSignalOverrides({});
-    logAction('signal_reset', 'signal', 'All signals reset', 'all', {});
-    toast.info('All signals reset to automatic');
-  };
-
-  const resetAllPoints = () => {
-    setPointPositions({ 'PT-1': 'normal', 'PT-2': 'normal', 'PT-3': 'normal', 'PT-4': 'normal' });
-    logAction('point_reset', 'point', 'All points reset', 'all', {});
-    toast.info('All points reset');
-  };
-
+  // Count manual overrides
   const overrideCount = Object.keys(signalOverrides).length;
+  const pointOverrideCount = Object.values(pointPositions).filter(p => p === 'reverse').length;
   const activeRoutes = routeLocks.filter(l => l.status === 'locked').length;
-  const occupiedSections = new Set(trains.map(t => t.currentSection).filter(Boolean) as number[]);
 
   return (
     <div className={cn(
-      'h-full flex flex-col rounded-lg overflow-hidden',
-      emergencyStopActive ? 'ring-4 ring-red-500' : 'ring-1 ring-gray-400'
-    )} style={{ backgroundColor: '#b8b8b8' }}>
+      'h-full flex flex-col bg-zinc-900/50 rounded-lg overflow-hidden',
+      emergencyStopActive && 'ring-2 ring-red-500 ring-offset-2 ring-offset-background'
+    )}>
       {/* Emergency Stop Banner */}
       {emergencyStopActive && (
         <motion.div 
-          initial={{ height: 0 }}
-          animate={{ height: 'auto' }}
-          className="bg-red-600 text-white px-4 py-2 flex items-center justify-between"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          className="bg-red-500/20 border-b-2 border-red-500 px-3 py-2"
         >
-          <div className="flex items-center gap-2">
-            <motion.span 
-              animate={{ opacity: [1, 0.3, 1] }}
-              transition={{ duration: 0.5, repeat: Infinity }}
-              className="text-lg"
-            >🚨</motion.span>
-            <span className="font-bold">EMERGENCY STOP ACTIVE</span>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <motion.div 
+                className="w-3 h-3 rounded-full bg-red-500"
+                animate={{ scale: [1, 1.3, 1], opacity: [1, 0.5, 1] }}
+                transition={{ duration: 0.5, repeat: Infinity }}
+              />
+              <span className="text-sm font-bold text-red-400">🚨 EMERGENCY STOP ACTIVE</span>
+              <span className="text-[10px] text-red-300">All signals at DANGER - Trains must halt</span>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 text-[10px] px-3 border-red-500 text-red-400 hover:bg-red-500/20"
+              onClick={resetEmergencyStop}
+            >
+              Reset Emergency Stop
+            </Button>
           </div>
-          <Button size="sm" variant="outline" className="border-white text-white hover:bg-white/20" onClick={resetEmergencyStop}>
-            Reset
-          </Button>
         </motion.div>
       )}
 
-      {/* Header with controls */}
-      <div className="bg-gradient-to-b from-gray-500 to-gray-600 px-4 py-2 flex items-center justify-between border-b-2 border-gray-700">
-        <div className="flex items-center gap-4">
-          <span className="text-white text-sm font-bold">Block Section Control</span>
-          {activeRoutes > 0 && (
-            <span className="px-2 py-0.5 bg-cyan-500 text-white text-[10px] rounded font-bold">
-              {activeRoutes} Route{activeRoutes > 1 ? 's' : ''} Locked
-            </span>
-          )}
+      {/* Header */}
+      <div className="px-3 py-2 border-b border-border/30 bg-zinc-800/50 flex items-center justify-between">
+        <div>
+          <h3 className="text-xs font-semibold text-foreground">Block Section Diagram</h3>
+          <p className="text-[10px] text-muted-foreground">Kanpur - Allahabad Section</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button 
-            variant="destructive" 
+          {/* Emergency Stop Button */}
+          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+            <Button
+              variant="destructive"
+              size="sm"
+              className={cn(
+                'h-7 text-[10px] px-3 font-bold shadow-lg',
+                !emergencyStopActive && 'bg-red-600 hover:bg-red-700 animate-pulse'
+              )}
+              onClick={() => setShowEmergencyConfirm(true)}
+              disabled={emergencyStopActive}
+            >
+              🛑 EMERGENCY STOP
+            </Button>
+          </motion.div>
+
+          {/* Emergency Stop Confirmation Dialog */}
+          <AlertDialog open={showEmergencyConfirm} onOpenChange={setShowEmergencyConfirm}>
+            <AlertDialogContent className="bg-zinc-900 border-red-500/50">
+              <AlertDialogHeader>
+                <AlertDialogTitle className="text-red-500 flex items-center gap-2">
+                  🛑 Confirm Emergency Stop
+                </AlertDialogTitle>
+                <AlertDialogDescription className="text-muted-foreground">
+                  This will immediately:
+                  <ul className="list-disc list-inside mt-2 space-y-1">
+                    <li>Set ALL signals to DANGER</li>
+                    <li>Release ALL route locks</li>
+                    <li>Halt ALL train movements</li>
+                  </ul>
+                  <p className="mt-3 text-warning font-medium">
+                    Are you sure you want to activate the emergency stop?
+                  </p>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel className="bg-zinc-800 hover:bg-zinc-700">
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                  onClick={() => {
+                    activateEmergencyStop();
+                    setShowEmergencyConfirm(false);
+                  }}
+                >
+                  Activate Emergency Stop
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          
+          {activeRoutes > 0 && (
+            <span className="text-[9px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+              {activeRoutes} route{activeRoutes > 1 ? 's' : ''} locked
+            </span>
+          )}
+          {overrideCount > 0 && !emergencyStopActive && (
+            <span className="text-[9px] px-2 py-0.5 rounded-full bg-warning/20 text-warning border border-warning/30">
+              {overrideCount} signal override{overrideCount > 1 ? 's' : ''}
+            </span>
+          )}
+          {pointOverrideCount > 0 && (
+            <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
+              {pointOverrideCount} point{pointOverrideCount > 1 ? 's' : ''} reversed
+            </span>
+          )}
+          <Button
+            variant="ghost"
             size="sm"
-            className={cn("font-bold", !emergencyStopActive && "animate-pulse")}
-            onClick={() => setShowEmergencyConfirm(true)}
-            disabled={emergencyStopActive}
+            className="h-6 text-[10px] px-2"
+            onClick={resetAllSignals}
+            disabled={overrideCount === 0 || emergencyStopActive}
           >
-            🛑 EMERGENCY
-          </Button>
-          <Button variant="secondary" size="sm" onClick={resetAllSignals} disabled={overrideCount === 0}>
             Reset Signals
           </Button>
-          <Button variant="secondary" size="sm" onClick={resetAllPoints}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 text-[10px] px-2"
+            onClick={resetAllPoints}
+            disabled={pointOverrideCount === 0}
+          >
             Reset Points
           </Button>
         </div>
       </div>
 
-      {/* Emergency Stop Confirmation Dialog */}
-      <AlertDialog open={showEmergencyConfirm} onOpenChange={setShowEmergencyConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle className="text-red-600">🛑 Confirm Emergency Stop</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will immediately set ALL signals to DANGER and release all route locks.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => { activateEmergencyStop(); setShowEmergencyConfirm(false); }}>
-              Activate Emergency Stop
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Route locks display */}
+      {/* Route locks panel */}
       {routeLocks.length > 0 && (
-        <div className="bg-cyan-100 px-4 py-1.5 border-b border-cyan-300 flex items-center gap-2 flex-wrap">
-          <span className="text-[10px] font-bold text-cyan-800">Active Routes:</span>
-          {routeLocks.map(lock => (
-            <div key={lock.id} className="flex items-center gap-1 px-2 py-0.5 bg-cyan-200 rounded text-[10px] text-cyan-800 font-mono">
-              {lock.trainNumber} S{lock.fromSection}→S{lock.toSection}
-              <button onClick={() => releaseRoute(lock.id)} className="text-red-600 font-bold ml-1">✕</button>
-            </div>
-          ))}
+        <div className="px-3 py-1.5 bg-cyan-500/5 border-b border-border/30">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-[9px] font-semibold text-cyan-400">Active Routes:</span>
+            {routeLocks.map(lock => (
+              <div 
+                key={lock.id} 
+                className={cn(
+                  'flex items-center gap-2 px-2 py-0.5 rounded-full text-[9px] border',
+                  lock.status === 'locked' && 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+                  lock.status === 'releasing' && 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30 opacity-50'
+                )}
+              >
+                <span className="font-mono">{lock.trainNumber}</span>
+                <span className="text-muted-foreground">S{lock.fromSection}→S{lock.toSection}</span>
+                <button
+                  onClick={() => releaseRoute(lock.id)}
+                  className="text-red-400 hover:text-red-300 text-[8px] font-bold"
+                  disabled={lock.status === 'releasing'}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* Main content area */}
-      <div className="flex-1 flex">
-        {/* Left Block Instrument */}
-        <div className="p-4 flex flex-col items-center justify-center border-r border-gray-400">
-          <BlockInstrument label="Next Block Section" status={occupiedSections.size > 0 ? 'occupied' : 'line_clear'} />
-        </div>
-
-        {/* Center - Track diagram */}
-        <div className="flex-1 p-4 overflow-auto">
-          <TraditionalTrackView
-            sections={sections}
-            trains={trains}
-            selectedTrain={selectedTrain}
-            onTrainSelect={onTrainSelect}
-            signalOverrides={signalOverrides}
-            pointPositions={pointPositions}
-            onSignalChange={handleSignalChange}
-            onPointToggle={handlePointToggle}
-            getSignalStatus={getSignalStatus}
-            isSignalLocked={isSignalLocked}
-            handleTrainRouteSet={handleTrainRouteSet}
-            trainPositions={trainPositions}
-          />
-
-          {/* Signal Lever Panel */}
-          <div className="mt-4 p-3 bg-gradient-to-b from-amber-200 to-amber-300 rounded-lg border-4 border-amber-700">
-            <div className="flex items-end justify-center gap-1">
-              {/* Platform supply labels */}
-              <div className="mr-4">
-                <div className="px-2 py-1 bg-cyan-600 text-white text-[8px] font-bold rounded mb-1">Platform 2 Supply</div>
-              </div>
-
-              {/* Signal Levers */}
-              {Array.from({ length: 29 }, (_, i) => {
-                const num = i + 1;
-                const signalId = `UP-S${num}`;
-                const status = signalOverrides[signalId] || 'clear';
-                
-                // Determine lever color based on function
-                let color: 'red' | 'yellow' | 'white' | 'blue' | 'black' = 'red';
-                if ([7, 8, 15, 20].includes(num)) color = 'yellow';
-                if ([4, 5, 6, 9, 10, 11, 16, 17, 21, 22, 24, 25].includes(num)) color = 'white';
-                if ([19, 28].includes(num)) color = 'blue';
-                
-                return (
-                  <SignalLever
-                    key={num}
-                    number={num}
-                    color={color}
-                    position={status === 'clear' ? 'reverse' : 'normal'}
-                    onToggle={() => handleSignalChange(signalId, num, status === 'clear' ? 'danger' : 'clear')}
-                    locked={!!isSignalLocked(signalId)}
-                    label="L"
-                  />
-                );
-              })}
-
-              {/* More platform supply labels */}
-              <div className="ml-4">
-                <div className="px-2 py-1 bg-cyan-600 text-white text-[8px] font-bold rounded mb-1">Platform 1 Supply</div>
-              </div>
-            </div>
+      {/* Control hint */}
+      <div className="px-3 py-1.5 bg-primary/5 border-b border-border/30 flex items-center justify-between">
+        <p className="text-[9px] text-primary/80">
+          💡 Click trains to set routes • Locked signals/points cannot be changed
+        </p>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <motion.div 
+              className="w-2 h-2 rounded-full bg-green-500"
+              animate={{ scale: [1, 1.3, 1] }}
+              transition={{ duration: 1, repeat: Infinity }}
+            />
+            <span className="text-[9px] text-muted-foreground">
+              {trains.filter(t => t.status === 'on-time' || t.status === 'delayed').length} trains moving
+            </span>
           </div>
-        </div>
-
-        {/* Right Block Instrument */}
-        <div className="p-4 flex flex-col items-center justify-center border-l border-gray-400">
-          <BlockInstrument label="Next Block Section" status={occupiedSections.size > 0 ? 'occupied' : 'line_clear'} />
         </div>
       </div>
 
-      {/* Footer legend */}
-      <div className="bg-gray-600 px-4 py-2 flex items-center justify-center gap-6 text-[10px] text-white">
-        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-green-500" /> Clear</div>
-        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-yellow-500" /> Caution</div>
-        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-red-500" /> Danger</div>
-        <span className="text-gray-400">|</span>
-        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-cyan-500" /> Express</div>
-        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-amber-600" /> Freight</div>
-        <div className="flex items-center gap-1"><div className="w-3 h-3 rounded-full bg-green-600" /> Local</div>
-        <span className="text-gray-400">|</span>
-        <span>Double-click train to set route</span>
+      {/* Main visualization */}
+      <div className="flex-1 p-3 overflow-auto">
+        <div className="min-w-[600px]">
+          {/* Station markers */}
+          <div className="flex justify-between mb-4 px-2">
+            <StationMarker name="KANPUR JN" side="left" />
+            <StationMarker name="ALLAHABAD JN" side="right" />
+          </div>
+
+          {/* Main Line (UP) */}
+          <div className="relative mb-6">
+            <div className="flex items-center justify-between px-2 mb-1">
+              <span className="text-[9px] text-muted-foreground font-mono">UP LINE →</span>
+            </div>
+            <div className="flex items-center gap-1 bg-zinc-800/30 rounded p-2">
+              <div className="w-4 h-0.5 bg-zinc-600" />
+              {sections.slice(0, 4).map((section, idx) => {
+                const train = getTrainAtSection(section.id);
+                const signalId = `UP-S${section.id}`;
+                const hasSignal = idx % 2 === 0;
+                const progress = train ? (trainPositions.get(train.id)?.progress || 0) : 0;
+                const signalLock = hasSignal ? isSignalLocked(signalId) : undefined;
+                return (
+                  <div key={section.id} className="flex items-center">
+                    <BlockIndicator
+                      number={section.id}
+                      occupied={section.status === 'occupied'}
+                      hasSignal={hasSignal}
+                      signalId={hasSignal ? signalId : undefined}
+                      signalStatus={getSignalStatus(signalId, section)}
+                      onSignalChange={hasSignal ? (status) => handleSignalChange(signalId, section.id, status) : undefined}
+                      hasTrain={!!train}
+                      train={train}
+                      isSelected={train?.id === selectedTrain}
+                      onTrainClick={() => train && onTrainSelect(train.id)}
+                      onRouteSet={() => train && handleTrainRouteSet(train)}
+                      trainProgress={progress}
+                      signalLocked={!!signalLock}
+                      signalLockedBy={signalLock?.trainNumber}
+                    />
+                    <TrackLine status={section.status === 'occupied' ? 'occupied' : 'clear'} />
+                  </div>
+                );
+              })}
+              {/* Point switch before platform */}
+              <div className="flex flex-col items-center mx-1">
+                <PointSwitch 
+                  id="PT-1" 
+                  position={pointPositions['PT-1']} 
+                  onToggle={() => handlePointToggle('PT-1')}
+                  label="PT-1"
+                />
+              </div>
+              <div className="flex flex-col items-center mx-2">
+                <Platform number={1} active={trains.some(t => t.nextStation?.includes('Platform'))} />
+              </div>
+              {/* Point switch after platform */}
+              <div className="flex flex-col items-center mx-1">
+                <PointSwitch 
+                  id="PT-2" 
+                  position={pointPositions['PT-2']} 
+                  onToggle={() => handlePointToggle('PT-2')}
+                  label="PT-2"
+                />
+              </div>
+              {sections.slice(4).map((section, idx) => {
+                const train = getTrainAtSection(section.id);
+                const signalId = `UP-S${section.id}`;
+                const hasSignal = idx % 2 === 0;
+                const progress = train ? (trainPositions.get(train.id)?.progress || 0) : 0;
+                const signalLock = hasSignal ? isSignalLocked(signalId) : undefined;
+                return (
+                  <div key={section.id} className="flex items-center">
+                    <TrackLine status={section.status === 'occupied' ? 'occupied' : 'clear'} />
+                    <BlockIndicator
+                      number={section.id}
+                      occupied={section.status === 'occupied'}
+                      hasSignal={hasSignal}
+                      signalId={hasSignal ? signalId : undefined}
+                      signalStatus={getSignalStatus(signalId, section)}
+                      onSignalChange={hasSignal ? (status) => handleSignalChange(signalId, section.id, status) : undefined}
+                      hasTrain={!!train}
+                      train={train}
+                      isSelected={train?.id === selectedTrain}
+                      onTrainClick={() => train && onTrainSelect(train.id)}
+                      onRouteSet={() => train && handleTrainRouteSet(train)}
+                      trainProgress={progress}
+                      signalLocked={!!signalLock}
+                      signalLockedBy={signalLock?.trainNumber}
+                    />
+                  </div>
+                );
+              })}
+              <div className="w-4 h-0.5 bg-zinc-600" />
+            </div>
+          </div>
+
+          {/* Main Line (DN) */}
+          <div className="relative mb-4">
+            <div className="flex items-center justify-between px-2 mb-1">
+              <span className="text-[9px] text-muted-foreground font-mono">← DN LINE</span>
+            </div>
+            <div className="flex items-center gap-1 bg-zinc-800/30 rounded p-2">
+              <div className="w-4 h-0.5 bg-zinc-600" />
+              {[...Array(3)].map((_, idx) => {
+                const blockNum = idx + 9;
+                const signalId = `DN-S${blockNum}`;
+                const hasSignal = idx === 0;
+                return (
+                  <div key={`dn-${idx}`} className="flex items-center">
+                    <BlockIndicator
+                      number={blockNum}
+                      occupied={false}
+                      hasSignal={hasSignal}
+                      signalId={hasSignal ? signalId : undefined}
+                      signalStatus={signalOverrides[signalId] || 'clear'}
+                      onSignalChange={hasSignal ? (status) => handleSignalChange(signalId, blockNum, status) : undefined}
+                    />
+                    <TrackLine />
+                  </div>
+                );
+              })}
+              {/* Point switches for DN line */}
+              <div className="flex flex-col items-center mx-1">
+                <PointSwitch 
+                  id="PT-3" 
+                  position={pointPositions['PT-3']} 
+                  onToggle={() => handlePointToggle('PT-3')}
+                  label="PT-3"
+                />
+              </div>
+              {[...Array(3)].map((_, idx) => {
+                const blockNum = idx + 12;
+                const signalId = `DN-S${blockNum}`;
+                const hasSignal = idx === 2;
+                return (
+                  <div key={`dn2-${idx}`} className="flex items-center">
+                    <TrackLine />
+                    <BlockIndicator
+                      number={blockNum}
+                      occupied={false}
+                      hasSignal={hasSignal}
+                      signalId={hasSignal ? signalId : undefined}
+                      signalStatus={signalOverrides[signalId] || 'clear'}
+                      onSignalChange={hasSignal ? (status) => handleSignalChange(signalId, blockNum, status) : undefined}
+                    />
+                  </div>
+                );
+              })}
+              <div className="flex flex-col items-center mx-1">
+                <PointSwitch 
+                  id="PT-4" 
+                  position={pointPositions['PT-4']} 
+                  onToggle={() => handlePointToggle('PT-4')}
+                  label="PT-4"
+                />
+              </div>
+              {[...Array(2)].map((_, idx) => {
+                const blockNum = idx + 15;
+                const signalId = `DN-S${blockNum}`;
+                return (
+                  <div key={`dn3-${idx}`} className="flex items-center">
+                    <TrackLine />
+                    <BlockIndicator
+                      number={blockNum}
+                      occupied={false}
+                      hasSignal={false}
+                      signalStatus={'clear'}
+                    />
+                  </div>
+                );
+              })}
+              <div className="w-4 h-0.5 bg-zinc-600" />
+            </div>
+          </div>
+
+          {/* Legend */}
+          <div className="flex flex-wrap items-center justify-center gap-4 pt-3 border-t border-border/30">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-green-500" />
+              <span className="text-[9px] text-muted-foreground">Clear</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-yellow-500" />
+              <span className="text-[9px] text-muted-foreground">Caution</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-red-500" />
+              <span className="text-[9px] text-muted-foreground">Danger</span>
+            </div>
+            <div className="w-px h-3 bg-border" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-[8px] px-1 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30 font-bold">N</span>
+              <span className="text-[9px] text-muted-foreground">Normal</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[8px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold">R</span>
+              <span className="text-[9px] text-muted-foreground">Reverse</span>
+            </div>
+            <div className="w-px h-3 bg-border" />
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded-full bg-train-express" />
+              <span className="text-[9px] text-muted-foreground">Express</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded-full bg-train-freight" />
+              <span className="text-[9px] text-muted-foreground">Freight</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-3 h-3 rounded-full bg-train-local" />
+              <span className="text-[9px] text-muted-foreground">Local</span>
+            </div>
+            <div className="w-px h-3 bg-border" />
+            {/* Speed indicators legend */}
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+              <span className="text-[9px] text-muted-foreground">≥80 km/h</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-yellow-500" />
+              <span className="text-[9px] text-muted-foreground">30-79</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              <span className="text-[9px] text-muted-foreground">1-29</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+              <span className="text-[9px] text-muted-foreground">Stopped</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
