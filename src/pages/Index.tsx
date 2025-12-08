@@ -21,8 +21,6 @@ import { useTrains, useTrackSections, useAIRecommendations, useSectionMetrics } 
 import { Helmet } from 'react-helmet-async';
 import { Loader2, MousePointerClick } from 'lucide-react';
 import { SidebarProvider } from '@/components/ui/sidebar';
-import { cn } from '@/lib/utils';
-import { ScrollArea } from '@/components/ui/scroll-area';
 
 const DashboardContent = () => {
   const [selectedTrainId, setSelectedTrainId] = useState<string | null>(null);
@@ -144,130 +142,129 @@ const DashboardContent = () => {
         {/* Main Content Area */}
         <main className="flex-1 flex flex-col overflow-hidden bg-gradient-to-br from-background via-background to-muted/10">
           {/* Top Bar with Metrics */}
-          <div className="p-3 lg:p-4 border-b border-border/30 bg-card/30 backdrop-blur-sm">
+          <div className="px-3 lg:px-4 py-2 border-b border-border/30 bg-card/30 backdrop-blur-sm shrink-0">
             {metrics && <MetricsPanel metrics={metrics} />}
           </div>
 
-          {/* Scrollable Content */}
-          <ScrollArea className="flex-1">
-            <div className="p-3 lg:p-4 space-y-4">
-              {/* Main Grid Layout */}
-              <div className="grid grid-cols-12 gap-3 lg:gap-4">
-                {/* Left Panel - Train List */}
-                <motion.div 
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="col-span-12 lg:col-span-3 xl:col-span-2"
-                >
-                  <div className="bg-card/50 backdrop-blur-sm rounded-xl border border-border/50 overflow-hidden h-[400px] lg:h-[500px]">
-                    <TrainList
-                      trains={trains}
-                      selectedTrain={selectedTrainId}
-                      onTrainSelect={setSelectedTrainId}
-                    />
-                  </div>
-                </motion.div>
+          {/* Main Grid Layout - Full Height */}
+          <div className="flex-1 p-2 lg:p-3 overflow-hidden">
+            <div className="grid grid-cols-12 gap-2 lg:gap-3 h-full">
+              {/* Left Panel - Train List */}
+              <motion.div 
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="col-span-12 md:col-span-4 lg:col-span-3 xl:col-span-2 h-full min-h-[300px] md:min-h-0"
+              >
+                <div className="bg-card/50 backdrop-blur-sm rounded-xl border border-border/50 overflow-hidden h-full">
+                  <TrainList
+                    trains={trains}
+                    selectedTrain={selectedTrainId}
+                    onTrainSelect={setSelectedTrainId}
+                  />
+                </div>
+              </motion.div>
 
-                {/* Center Panel - Track Visualization + Active Content */}
-                <motion.div 
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.1 }}
-                  className="col-span-12 lg:col-span-6 xl:col-span-7 flex flex-col gap-3 lg:gap-4"
-                >
-                  {/* Track Visualization */}
-                  <div className="bg-card/50 backdrop-blur-sm rounded-xl border border-border/50 overflow-hidden">
-                    <TrackVisualization
-                      sections={sections}
-                      trains={trains}
-                      selectedTrain={selectedTrainId}
-                      onTrainSelect={setSelectedTrainId}
-                    />
+              {/* Center Panel - Track Visualization + Active Content */}
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 }}
+                className="col-span-12 md:col-span-8 lg:col-span-6 xl:col-span-7 flex flex-col gap-2 lg:gap-3 h-full min-h-[400px] md:min-h-0"
+              >
+                {/* Track Visualization */}
+                <div className="bg-card/50 backdrop-blur-sm rounded-xl border border-border/50 overflow-hidden h-[40%] min-h-[150px]">
+                  <TrackVisualization
+                    sections={sections}
+                    trains={trains}
+                    selectedTrain={selectedTrainId}
+                    onTrainSelect={setSelectedTrainId}
+                  />
+                </div>
+                
+                {/* Active Tab Content */}
+                <div className="bg-card/50 backdrop-blur-sm rounded-xl border border-border/50 overflow-hidden flex-1 flex flex-col">
+                  <div className="px-3 py-2 border-b border-border/30 bg-muted/20 shrink-0">
+                    <h2 className="text-sm font-semibold text-foreground">{getTabTitle()}</h2>
                   </div>
-                  
-                  {/* Active Tab Content */}
-                  <div className="bg-card/50 backdrop-blur-sm rounded-xl border border-border/50 overflow-hidden">
-                    <div className="px-4 py-2.5 border-b border-border/30 bg-muted/20">
-                      <h2 className="text-sm font-semibold text-foreground">{getTabTitle()}</h2>
-                    </div>
-                    <div className="p-3 lg:p-4 min-h-[300px]">
-                      {renderActiveContent()}
-                    </div>
+                  <div className="flex-1 p-2 lg:p-3 overflow-auto">
+                    {renderActiveContent()}
                   </div>
-                </motion.div>
+                </div>
+              </motion.div>
 
-                {/* Right Panel - Train Details & Quick Info */}
-                <motion.div 
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.2 }}
-                  className="col-span-12 lg:col-span-3 xl:col-span-3 flex flex-col gap-3 lg:gap-4"
-                >
-                  {/* Quick Stats Cards */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-card/50 backdrop-blur-sm rounded-lg border border-border/50 p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-2 h-2 rounded-full bg-success" />
-                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">On Time</span>
-                      </div>
-                      <p className="text-lg font-bold text-success">{trains.filter(t => t.status === 'on-time').length}</p>
+              {/* Right Panel - Train Details & Quick Info */}
+              <motion.div 
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.2 }}
+                className="col-span-12 lg:col-span-3 xl:col-span-3 flex flex-col gap-2 lg:gap-3 h-full min-h-[300px] lg:min-h-0"
+              >
+                {/* Quick Stats Cards */}
+                <div className="grid grid-cols-4 lg:grid-cols-2 gap-2 shrink-0">
+                  <div className="bg-card/50 backdrop-blur-sm rounded-lg border border-border/50 p-2 lg:p-3">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <div className="w-2 h-2 rounded-full bg-success" />
+                      <span className="text-[9px] lg:text-[10px] uppercase tracking-wide text-muted-foreground font-medium">On Time</span>
                     </div>
-                    <div className="bg-card/50 backdrop-blur-sm rounded-lg border border-border/50 p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-2 h-2 rounded-full bg-warning" />
-                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Delayed</span>
-                      </div>
-                      <p className="text-lg font-bold text-warning">{trains.filter(t => t.status === 'delayed').length}</p>
-                    </div>
-                    <div className="bg-card/50 backdrop-blur-sm rounded-lg border border-border/50 p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-2 h-2 rounded-full bg-destructive" />
-                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Halted</span>
-                      </div>
-                      <p className="text-lg font-bold text-destructive">{trains.filter(t => t.status === 'halted').length}</p>
-                    </div>
-                    <div className="bg-card/50 backdrop-blur-sm rounded-lg border border-border/50 p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="w-2 h-2 rounded-full bg-primary" />
-                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Active</span>
-                      </div>
-                      <p className="text-lg font-bold text-primary">{trains.filter(t => t.status === 'approaching').length}</p>
-                    </div>
+                    <p className="text-base lg:text-lg font-bold text-success">{trains.filter(t => t.status === 'on-time').length}</p>
                   </div>
-
-                  {/* Train Details Card */}
-                  <div className="bg-card/50 backdrop-blur-sm rounded-xl border border-border/50 overflow-hidden flex-1 min-h-[300px] lg:min-h-[380px]">
-                    <div className="px-4 py-2.5 border-b border-border/30 bg-muted/20 flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-foreground">Train Details</h3>
-                      {selectedTrain && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/20 text-primary font-medium">
-                          {selectedTrain.number}
-                        </span>
-                      )}
+                  <div className="bg-card/50 backdrop-blur-sm rounded-lg border border-border/50 p-2 lg:p-3">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <div className="w-2 h-2 rounded-full bg-warning" />
+                      <span className="text-[9px] lg:text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Delayed</span>
                     </div>
+                    <p className="text-base lg:text-lg font-bold text-warning">{trains.filter(t => t.status === 'delayed').length}</p>
+                  </div>
+                  <div className="bg-card/50 backdrop-blur-sm rounded-lg border border-border/50 p-2 lg:p-3">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <div className="w-2 h-2 rounded-full bg-destructive" />
+                      <span className="text-[9px] lg:text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Halted</span>
+                    </div>
+                    <p className="text-base lg:text-lg font-bold text-destructive">{trains.filter(t => t.status === 'halted').length}</p>
+                  </div>
+                  <div className="bg-card/50 backdrop-blur-sm rounded-lg border border-border/50 p-2 lg:p-3">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <div className="w-2 h-2 rounded-full bg-primary" />
+                      <span className="text-[9px] lg:text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Active</span>
+                    </div>
+                    <p className="text-base lg:text-lg font-bold text-primary">{trains.filter(t => t.status === 'approaching').length}</p>
+                  </div>
+                </div>
+
+                {/* Train Details Card */}
+                <div className="bg-card/50 backdrop-blur-sm rounded-xl border border-border/50 overflow-hidden flex-1 flex flex-col">
+                  <div className="px-3 py-2 border-b border-border/30 bg-muted/20 flex items-center justify-between shrink-0">
+                    <h3 className="text-sm font-semibold text-foreground">Train Details</h3>
+                    {selectedTrain && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/20 text-primary font-medium">
+                        {selectedTrain.number}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1 overflow-auto">
                     {selectedTrain ? (
                       <TrainDetails
                         train={selectedTrain}
                         onClose={() => setSelectedTrainId(null)}
                       />
                     ) : (
-                      <div className="h-full flex flex-col items-center justify-center p-6 text-center min-h-[260px]">
-                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-muted/80 to-muted/40 flex items-center justify-center mb-4 border border-border/30">
-                          <MousePointerClick className="w-6 h-6 text-muted-foreground" />
+                      <div className="h-full flex flex-col items-center justify-center p-4 text-center">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-muted/80 to-muted/40 flex items-center justify-center mb-3 border border-border/30">
+                          <MousePointerClick className="w-5 h-5 text-muted-foreground" />
                         </div>
-                        <h3 className="text-sm font-semibold text-foreground mb-1.5">
+                        <h3 className="text-sm font-semibold text-foreground mb-1">
                           Select a Train
                         </h3>
-                        <p className="text-xs text-muted-foreground max-w-[180px] leading-relaxed">
-                          Click on a train from the list or track visualization to view details
+                        <p className="text-xs text-muted-foreground max-w-[160px] leading-relaxed">
+                          Click on a train to view details
                         </p>
                       </div>
                     )}
                   </div>
-                </motion.div>
-              </div>
+                </div>
+              </motion.div>
             </div>
-          </ScrollArea>
+          </div>
         </main>
         
         {/* Footer Status Bar */}
