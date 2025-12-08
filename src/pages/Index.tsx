@@ -19,10 +19,10 @@ import { DelayPrediction } from '@/components/dashboard/DelayPrediction';
 import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar';
 import { useTrains, useTrackSections, useAIRecommendations, useSectionMetrics } from '@/hooks/useRailwayData';
 import { Helmet } from 'react-helmet-async';
-import { Loader2, PanelLeftClose, PanelLeft } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { SidebarProvider, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
+import { Loader2, MousePointerClick } from 'lucide-react';
+import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
 import { cn } from '@/lib/utils';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 const DashboardContent = () => {
   const [selectedTrainId, setSelectedTrainId] = useState<string | null>(null);
@@ -97,13 +97,37 @@ const DashboardContent = () => {
     }
   };
 
+  const getTabTitle = () => {
+    const titles: Record<string, string> = {
+      recommendations: 'AI Recommendations',
+      alerts: 'Active Alerts',
+      simulation: 'Scenario Simulation',
+      audit: 'Audit Log',
+      charts: 'Performance Charts',
+      conflicts: 'Conflict Detection',
+      schedule: 'Train Schedule',
+      export: 'Export Data',
+      analytics: 'Analytics Dashboard',
+      kpis: 'KPI Dashboard',
+      predictions: 'AI Delay Prediction',
+    };
+    return titles[activeTab] || 'Dashboard';
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-muted-foreground font-mono">Loading section data...</p>
-        </div>
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="flex flex-col items-center gap-4"
+        >
+          <div className="relative">
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
+            <div className="absolute inset-0 h-10 w-10 animate-ping opacity-20 rounded-full bg-primary" />
+          </div>
+          <p className="text-muted-foreground font-mono text-sm">Loading section data...</p>
+        </motion.div>
       </div>
     );
   }
@@ -117,93 +141,111 @@ const DashboardContent = () => {
         <DashboardSidebar activeTab={activeTab} onTabChange={setActiveTab} />
         
         {/* Main Content Area */}
-        <main className="flex-1 p-4 lg:p-6 space-y-4 lg:space-y-6 overflow-auto">
-          {/* Sidebar Toggle + Metrics Row */}
-          <div className="flex items-start gap-4">
-            <SidebarTrigger className="mt-1 shrink-0" />
-            <div className="flex-1">
+        <main className="flex-1 flex flex-col overflow-hidden bg-gradient-to-br from-background via-background to-muted/10">
+          {/* Top Bar with Trigger + Metrics */}
+          <div className="flex items-center gap-3 p-3 lg:p-4 border-b border-border/30 bg-card/30 backdrop-blur-sm">
+            <SidebarTrigger className="shrink-0 h-8 w-8 rounded-lg border border-border/50 hover:bg-muted/50" />
+            <div className="flex-1 overflow-hidden">
               {metrics && <MetricsPanel metrics={metrics} />}
             </div>
           </div>
 
-          {/* Main Content Grid */}
-          <div className="grid grid-cols-12 gap-4 lg:gap-6 min-h-[600px]">
-            {/* Left Panel - Train List */}
-            <div className="col-span-12 lg:col-span-3 xl:col-span-2">
-              <TrainList
-                trains={trains}
-                selectedTrain={selectedTrainId}
-                onTrainSelect={setSelectedTrainId}
-              />
-            </div>
+          {/* Scrollable Content */}
+          <ScrollArea className="flex-1">
+            <div className="p-3 lg:p-4 space-y-4">
+              {/* Main Grid Layout */}
+              <div className="grid grid-cols-12 gap-3 lg:gap-4">
+                {/* Left Panel - Train List */}
+                <motion.div 
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className="col-span-12 lg:col-span-3 xl:col-span-2"
+                >
+                  <div className="bg-card/50 backdrop-blur-sm rounded-xl border border-border/50 overflow-hidden h-[400px] lg:h-[500px]">
+                    <TrainList
+                      trains={trains}
+                      selectedTrain={selectedTrainId}
+                      onTrainSelect={setSelectedTrainId}
+                    />
+                  </div>
+                </motion.div>
 
-            {/* Center Panel - Track Visualization & Active Content */}
-            <div className="col-span-12 lg:col-span-6 xl:col-span-7 flex flex-col gap-4 lg:gap-6">
-              <TrackVisualization
-                sections={sections}
-                trains={trains}
-                selectedTrain={selectedTrainId}
-                onTrainSelect={setSelectedTrainId}
-              />
-              
-              {/* Active Tab Content */}
-              <div className="flex-1 min-h-[300px] overflow-auto">
-                {renderActiveContent()}
+                {/* Center Panel - Track Visualization + Active Content */}
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                  className="col-span-12 lg:col-span-6 xl:col-span-7 flex flex-col gap-3 lg:gap-4"
+                >
+                  {/* Track Visualization */}
+                  <div className="bg-card/50 backdrop-blur-sm rounded-xl border border-border/50 overflow-hidden">
+                    <TrackVisualization
+                      sections={sections}
+                      trains={trains}
+                      selectedTrain={selectedTrainId}
+                      onTrainSelect={setSelectedTrainId}
+                    />
+                  </div>
+                  
+                  {/* Active Tab Content */}
+                  <div className="bg-card/50 backdrop-blur-sm rounded-xl border border-border/50 overflow-hidden">
+                    <div className="px-4 py-2.5 border-b border-border/30 bg-muted/20">
+                      <h2 className="text-sm font-semibold text-foreground">{getTabTitle()}</h2>
+                    </div>
+                    <div className="p-3 lg:p-4 min-h-[300px]">
+                      {renderActiveContent()}
+                    </div>
+                  </div>
+                </motion.div>
+
+                {/* Right Panel - Train Details */}
+                <motion.div 
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="col-span-12 lg:col-span-3 xl:col-span-3"
+                >
+                  <div className="bg-card/50 backdrop-blur-sm rounded-xl border border-border/50 overflow-hidden h-full min-h-[400px] lg:min-h-[500px]">
+                    {selectedTrain ? (
+                      <TrainDetails
+                        train={selectedTrain}
+                        onClose={() => setSelectedTrainId(null)}
+                      />
+                    ) : (
+                      <div className="h-full flex flex-col items-center justify-center p-6 text-center">
+                        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-muted/80 to-muted/40 flex items-center justify-center mb-4 border border-border/30">
+                          <MousePointerClick className="w-6 h-6 text-muted-foreground" />
+                        </div>
+                        <h3 className="text-sm font-semibold text-foreground mb-1.5">
+                          Select a Train
+                        </h3>
+                        <p className="text-xs text-muted-foreground max-w-[180px] leading-relaxed">
+                          Click on a train from the list or track visualization to view details
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
               </div>
             </div>
-
-            {/* Right Panel - Train Details */}
-            <div className="col-span-12 lg:col-span-3 xl:col-span-3">
-              {selectedTrain ? (
-                <TrainDetails
-                  train={selectedTrain}
-                  onClose={() => setSelectedTrainId(null)}
-                />
-              ) : (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  className="bg-card border border-border rounded-lg p-6 h-full flex flex-col items-center justify-center text-center"
-                >
-                  <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-                    <svg
-                      className="w-8 h-8 text-muted-foreground"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={1.5}
-                        d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"
-                      />
-                    </svg>
-                  </div>
-                  <h3 className="text-sm font-medium text-foreground mb-2">
-                    Select a Train
-                  </h3>
-                  <p className="text-xs text-muted-foreground max-w-[200px]">
-                    Click on a train from the list or track visualization to view details and send commands
-                  </p>
-                </motion.div>
-              )}
-            </div>
-          </div>
+          </ScrollArea>
         </main>
       </div>
 
       {/* Footer Status Bar */}
-      <footer className="border-t border-border bg-card/50 px-4 lg:px-6 py-2">
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
-          <div className="flex items-center gap-4">
-            <span>Last sync: Just now</span>
-            <span className="hidden sm:inline">•</span>
+      <footer className="border-t border-border/30 bg-card/50 backdrop-blur-sm px-4 lg:px-6 py-2">
+        <div className="flex items-center justify-between text-[10px] lg:text-xs text-muted-foreground">
+          <div className="flex items-center gap-3 lg:gap-4">
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-success" />
+              Synced
+            </span>
+            <span className="hidden sm:inline text-border/50">•</span>
             <span className="hidden sm:inline">Network: Connected</span>
-            <span className="hidden md:inline">•</span>
+            <span className="hidden md:inline text-border/50">•</span>
             <span className="hidden md:inline">TMS Integration: Active</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
             <span>All systems operational</span>
           </div>
