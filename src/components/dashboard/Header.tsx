@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Activity, Radio, Clock, Shield, LogOut, User, Map, Wifi, Zap } from 'lucide-react';
+import { Radio, Clock, Shield, LogOut, User, Map, Wifi, Zap } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,6 +14,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { SoundControl } from './SoundControl';
 import { cn } from '@/lib/utils';
+import railanukritiLogo from '@/assets/railanukriti-logo.png';
 
 export const Header = () => {
   const navigate = useNavigate();
@@ -66,8 +67,8 @@ export const Header = () => {
             className="flex items-center gap-3"
           >
             <div className="relative">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center border border-primary/30 shadow-lg shadow-primary/10">
-                <Activity className="w-5 h-5 text-primary" />
+              <div className="w-10 h-10 rounded-xl overflow-hidden border border-primary/30 shadow-lg shadow-primary/10">
+                <img src={railanukritiLogo} alt="RailAnukriti" className="w-full h-full object-cover" />
               </div>
               <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-success rounded-full animate-pulse ring-2 ring-card" />
             </div>
