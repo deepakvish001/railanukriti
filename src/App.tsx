@@ -28,6 +28,7 @@ import Analytics from "./pages/dashboard/Analytics";
 import Audit from "./pages/dashboard/Audit";
 import Export from "./pages/dashboard/Export";
 import DataImport from "./pages/dashboard/DataImport";
+import Infrastructure from "./pages/dashboard/Infrastructure";
 
 const queryClient = new QueryClient();
 
@@ -71,6 +72,7 @@ const App = () => {
                   <Route path="/audit" element={<ProtectedRoute><Audit /></ProtectedRoute>} />
                   <Route path="/export" element={<ProtectedRoute><Export /></ProtectedRoute>} />
                   <Route path="/data-import" element={<ProtectedRoute><DataImport /></ProtectedRoute>} />
+                  <Route path="/infrastructure" element={<ProtectedRoute><Infrastructure /></ProtectedRoute>} />
                   
                   {/* Map Route */}
                   <Route path="/map" element={<ProtectedRoute><Map /></ProtectedRoute>} />

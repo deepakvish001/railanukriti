@@ -200,6 +200,54 @@ export type Database = {
           },
         ]
       }
+      crossovers: {
+        Row: {
+          created_at: string
+          crossover_type: string
+          from_track_id: number | null
+          id: number
+          max_speed: number | null
+          position_km: number | null
+          status: string | null
+          to_track_id: number | null
+        }
+        Insert: {
+          created_at?: string
+          crossover_type?: string
+          from_track_id?: number | null
+          id?: number
+          max_speed?: number | null
+          position_km?: number | null
+          status?: string | null
+          to_track_id?: number | null
+        }
+        Update: {
+          created_at?: string
+          crossover_type?: string
+          from_track_id?: number | null
+          id?: number
+          max_speed?: number | null
+          position_km?: number | null
+          status?: string | null
+          to_track_id?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crossovers_from_track_id_fkey"
+            columns: ["from_track_id"]
+            isOneToOne: false
+            referencedRelation: "track_sections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crossovers_to_track_id_fkey"
+            columns: ["to_track_id"]
+            isOneToOne: false
+            referencedRelation: "track_sections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       data_imports: {
         Row: {
           completed_at: string | null
@@ -301,6 +349,53 @@ export type Database = {
           weather_condition?: string | null
         }
         Relationships: []
+      }
+      loop_lines: {
+        Row: {
+          capacity_trains: number | null
+          created_at: string
+          direction: string | null
+          id: number
+          length_m: number
+          loop_name: string
+          max_speed: number
+          status: string | null
+          track_section_id: number | null
+          updated_at: string
+        }
+        Insert: {
+          capacity_trains?: number | null
+          created_at?: string
+          direction?: string | null
+          id?: number
+          length_m?: number
+          loop_name: string
+          max_speed?: number
+          status?: string | null
+          track_section_id?: number | null
+          updated_at?: string
+        }
+        Update: {
+          capacity_trains?: number | null
+          created_at?: string
+          direction?: string | null
+          id?: number
+          length_m?: number
+          loop_name?: string
+          max_speed?: number
+          status?: string | null
+          track_section_id?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "loop_lines_track_section_id_fkey"
+            columns: ["track_section_id"]
+            isOneToOne: false
+            referencedRelation: "track_sections"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -562,38 +657,127 @@ export type Database = {
         }
         Relationships: []
       }
+      throughput_calculations: {
+        Row: {
+          base_capacity: number
+          block_length_km: number
+          calculation_date: string
+          created_at: string
+          crossover_bonus: number | null
+          final_capacity: number
+          has_crossovers: boolean | null
+          has_loops: boolean | null
+          id: string
+          loop_bonus: number | null
+          loop_count: number | null
+          signalling_type: string
+          track_count: number
+          track_section_id: number | null
+          trains_per_hour: number | null
+          utilization_percent: number | null
+        }
+        Insert: {
+          base_capacity: number
+          block_length_km: number
+          calculation_date?: string
+          created_at?: string
+          crossover_bonus?: number | null
+          final_capacity: number
+          has_crossovers?: boolean | null
+          has_loops?: boolean | null
+          id?: string
+          loop_bonus?: number | null
+          loop_count?: number | null
+          signalling_type: string
+          track_count?: number
+          track_section_id?: number | null
+          trains_per_hour?: number | null
+          utilization_percent?: number | null
+        }
+        Update: {
+          base_capacity?: number
+          block_length_km?: number
+          calculation_date?: string
+          created_at?: string
+          crossover_bonus?: number | null
+          final_capacity?: number
+          has_crossovers?: boolean | null
+          has_loops?: boolean | null
+          id?: string
+          loop_bonus?: number | null
+          loop_count?: number | null
+          signalling_type?: string
+          track_count?: number
+          track_section_id?: number | null
+          trains_per_hour?: number | null
+          utilization_percent?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "throughput_calculations_track_section_id_fkey"
+            columns: ["track_section_id"]
+            isOneToOne: false
+            referencedRelation: "track_sections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       track_sections: {
         Row: {
+          block_length_km: number | null
           created_at: string
           gradient: number
+          has_crossover: boolean | null
+          has_loop: boolean | null
           id: number
           length: number
+          loop_length_m: number | null
+          loop_speed: number | null
           max_speed: number
           name: string
           occupied_by: string | null
+          signalling_type: string | null
           status: Database["public"]["Enums"]["track_status"]
+          theoretical_capacity: number | null
+          track_count: number | null
           updated_at: string
         }
         Insert: {
+          block_length_km?: number | null
           created_at?: string
           gradient?: number
+          has_crossover?: boolean | null
+          has_loop?: boolean | null
           id?: number
           length?: number
+          loop_length_m?: number | null
+          loop_speed?: number | null
           max_speed?: number
           name: string
           occupied_by?: string | null
+          signalling_type?: string | null
           status?: Database["public"]["Enums"]["track_status"]
+          theoretical_capacity?: number | null
+          track_count?: number | null
           updated_at?: string
         }
         Update: {
+          block_length_km?: number | null
           created_at?: string
           gradient?: number
+          has_crossover?: boolean | null
+          has_loop?: boolean | null
           id?: number
           length?: number
+          loop_length_m?: number | null
+          loop_speed?: number | null
           max_speed?: number
           name?: string
           occupied_by?: string | null
+          signalling_type?: string | null
           status?: Database["public"]["Enums"]["track_status"]
+          theoretical_capacity?: number | null
+          track_count?: number | null
           updated_at?: string
         }
         Relationships: []
