@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.forecast-congestion]
 verify_jwt = false
+
+[functions.infrastructure-recommendations]
+verify_jwt = false
