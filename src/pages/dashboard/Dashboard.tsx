@@ -143,7 +143,7 @@ const Dashboard = () => {
             <h2 className="text-sm font-medium text-muted-foreground mb-3">Train Management</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Train List */}
-              <Card className="bg-card/50 border-border/50 h-[420px] flex flex-col">
+              <Card className="bg-card/50 border-border/50 h-[520px] flex flex-col">
                 <CardHeader className="py-3 px-4 border-b border-border/30 shrink-0">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
                     <TrainIcon className="h-4 w-4 text-primary" />
@@ -163,7 +163,7 @@ const Dashboard = () => {
               </Card>
 
               {/* Train Details */}
-              <Card className="bg-card/50 border-border/50 h-[420px] flex flex-col">
+              <Card className="bg-card/50 border-border/50 h-[520px] flex flex-col">
                 <CardHeader className="py-3 px-4 border-b border-border/30 shrink-0">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
                     Train Details
@@ -174,7 +174,7 @@ const Dashboard = () => {
                     )}
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="p-4 flex-1 overflow-auto">
+                <CardContent className="p-4 flex-1">
                   {selectedTrain ? (
                     <TrainDetails
                       train={selectedTrain}
