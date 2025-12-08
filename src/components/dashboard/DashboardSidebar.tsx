@@ -1,7 +1,7 @@
 import {
   Sparkles, Bell, FlaskConical, History, BarChart3, AlertTriangle,
   GanttChart, Download, TrendingUp, Target, Brain, Train, ChevronLeft, ChevronRight,
-  LayoutDashboard
+  LayoutDashboard, Upload
 } from 'lucide-react';
 import {
   Sidebar,
@@ -44,6 +44,7 @@ const analyticsItems = [
 ];
 
 const systemItems = [
+  { id: 'data-import', title: 'Data Import', icon: Upload, path: '/data-import' },
   { id: 'audit', title: 'Audit Log', icon: History, path: '/audit' },
   { id: 'export', title: 'Export Data', icon: Download, path: '/export' },
 ];
