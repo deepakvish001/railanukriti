@@ -133,12 +133,13 @@ const DashboardContent = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background flex flex-col w-full">
-      <Header />
+    <div className="min-h-screen bg-background flex w-full">
+      {/* Left Sidebar - Navigation */}
+      <DashboardSidebar activeTab={activeTab} onTabChange={setActiveTab} />
       
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left Sidebar - Navigation */}
-        <DashboardSidebar activeTab={activeTab} onTabChange={setActiveTab} />
+      {/* Main Content Wrapper */}
+      <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
+        <Header />
         
         {/* Main Content Area */}
         <main className="flex-1 flex flex-col overflow-hidden bg-gradient-to-br from-background via-background to-muted/10">
@@ -230,27 +231,27 @@ const DashboardContent = () => {
             </div>
           </ScrollArea>
         </main>
+        
+        {/* Footer Status Bar */}
+        <footer className="border-t border-border/30 bg-card/50 backdrop-blur-sm px-4 lg:px-6 py-2">
+          <div className="flex items-center justify-between text-[10px] lg:text-xs text-muted-foreground">
+            <div className="flex items-center gap-3 lg:gap-4">
+              <span className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-success" />
+                Synced
+              </span>
+              <span className="hidden sm:inline text-border/50">•</span>
+              <span className="hidden sm:inline">Network: Connected</span>
+              <span className="hidden md:inline text-border/50">•</span>
+              <span className="hidden md:inline">TMS Integration: Active</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+              <span>All systems operational</span>
+            </div>
+          </div>
+        </footer>
       </div>
-
-      {/* Footer Status Bar */}
-      <footer className="border-t border-border/30 bg-card/50 backdrop-blur-sm px-4 lg:px-6 py-2">
-        <div className="flex items-center justify-between text-[10px] lg:text-xs text-muted-foreground">
-          <div className="flex items-center gap-3 lg:gap-4">
-            <span className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-success" />
-              Synced
-            </span>
-            <span className="hidden sm:inline text-border/50">•</span>
-            <span className="hidden sm:inline">Network: Connected</span>
-            <span className="hidden md:inline text-border/50">•</span>
-            <span className="hidden md:inline">TMS Integration: Active</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-            <span>All systems operational</span>
-          </div>
-        </div>
-      </footer>
     </div>
   );
 };
