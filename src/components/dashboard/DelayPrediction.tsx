@@ -351,11 +351,7 @@ export const DelayPrediction = () => {
 
       {/* Footer */}
       <div className="pt-3 border-t border-border">
-        <div className="flex items-center justify-between text-xs">
-          <span className="text-muted-foreground flex items-center gap-2">
-            <Brain className="w-3.5 h-3.5" />
-            Powered by Lovable AI
-          </span>
+        <div className="flex items-center justify-end text-xs">
           <span className="flex items-center gap-1.5 text-primary">
             <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
             Predictive Analytics Active
