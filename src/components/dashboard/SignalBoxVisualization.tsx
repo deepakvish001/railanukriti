@@ -1,11 +1,19 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Train, TrackSection } from '@/types/railway';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { useLogAction } from '@/hooks/useAuditLog';
+
+// Train position tracking for animation
+interface TrainPosition {
+  trainId: string;
+  sectionIndex: number;
+  progress: number; // 0-1 progress within section
+  previousPositions: number[]; // For trail effect
+}
 
 interface SignalBoxVisualizationProps {
   sections: TrackSection[];
@@ -123,7 +131,8 @@ const BlockIndicator = ({
   hasTrain,
   train,
   isSelected,
-  onTrainClick
+  onTrainClick,
+  trainProgress = 0
 }: { 
   number: number; 
   occupied: boolean;
@@ -135,9 +144,10 @@ const BlockIndicator = ({
   train?: Train;
   isSelected?: boolean;
   onTrainClick?: () => void;
+  trainProgress?: number;
 }) => {
   return (
-    <div className="flex flex-col items-center">
+    <div className="flex flex-col items-center relative">
       {hasSignal && signalId && onSignalChange && (
         <div className="mb-1">
           <Signal 
@@ -148,32 +158,41 @@ const BlockIndicator = ({
         </div>
       )}
       <div className="relative">
-        <div 
+        <motion.div 
           className={cn(
             'w-6 h-8 rounded-sm border-2 flex items-center justify-center text-[8px] font-mono font-bold transition-all',
             occupied 
               ? 'bg-red-500/20 border-red-500 text-red-400' 
               : 'bg-zinc-800 border-zinc-600 text-zinc-400'
           )}
+          animate={occupied ? { borderColor: ['#ef4444', '#f87171', '#ef4444'] } : {}}
+          transition={{ duration: 1, repeat: Infinity }}
         >
           {String(number).padStart(2, '0')}
-        </div>
-        {hasTrain && train && (
-          <motion.button
-            onClick={onTrainClick}
-            whileHover={{ scale: 1.1 }}
-            className={cn(
-              'absolute -top-6 left-1/2 -translate-x-1/2 w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold cursor-pointer transition-all',
-              train.type === 'express' && 'bg-train-express text-white',
-              train.type === 'freight' && 'bg-train-freight text-white',
-              train.type === 'local' && 'bg-train-local text-white',
-              train.type === 'special' && 'bg-train-special text-white',
-              isSelected && 'ring-2 ring-white ring-offset-1 ring-offset-background'
-            )}
-          >
-            {train.type[0].toUpperCase()}
-          </motion.button>
-        )}
+        </motion.div>
+        
+        {/* Animated train position */}
+        <AnimatePresence>
+          {hasTrain && train && (
+            <motion.div
+              className="absolute -top-8 left-0 right-0 flex justify-center"
+              style={{ 
+                x: `${(trainProgress - 0.5) * 30}px` // Animate position within block
+              }}
+            >
+              {/* Trail effect */}
+              <TrainTrail train={train} />
+              
+              {/* Train marker */}
+              <AnimatedTrainMarker
+                train={train}
+                isSelected={isSelected || false}
+                onClick={() => onTrainClick?.()}
+                animatedProgress={trainProgress}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -317,6 +336,94 @@ const PointSwitch = ({
   );
 };
 
+// Animated train marker component
+const AnimatedTrainMarker = ({
+  train,
+  isSelected,
+  onClick,
+  animatedProgress = 0
+}: {
+  train: Train;
+  isSelected: boolean;
+  onClick: () => void;
+  animatedProgress?: number;
+}) => {
+  const typeColors = {
+    express: 'bg-train-express',
+    freight: 'bg-train-freight',
+    local: 'bg-train-local',
+    special: 'bg-train-special'
+  };
+
+  return (
+    <motion.button
+      onClick={onClick}
+      initial={{ scale: 0.8, opacity: 0 }}
+      animate={{ 
+        scale: 1, 
+        opacity: 1,
+        x: animatedProgress * 100 // Animate within block
+      }}
+      exit={{ scale: 0.8, opacity: 0 }}
+      whileHover={{ scale: 1.15 }}
+      transition={{ 
+        type: "spring", 
+        stiffness: 300, 
+        damping: 25,
+        x: { duration: 2, ease: "linear" }
+      }}
+      className={cn(
+        'relative w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold cursor-pointer z-10',
+        typeColors[train.type],
+        'text-white shadow-lg',
+        isSelected && 'ring-2 ring-white ring-offset-2 ring-offset-background'
+      )}
+    >
+      {train.type[0].toUpperCase()}
+      {/* Movement indicator pulse */}
+      {train.status === 'on-time' && (
+        <motion.div
+          className="absolute inset-0 rounded-full bg-white/30"
+          animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
+          transition={{ duration: 1.5, repeat: Infinity }}
+        />
+      )}
+      {/* Direction arrow */}
+      <motion.div 
+        className="absolute -right-1 top-1/2 -translate-y-1/2"
+        animate={{ x: [0, 3, 0] }}
+        transition={{ duration: 0.8, repeat: Infinity }}
+      >
+        <svg width="6" height="6" viewBox="0 0 6 6" fill="currentColor">
+          <path d="M0 0L6 3L0 6V0Z" />
+        </svg>
+      </motion.div>
+    </motion.button>
+  );
+};
+
+// Train trail effect
+const TrainTrail = ({ train }: { train: Train }) => {
+  const typeColors = {
+    express: 'from-train-express/60',
+    freight: 'from-train-freight/60',
+    local: 'from-train-local/60',
+    special: 'from-train-special/60'
+  };
+
+  return (
+    <motion.div
+      initial={{ width: 0, opacity: 0 }}
+      animate={{ width: 40, opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className={cn(
+        'absolute h-1 rounded-full bg-gradient-to-r to-transparent -left-10 top-1/2 -translate-y-1/2',
+        typeColors[train.type]
+      )}
+    />
+  );
+};
+
 export const SignalBoxVisualization = ({ 
   sections, 
   trains, 
@@ -324,6 +431,37 @@ export const SignalBoxVisualization = ({
   onTrainSelect 
 }: SignalBoxVisualizationProps) => {
   const { logAction } = useLogAction();
+  
+  // Animated train positions
+  const [trainPositions, setTrainPositions] = useState<Map<string, { progress: number; moving: boolean }>>(new Map());
+  const animationRef = useRef<number>();
+  
+  // Simulate train movement animation
+  useEffect(() => {
+    const updatePositions = () => {
+      setTrainPositions(prev => {
+        const newPositions = new Map(prev);
+        trains.forEach(train => {
+          if (train.status === 'on-time' || train.status === 'delayed') {
+            const current = newPositions.get(train.id) || { progress: 0, moving: true };
+            const newProgress = (current.progress + 0.005) % 1; // Continuous movement
+            newPositions.set(train.id, { progress: newProgress, moving: true });
+          } else if (train.status === 'halted') {
+            const current = newPositions.get(train.id) || { progress: 0.5, moving: false };
+            newPositions.set(train.id, { ...current, moving: false });
+          }
+        });
+        return newPositions;
+      });
+    };
+
+    animationRef.current = window.setInterval(updatePositions, 50);
+    return () => {
+      if (animationRef.current) {
+        clearInterval(animationRef.current);
+      }
+    };
+  }, [trains]);
   
   // Local signal states that can be overridden by operator
   const [signalOverrides, setSignalOverrides] = useState<SignalState>({});
@@ -473,10 +611,22 @@ export const SignalBoxVisualization = ({
       </div>
 
       {/* Control hint */}
-      <div className="px-3 py-1.5 bg-primary/5 border-b border-border/30">
+      <div className="px-3 py-1.5 bg-primary/5 border-b border-border/30 flex items-center justify-between">
         <p className="text-[9px] text-primary/80">
           💡 Click signals to override state • Click points to toggle routing
         </p>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <motion.div 
+              className="w-2 h-2 rounded-full bg-green-500"
+              animate={{ scale: [1, 1.3, 1] }}
+              transition={{ duration: 1, repeat: Infinity }}
+            />
+            <span className="text-[9px] text-muted-foreground">
+              {trains.filter(t => t.status === 'on-time' || t.status === 'delayed').length} trains moving
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Main visualization */}
@@ -499,6 +649,7 @@ export const SignalBoxVisualization = ({
                 const train = getTrainAtSection(section.id);
                 const signalId = `UP-S${section.id}`;
                 const hasSignal = idx % 2 === 0;
+                const progress = train ? (trainPositions.get(train.id)?.progress || 0) : 0;
                 return (
                   <div key={section.id} className="flex items-center">
                     <BlockIndicator
@@ -512,6 +663,7 @@ export const SignalBoxVisualization = ({
                       train={train}
                       isSelected={train?.id === selectedTrain}
                       onTrainClick={() => train && onTrainSelect(train.id)}
+                      trainProgress={progress}
                     />
                     <TrackLine status={section.status === 'occupied' ? 'occupied' : 'clear'} />
                   </div>
@@ -542,6 +694,7 @@ export const SignalBoxVisualization = ({
                 const train = getTrainAtSection(section.id);
                 const signalId = `UP-S${section.id}`;
                 const hasSignal = idx % 2 === 0;
+                const progress = train ? (trainPositions.get(train.id)?.progress || 0) : 0;
                 return (
                   <div key={section.id} className="flex items-center">
                     <TrackLine status={section.status === 'occupied' ? 'occupied' : 'clear'} />
@@ -556,6 +709,7 @@ export const SignalBoxVisualization = ({
                       train={train}
                       isSelected={train?.id === selectedTrain}
                       onTrainClick={() => train && onTrainSelect(train.id)}
+                      trainProgress={progress}
                     />
                   </div>
                 );
