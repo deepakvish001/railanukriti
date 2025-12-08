@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { motion, AnimatePresence, useSpring, useMotionValue } from 'framer-motion';
 import { Train, TrackSection } from '@/types/railway';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { useLogAction } from '@/hooks/useAuditLog';
 import { useNotificationSound } from '@/hooks/useNotificationSound';
+import { useTrainAnimation } from '@/hooks/useTrainAnimation';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -192,7 +193,9 @@ const BlockIndicator = ({
   onRouteSet,
   trainProgress = 0,
   signalLocked,
-  signalLockedBy
+  signalLockedBy,
+  trainTrail = [],
+  isTrainMoving = false
 }: { 
   number: number; 
   occupied: boolean;
@@ -208,6 +211,8 @@ const BlockIndicator = ({
   trainProgress?: number;
   signalLocked?: boolean;
   signalLockedBy?: string;
+  trainTrail?: number[];
+  isTrainMoving?: boolean;
 }) => {
   return (
     <div className="flex flex-col items-center relative">
@@ -240,13 +245,13 @@ const BlockIndicator = ({
         <AnimatePresence>
           {hasTrain && train && (
             <motion.div
-              className="absolute -top-12 left-0 right-0 flex justify-center"
-              style={{ 
-                x: `${(trainProgress - 0.5) * 40}px`
-              }}
+              className="absolute -top-14 left-0 right-0 flex justify-center"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
             >
               {/* Trail effect */}
-              <TrainTrail train={train} />
+              <TrainTrail train={train} isMoving={isTrainMoving} />
               
               {/* Train marker */}
               <AnimatedTrainMarker
@@ -255,6 +260,8 @@ const BlockIndicator = ({
                 onClick={() => onTrainClick?.()}
                 onDoubleClick={() => onRouteSet?.()}
                 animatedProgress={trainProgress}
+                trail={trainTrail}
+                isMoving={isTrainMoving}
               />
             </motion.div>
           )}
@@ -450,20 +457,37 @@ const PointSwitch = ({
   );
 };
 
-// Animated train marker component
+// Enhanced Animated train marker with smooth spring physics
 const AnimatedTrainMarker = ({
   train,
   isSelected,
   onClick,
   onDoubleClick,
-  animatedProgress = 0
+  animatedProgress = 0,
+  trail = [],
+  isMoving = false
 }: {
   train: Train;
   isSelected: boolean;
   onClick: () => void;
   onDoubleClick?: () => void;
   animatedProgress?: number;
+  trail?: number[];
+  isMoving?: boolean;
 }) => {
+  // Spring-based position for ultra-smooth movement
+  const x = useMotionValue(animatedProgress * 40 - 20);
+  const springX = useSpring(x, { 
+    stiffness: 120, 
+    damping: 20,
+    mass: 0.8 
+  });
+  
+  // Update spring target when progress changes
+  useEffect(() => {
+    x.set((animatedProgress - 0.5) * 40);
+  }, [animatedProgress, x]);
+
   const typeColors = {
     express: 'bg-train-express',
     freight: 'bg-train-freight',
@@ -471,126 +495,264 @@ const AnimatedTrainMarker = ({
     special: 'bg-train-special'
   };
 
+  const typeGlowColors = {
+    express: 'shadow-train-express/50',
+    freight: 'shadow-train-freight/50',
+    local: 'shadow-train-local/50',
+    special: 'shadow-train-special/50'
+  };
+
   // Speed thresholds for color coding
   const getSpeedColor = (speed: number) => {
-    if (speed === 0) return { bg: 'bg-red-500', text: 'text-red-400', label: 'STOP' };
-    if (speed < 30) return { bg: 'bg-amber-500', text: 'text-amber-400', label: 'SLOW' };
-    if (speed < 80) return { bg: 'bg-yellow-500', text: 'text-yellow-400', label: 'MED' };
-    return { bg: 'bg-green-500', text: 'text-green-400', label: 'NORM' };
+    if (speed === 0) return { bg: 'bg-red-500', text: 'text-red-400', label: 'STOP', glow: 'shadow-red-500/50' };
+    if (speed < 30) return { bg: 'bg-amber-500', text: 'text-amber-400', label: 'SLOW', glow: 'shadow-amber-500/30' };
+    if (speed < 80) return { bg: 'bg-yellow-500', text: 'text-yellow-400', label: 'MED', glow: 'shadow-yellow-500/30' };
+    return { bg: 'bg-green-500', text: 'text-green-400', label: 'NORM', glow: 'shadow-green-500/30' };
   };
 
   const speedInfo = getSpeedColor(train.speed);
 
+  // Calculate wheel rotation speed based on train speed
+  const wheelRotationDuration = Math.max(0.2, 1 - (train.speed / 150));
+
   return (
     <div className="flex flex-col items-center gap-1">
+      {/* Trail particles - show movement history */}
+      {isMoving && trail.length > 0 && (
+        <div className="absolute inset-0 pointer-events-none">
+          {trail.slice(-5).map((pos, i) => (
+            <motion.div
+              key={i}
+              className={cn(
+                'absolute w-2 h-2 rounded-full',
+                typeColors[train.type]
+              )}
+              style={{
+                left: `${pos * 100}%`,
+                top: '50%',
+                transform: 'translateY(-50%)',
+              }}
+              initial={{ opacity: 0.5, scale: 0.8 }}
+              animate={{ 
+                opacity: 0.1 * (i + 1) / trail.length,
+                scale: 0.4 + (0.1 * i / trail.length)
+              }}
+              transition={{ duration: 0.1 }}
+            />
+          ))}
+        </div>
+      )}
+      
       <motion.button
         onClick={onClick}
         onDoubleClick={onDoubleClick}
+        style={{ x: springX }}
         initial={{ scale: 0.8, opacity: 0 }}
-        animate={{ 
-          scale: 1, 
-          opacity: 1,
-          x: animatedProgress * 100
-        }}
+        animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.8, opacity: 0 }}
-        whileHover={{ scale: 1.2 }}
-        transition={{ 
-          type: "spring", 
-          stiffness: 300, 
-          damping: 25,
-          x: { duration: 2, ease: "linear" }
-        }}
+        whileHover={{ scale: 1.15 }}
+        whileTap={{ scale: 0.95 }}
         className={cn(
-          'relative w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold cursor-pointer z-10 shadow-xl',
+          'relative w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold cursor-pointer z-10',
           typeColors[train.type],
-          'text-white',
+          'text-white shadow-lg',
+          typeGlowColors[train.type],
           isSelected && 'ring-3 ring-white ring-offset-2 ring-offset-background'
         )}
         title={`${train.number} - ${train.speed} km/h - Double-click to set route`}
       >
         {train.type[0].toUpperCase()}
-        {/* Movement indicator pulse */}
-        {train.status === 'on-time' && train.speed > 0 && (
+        
+        {/* Smooth continuous glow for moving trains */}
+        {isMoving && (
           <motion.div
-            className="absolute inset-0 rounded-full bg-white/30"
-            animate={{ scale: [1, 1.6, 1], opacity: [0.5, 0, 0.5] }}
-            transition={{ duration: 1.2, repeat: Infinity }}
+            className={cn('absolute inset-0 rounded-full', typeColors[train.type])}
+            animate={{ 
+              scale: [1, 1.4, 1],
+              opacity: [0.6, 0, 0.6]
+            }}
+            transition={{ 
+              duration: 0.8 + (1 - train.speed / 120) * 0.5,
+              repeat: Infinity,
+              ease: "easeInOut"
+            }}
           />
         )}
-        {/* Direction arrow - only show when moving */}
+        
+        {/* Wheel rotation effect */}
+        {isMoving && (
+          <motion.div 
+            className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full flex justify-between px-1"
+            animate={{ rotate: 360 }}
+            transition={{ 
+              duration: wheelRotationDuration, 
+              repeat: Infinity, 
+              ease: "linear" 
+            }}
+          >
+            <div className="w-1.5 h-1.5 rounded-full bg-white/50" />
+            <div className="w-1.5 h-1.5 rounded-full bg-white/50" />
+          </motion.div>
+        )}
+        
+        {/* Direction arrow with speed-based animation */}
         {train.speed > 0 && (
           <motion.div 
-            className="absolute -right-2 top-1/2 -translate-y-1/2"
-            animate={{ x: [0, 4, 0] }}
-            transition={{ duration: Math.max(0.3, 1 - train.speed / 120), repeat: Infinity }}
+            className="absolute -right-3 top-1/2 -translate-y-1/2"
+            animate={{ 
+              x: [0, 6, 0],
+              opacity: [0.8, 1, 0.8]
+            }}
+            transition={{ 
+              duration: Math.max(0.15, 0.6 - train.speed / 200), 
+              repeat: Infinity,
+              ease: "easeInOut"
+            }}
           >
-            <svg width="8" height="8" viewBox="0 0 6 6" fill="currentColor">
+            <svg width="10" height="10" viewBox="0 0 6 6" fill="currentColor">
               <path d="M0 0L6 3L0 6V0Z" />
             </svg>
           </motion.div>
         )}
-        {/* Stopped indicator */}
+        
+        {/* Stopped indicator with dramatic pulse */}
         {train.speed === 0 && (
-          <motion.div 
-            className="absolute inset-0 rounded-full border-3 border-red-500"
-            animate={{ opacity: [1, 0.5, 1] }}
-            transition={{ duration: 0.5, repeat: Infinity }}
-          />
+          <>
+            <motion.div 
+              className="absolute inset-0 rounded-full border-2 border-red-500"
+              animate={{ 
+                scale: [1, 1.2, 1],
+                opacity: [1, 0.3, 1] 
+              }}
+              transition={{ duration: 0.6, repeat: Infinity }}
+            />
+            <motion.div 
+              className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full flex items-center justify-center"
+              animate={{ scale: [1, 1.2, 1] }}
+              transition={{ duration: 0.4, repeat: Infinity }}
+            >
+              <span className="text-[6px] font-bold">!</span>
+            </motion.div>
+          </>
         )}
       </motion.button>
       
-      {/* Train number label */}
+      {/* Train number label with subtle float */}
       <motion.div
         initial={{ opacity: 0, y: -5 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="text-[10px] font-mono font-bold text-foreground bg-zinc-900/90 px-1.5 py-0.5 rounded border border-zinc-700"
+        animate={{ 
+          opacity: 1, 
+          y: isMoving ? [0, -2, 0] : 0 
+        }}
+        transition={{ 
+          y: { duration: 1.5, repeat: Infinity, ease: "easeInOut" }
+        }}
+        className="text-[10px] font-mono font-bold text-foreground bg-zinc-900/95 px-2 py-0.5 rounded border border-zinc-700 shadow-md"
       >
         {train.number}
       </motion.div>
       
-      {/* Speed indicator badge */}
+      {/* Enhanced speed indicator with live speedometer effect */}
       <motion.div
         initial={{ opacity: 0, y: -5 }}
         animate={{ opacity: 1, y: 0 }}
         className={cn(
-          'flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-mono font-bold',
-          'bg-zinc-900/90 border-2',
+          'flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-mono font-bold',
+          'bg-zinc-900/95 border-2 shadow-lg',
           train.speed === 0 && 'border-red-500/70',
           train.speed > 0 && train.speed < 30 && 'border-amber-500/70',
           train.speed >= 30 && train.speed < 80 && 'border-yellow-500/70',
-          train.speed >= 80 && 'border-green-500/70'
+          train.speed >= 80 && 'border-green-500/70',
+          speedInfo.glow
         )}
       >
+        {/* Animated speed indicator dot */}
         <motion.div 
-          className={cn('w-2 h-2 rounded-full', speedInfo.bg)}
-          animate={train.speed > 0 ? { scale: [1, 1.3, 1] } : { opacity: [1, 0.4, 1] }}
-          transition={{ duration: train.speed > 0 ? 0.5 : 0.3, repeat: Infinity }}
+          className={cn('w-2.5 h-2.5 rounded-full', speedInfo.bg)}
+          animate={
+            train.speed > 0 
+              ? { 
+                  scale: [1, 1.4, 1],
+                  boxShadow: ['0 0 0px currentColor', '0 0 8px currentColor', '0 0 0px currentColor']
+                } 
+              : { opacity: [1, 0.3, 1] }
+          }
+          transition={{ 
+            duration: train.speed > 0 ? Math.max(0.2, 0.6 - train.speed / 200) : 0.4, 
+            repeat: Infinity,
+            ease: "easeInOut"
+          }}
         />
-        <span className={speedInfo.text}>{train.speed} km/h</span>
+        <span className={cn(speedInfo.text, 'tabular-nums')}>
+          {train.speed} <span className="text-[8px] opacity-70">km/h</span>
+        </span>
       </motion.div>
     </div>
   );
 };
 
-// Train trail effect
-const TrainTrail = ({ train }: { train: Train }) => {
+// Enhanced Train trail effect with particle system
+const TrainTrail = ({ train, isMoving }: { train: Train; isMoving?: boolean }) => {
   const typeColors = {
-    express: 'from-train-express/60',
-    freight: 'from-train-freight/60',
-    local: 'from-train-local/60',
-    special: 'from-train-special/60'
+    express: 'from-train-express/80',
+    freight: 'from-train-freight/80',
+    local: 'from-train-local/80',
+    special: 'from-train-special/80'
   };
 
+  const typeSolidColors = {
+    express: 'bg-train-express',
+    freight: 'bg-train-freight',
+    local: 'bg-train-local',
+    special: 'bg-train-special'
+  };
+
+  if (!isMoving) return null;
+
   return (
-    <motion.div
-      initial={{ width: 0, opacity: 0 }}
-      animate={{ width: 40, opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className={cn(
-        'absolute h-1 rounded-full bg-gradient-to-r to-transparent -left-10 top-1/2 -translate-y-1/2',
-        typeColors[train.type]
+    <>
+      {/* Main trail gradient */}
+      <motion.div
+        initial={{ width: 0, opacity: 0 }}
+        animate={{ 
+          width: Math.min(60, 20 + train.speed * 0.4), 
+          opacity: 0.8 
+        }}
+        exit={{ opacity: 0, width: 0 }}
+        transition={{ duration: 0.3 }}
+        className={cn(
+          'absolute h-1.5 rounded-full bg-gradient-to-r to-transparent -left-14 top-1/2 -translate-y-1/2',
+          typeColors[train.type]
+        )}
+      />
+      
+      {/* Particle effects for high-speed trains */}
+      {train.speed > 50 && (
+        <>
+          {[...Array(3)].map((_, i) => (
+            <motion.div
+              key={i}
+              className={cn('absolute w-1 h-1 rounded-full opacity-60', typeSolidColors[train.type])}
+              style={{
+                left: -20 - (i * 8),
+                top: '50%',
+              }}
+              animate={{
+                x: [-10, -30],
+                opacity: [0.6, 0],
+                scale: [1, 0.5],
+              }}
+              transition={{
+                duration: 0.5,
+                repeat: Infinity,
+                delay: i * 0.15,
+                ease: "easeOut"
+              }}
+            />
+          ))}
+        </>
       )}
-    />
+    </>
   );
 };
 
@@ -603,36 +765,17 @@ export const SignalBoxVisualization = ({
   const { logAction } = useLogAction();
   const { playSound } = useNotificationSound();
   
-  // Animated train positions
-  const [trainPositions, setTrainPositions] = useState<Map<string, { progress: number; moving: boolean }>>(new Map());
-  const animationRef = useRef<number>();
-  
-  // Simulate train movement animation
-  useEffect(() => {
-    const updatePositions = () => {
-      setTrainPositions(prev => {
-        const newPositions = new Map(prev);
-        trains.forEach(train => {
-          if (train.status === 'on-time' || train.status === 'delayed') {
-            const current = newPositions.get(train.id) || { progress: 0, moving: true };
-            const newProgress = (current.progress + 0.005) % 1; // Continuous movement
-            newPositions.set(train.id, { progress: newProgress, moving: true });
-          } else if (train.status === 'halted') {
-            const current = newPositions.get(train.id) || { progress: 0.5, moving: false };
-            newPositions.set(train.id, { ...current, moving: false });
-          }
-        });
-        return newPositions;
-      });
-    };
-
-    animationRef.current = window.setInterval(updatePositions, 50);
-    return () => {
-      if (animationRef.current) {
-        clearInterval(animationRef.current);
-      }
-    };
-  }, [trains]);
+  // Use the new smooth train animation hook
+  const { 
+    getTrainPosition, 
+    getInterpolatedX, 
+    getTrail, 
+    isTrainMoving 
+  } = useTrainAnimation(trains, {
+    interpolationSpeed: 0.08,
+    trailLength: 8,
+    updateRate: 16 // 60fps
+  });
   
   // Local signal states that can be overridden by operator
   const [signalOverrides, setSignalOverrides] = useState<SignalState>({});
@@ -2778,7 +2921,9 @@ export const SignalBoxVisualization = ({
                 const train = getTrainAtSection(section.id);
                 const signalId = `UP-S${section.id}`;
                 const hasSignal = idx % 2 === 0;
-                const progress = train ? (trainPositions.get(train.id)?.progress || 0) : 0;
+                const progress = train ? (getTrainPosition(train.id)?.progress || 0) : 0;
+                const trail = train ? getTrail(train.id) : [];
+                const moving = train ? isTrainMoving(train.id) : false;
                 const signalLock = hasSignal ? isSignalLocked(signalId) : undefined;
                 return (
                   <div key={section.id} className="flex items-center">
@@ -2797,6 +2942,8 @@ export const SignalBoxVisualization = ({
                       trainProgress={progress}
                       signalLocked={!!signalLock}
                       signalLockedBy={signalLock?.trainNumber}
+                      trainTrail={trail}
+                      isTrainMoving={moving}
                     />
                     <TrackLine status={section.status === 'occupied' ? 'occupied' : 'clear'} />
                   </div>
@@ -2827,7 +2974,9 @@ export const SignalBoxVisualization = ({
                 const train = getTrainAtSection(section.id);
                 const signalId = `UP-S${section.id}`;
                 const hasSignal = idx % 2 === 0;
-                const progress = train ? (trainPositions.get(train.id)?.progress || 0) : 0;
+                const progress = train ? (getTrainPosition(train.id)?.progress || 0) : 0;
+                const trail = train ? getTrail(train.id) : [];
+                const moving = train ? isTrainMoving(train.id) : false;
                 const signalLock = hasSignal ? isSignalLocked(signalId) : undefined;
                 return (
                   <div key={section.id} className="flex items-center">
@@ -2847,6 +2996,8 @@ export const SignalBoxVisualization = ({
                       trainProgress={progress}
                       signalLocked={!!signalLock}
                       signalLockedBy={signalLock?.trainNumber}
+                      trainTrail={trail}
+                      isTrainMoving={moving}
                     />
                   </div>
                 );
