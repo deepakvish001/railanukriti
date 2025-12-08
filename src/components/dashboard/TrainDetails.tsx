@@ -10,6 +10,7 @@ import { Progress } from '@/components/ui/progress';
 import { useState } from 'react';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { useLogAction } from '@/hooks/useAuditLog';
 
 interface TrainDetailsProps {
   train: Train | null;
@@ -39,6 +40,7 @@ const trainTypeConfig = {
 
 export const TrainDetails = ({ train, onClose }: TrainDetailsProps) => {
   const [isActioning, setIsActioning] = useState(false);
+  const { logAction } = useLogAction();
 
   const handleCommand = async (command: 'proceed' | 'hold' | 'stop') => {
     if (!train) return;
@@ -68,6 +70,15 @@ export const TrainDetails = ({ train, onClose }: TrainDetailsProps) => {
         variant: 'destructive',
       });
     } else {
+      // Log the action
+      await logAction(
+        'command',
+        'train',
+        `Sent ${command.toUpperCase()} command to train ${train.number} (${train.name})`,
+        train.id,
+        { command, trainNumber: train.number, previousStatus: train.status }
+      );
+      
       toast({
         title: 'Command Sent',
         description: `${command.charAt(0).toUpperCase() + command.slice(1)} command sent to ${train.number}.`,

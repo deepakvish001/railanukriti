@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useLogAction } from '@/hooks/useAuditLog';
 
 interface AIRecommendationsProps {
   recommendations: AIRecommendation[];
@@ -31,6 +32,7 @@ const RecommendationCard = ({
   const [isExpanded, setIsExpanded] = useState(index === 0);
   const [isActioning, setIsActioning] = useState(false);
   const { user } = useAuth();
+  const { logAction } = useLogAction();
   const config = typeConfig[recommendation.type];
   const Icon = config.icon;
 
@@ -55,6 +57,15 @@ const RecommendationCard = ({
         variant: "destructive",
       });
     } else {
+      // Log the action
+      await logAction(
+        'recommendation',
+        'ai_recommendation',
+        `Applied AI recommendation: ${recommendation.action.slice(0, 60)}...`,
+        recommendation.id,
+        { type: recommendation.type, confidence: recommendation.confidence }
+      );
+      
       toast({
         title: "Recommendation Applied",
         description: `${recommendation.action.slice(0, 50)}... has been executed.`,
@@ -84,6 +95,15 @@ const RecommendationCard = ({
         variant: "destructive",
       });
     } else {
+      // Log the action
+      await logAction(
+        'resolve',
+        'ai_recommendation',
+        `Dismissed AI recommendation: ${recommendation.action.slice(0, 60)}...`,
+        recommendation.id,
+        { type: recommendation.type, reason: 'User dismissed' }
+      );
+      
       toast({
         title: "Recommendation Dismissed",
         description: "The recommendation has been dismissed.",
