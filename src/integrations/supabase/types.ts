@@ -350,6 +350,65 @@ export type Database = {
         }
         Relationships: []
       }
+      infrastructure_alerts: {
+        Row: {
+          acknowledged_at: string | null
+          acknowledged_by: string | null
+          alert_type: string
+          created_at: string
+          current_utilization: number | null
+          description: string
+          estimated_capacity_gain: number | null
+          expires_at: string | null
+          id: string
+          is_acknowledged: boolean | null
+          recommended_action: string | null
+          section_id: number | null
+          severity: string
+          title: string
+        }
+        Insert: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          alert_type: string
+          created_at?: string
+          current_utilization?: number | null
+          description: string
+          estimated_capacity_gain?: number | null
+          expires_at?: string | null
+          id?: string
+          is_acknowledged?: boolean | null
+          recommended_action?: string | null
+          section_id?: number | null
+          severity: string
+          title: string
+        }
+        Update: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          alert_type?: string
+          created_at?: string
+          current_utilization?: number | null
+          description?: string
+          estimated_capacity_gain?: number | null
+          expires_at?: string | null
+          id?: string
+          is_acknowledged?: boolean | null
+          recommended_action?: string | null
+          section_id?: number | null
+          severity?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "infrastructure_alerts_section_id_fkey"
+            columns: ["section_id"]
+            isOneToOne: false
+            referencedRelation: "track_sections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       loop_lines: {
         Row: {
           capacity_trains: number | null
