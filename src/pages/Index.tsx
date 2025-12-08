@@ -11,9 +11,10 @@ import { AlertsPanel } from '@/components/dashboard/AlertsPanel';
 import { AuditLog } from '@/components/dashboard/AuditLog';
 import { PerformanceCharts } from '@/components/dashboard/PerformanceCharts';
 import { ConflictDetection } from '@/components/dashboard/ConflictDetection';
+import { TrainScheduleGantt } from '@/components/dashboard/TrainScheduleGantt';
 import { useTrains, useTrackSections, useAIRecommendations, useSectionMetrics } from '@/hooks/useRailwayData';
 import { Helmet } from 'react-helmet-async';
-import { Loader2, FlaskConical, Bell, History, BarChart3, AlertTriangle } from 'lucide-react';
+import { Loader2, FlaskConical, Bell, History, BarChart3, AlertTriangle, GanttChart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -133,6 +134,10 @@ const Index = () => {
                       <AlertTriangle className="w-3 h-3 mr-1" />
                       Conflicts
                     </TabsTrigger>
+                    <TabsTrigger value="schedule" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                      <GanttChart className="w-3 h-3 mr-1" />
+                      Schedule
+                    </TabsTrigger>
                   </TabsList>
                 </div>
                 
@@ -158,6 +163,10 @@ const Index = () => {
                 
                 <TabsContent value="conflicts" className="flex-1 mt-3 min-h-0">
                   <ConflictDetection />
+                </TabsContent>
+                
+                <TabsContent value="schedule" className="flex-1 mt-3 min-h-0">
+                  <TrainScheduleGantt />
                 </TabsContent>
               </Tabs>
             </div>
