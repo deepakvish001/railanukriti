@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Train, TrackSection } from '@/types/railway';
 import { cn } from '@/lib/utils';
@@ -652,6 +652,76 @@ export const SignalBoxVisualization = ({
   // Get unique sections from history for filter dropdown
   const uniqueSections = [...new Set(occupancyHistory.map(e => e.sectionId))].sort((a, b) => a - b);
 
+  // Section statistics view toggle
+  const [showSectionStats, setShowSectionStats] = useState(false);
+
+  // Calculate section occupancy statistics
+  const sectionStats = useMemo(() => {
+    const stats: Record<number, {
+      sectionId: number;
+      sectionName: string;
+      trainCount: number;
+      completedCount: number;
+      totalDwellTime: number;
+      avgDwellTime: number;
+      minDwellTime: number;
+      maxDwellTime: number;
+      activeOccupancy: boolean;
+      trainTypes: Record<string, number>;
+    }> = {};
+
+    occupancyHistory.forEach(entry => {
+      if (!stats[entry.sectionId]) {
+        stats[entry.sectionId] = {
+          sectionId: entry.sectionId,
+          sectionName: entry.sectionName,
+          trainCount: 0,
+          completedCount: 0,
+          totalDwellTime: 0,
+          avgDwellTime: 0,
+          minDwellTime: Infinity,
+          maxDwellTime: 0,
+          activeOccupancy: false,
+          trainTypes: {}
+        };
+      }
+
+      const stat = stats[entry.sectionId];
+      stat.trainCount++;
+      stat.trainTypes[entry.trainType] = (stat.trainTypes[entry.trainType] || 0) + 1;
+
+      if (entry.exitedAt) {
+        const duration = (entry.exitedAt.getTime() - entry.enteredAt.getTime()) / 1000;
+        stat.completedCount++;
+        stat.totalDwellTime += duration;
+        stat.minDwellTime = Math.min(stat.minDwellTime, duration);
+        stat.maxDwellTime = Math.max(stat.maxDwellTime, duration);
+      } else {
+        stat.activeOccupancy = true;
+      }
+    });
+
+    // Calculate averages and fix infinity values
+    Object.values(stats).forEach(stat => {
+      if (stat.completedCount > 0) {
+        stat.avgDwellTime = stat.totalDwellTime / stat.completedCount;
+      }
+      if (stat.minDwellTime === Infinity) {
+        stat.minDwellTime = 0;
+      }
+    });
+
+    return Object.values(stats).sort((a, b) => a.sectionId - b.sectionId);
+  }, [occupancyHistory]);
+
+  // Calculate overall utilization (percentage of time sections were occupied)
+  const getUtilizationColor = (trainCount: number) => {
+    if (trainCount >= 5) return 'text-red-400 bg-red-500/20';
+    if (trainCount >= 3) return 'text-amber-400 bg-amber-500/20';
+    if (trainCount >= 1) return 'text-green-400 bg-green-500/20';
+    return 'text-zinc-400 bg-zinc-500/20';
+  };
+
   // Track train movements for occupancy history
   useEffect(() => {
     trains.forEach(train => {
@@ -1215,41 +1285,68 @@ export const SignalBoxVisualization = ({
           >
             <div className="px-3 py-2 bg-zinc-800/30">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] font-semibold text-foreground">Track Occupancy History</span>
                 <div className="flex items-center gap-2">
-                  {/* Filter controls */}
-                  <select
-                    value={historyFilterType}
-                    onChange={(e) => setHistoryFilterType(e.target.value)}
-                    className="h-5 text-[9px] px-1.5 rounded bg-zinc-800 border border-zinc-700 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    <option value="all">All Types</option>
-                    <option value="express">Express</option>
-                    <option value="freight">Freight</option>
-                    <option value="local">Local</option>
-                    <option value="special">Special</option>
-                  </select>
-                  <select
-                    value={historyFilterSection}
-                    onChange={(e) => setHistoryFilterSection(e.target.value)}
-                    className="h-5 text-[9px] px-1.5 rounded bg-zinc-800 border border-zinc-700 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    <option value="all">All Sections</option>
-                    {uniqueSections.map(sectionId => (
-                      <option key={sectionId} value={sectionId.toString()}>Section {sectionId}</option>
-                    ))}
-                  </select>
-                  <select
-                    value={historyFilterTime}
-                    onChange={(e) => setHistoryFilterTime(e.target.value)}
-                    className="h-5 text-[9px] px-1.5 rounded bg-zinc-800 border border-zinc-700 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    <option value="all">All Time</option>
-                    <option value="1min">Last 1 min</option>
-                    <option value="5min">Last 5 min</option>
-                    <option value="15min">Last 15 min</option>
-                    <option value="30min">Last 30 min</option>
-                  </select>
+                  <span className="text-[10px] font-semibold text-foreground">Track Occupancy</span>
+                  {/* View toggle */}
+                  <div className="flex rounded bg-zinc-800 border border-zinc-700 overflow-hidden">
+                    <button
+                      onClick={() => setShowSectionStats(false)}
+                      className={cn(
+                        'px-2 py-0.5 text-[8px] font-medium transition-colors',
+                        !showSectionStats ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      History
+                    </button>
+                    <button
+                      onClick={() => setShowSectionStats(true)}
+                      className={cn(
+                        'px-2 py-0.5 text-[8px] font-medium transition-colors',
+                        showSectionStats ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      Statistics
+                    </button>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {!showSectionStats && (
+                    <>
+                      {/* Filter controls */}
+                      <select
+                        value={historyFilterType}
+                        onChange={(e) => setHistoryFilterType(e.target.value)}
+                        className="h-5 text-[9px] px-1.5 rounded bg-zinc-800 border border-zinc-700 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      >
+                        <option value="all">All Types</option>
+                        <option value="express">Express</option>
+                        <option value="freight">Freight</option>
+                        <option value="local">Local</option>
+                        <option value="special">Special</option>
+                      </select>
+                      <select
+                        value={historyFilterSection}
+                        onChange={(e) => setHistoryFilterSection(e.target.value)}
+                        className="h-5 text-[9px] px-1.5 rounded bg-zinc-800 border border-zinc-700 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      >
+                        <option value="all">All Sections</option>
+                        {uniqueSections.map(sectionId => (
+                          <option key={sectionId} value={sectionId.toString()}>Section {sectionId}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={historyFilterTime}
+                        onChange={(e) => setHistoryFilterTime(e.target.value)}
+                        className="h-5 text-[9px] px-1.5 rounded bg-zinc-800 border border-zinc-700 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                      >
+                        <option value="all">All Time</option>
+                        <option value="1min">Last 1 min</option>
+                        <option value="5min">Last 5 min</option>
+                        <option value="15min">Last 15 min</option>
+                        <option value="30min">Last 30 min</option>
+                      </select>
+                    </>
+                  )}
                   {occupancyHistory.length > 0 && (
                     <Button
                       variant="ghost"
@@ -1262,76 +1359,150 @@ export const SignalBoxVisualization = ({
                   )}
                 </div>
               </div>
-              {/* Filter summary */}
-              {(historyFilterType !== 'all' || historyFilterSection !== 'all' || historyFilterTime !== 'all') && (
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-[8px] text-muted-foreground">
-                    Showing {filteredHistory.length} of {occupancyHistory.length} entries
-                  </span>
-                  <button
-                    onClick={() => {
-                      setHistoryFilterType('all');
-                      setHistoryFilterSection('all');
-                      setHistoryFilterTime('all');
-                    }}
-                    className="text-[8px] text-primary hover:underline"
-                  >
-                    Clear filters
-                  </button>
+
+              {/* Statistics View */}
+              {showSectionStats ? (
+                <div className="space-y-2">
+                  {sectionStats.length === 0 ? (
+                    <p className="text-[9px] text-muted-foreground italic py-2">No statistics available yet. Data will appear as trains move through sections.</p>
+                  ) : (
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-40 overflow-auto">
+                      {sectionStats.map(stat => (
+                        <div 
+                          key={stat.sectionId}
+                          className={cn(
+                            'p-2 rounded border bg-zinc-800/50',
+                            stat.activeOccupancy ? 'border-green-500/50' : 'border-zinc-700/50'
+                          )}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-[9px] font-semibold text-foreground">{stat.sectionName}</span>
+                            {stat.activeOccupancy && (
+                              <motion.div 
+                                className="w-2 h-2 rounded-full bg-green-500"
+                                animate={{ opacity: [1, 0.5, 1] }}
+                                transition={{ duration: 1, repeat: Infinity }}
+                              />
+                            )}
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-[8px] text-muted-foreground">Train Count</span>
+                              <span className={cn('text-[9px] font-mono font-bold px-1.5 py-0.5 rounded', getUtilizationColor(stat.trainCount))}>
+                                {stat.trainCount}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-[8px] text-muted-foreground">Avg Dwell</span>
+                              <span className="text-[9px] font-mono text-foreground">
+                                {stat.avgDwellTime > 0 ? `${stat.avgDwellTime.toFixed(1)}s` : '-'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-[8px] text-muted-foreground">Min/Max</span>
+                              <span className="text-[8px] font-mono text-muted-foreground">
+                                {stat.completedCount > 0 
+                                  ? `${stat.minDwellTime.toFixed(0)}s / ${stat.maxDwellTime.toFixed(0)}s`
+                                  : '-'}
+                              </span>
+                            </div>
+                            {/* Train type breakdown */}
+                            <div className="flex gap-1 flex-wrap pt-1 border-t border-zinc-700/50">
+                              {Object.entries(stat.trainTypes).map(([type, count]) => (
+                                <span 
+                                  key={type} 
+                                  className={cn(
+                                    'text-[7px] px-1 py-0.5 rounded',
+                                    type === 'express' && 'bg-train-express/20 text-train-express',
+                                    type === 'freight' && 'bg-train-freight/20 text-train-freight',
+                                    type === 'local' && 'bg-train-local/20 text-train-local',
+                                    type === 'special' && 'bg-train-special/20 text-train-special'
+                                  )}
+                                >
+                                  {type[0].toUpperCase()}:{count}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
-              <div className="max-h-32 overflow-auto space-y-1">
-                {filteredHistory.length === 0 ? (
-                  <p className="text-[9px] text-muted-foreground italic py-2">
-                    {occupancyHistory.length === 0 
-                      ? 'No occupancy records yet. History will appear as trains move through sections.'
-                      : 'No entries match the selected filters.'}
-                  </p>
-                ) : (
-                  filteredHistory.map(entry => {
-                    const typeColors: Record<string, string> = {
-                      express: 'text-train-express',
-                      freight: 'text-train-freight',
-                      local: 'text-train-local',
-                      special: 'text-train-special'
-                    };
-                    const isActive = !entry.exitedAt;
-                    const duration = entry.exitedAt 
-                      ? Math.round((entry.exitedAt.getTime() - entry.enteredAt.getTime()) / 1000)
-                      : Math.round((Date.now() - entry.enteredAt.getTime()) / 1000);
-                    
-                    return (
-                      <div 
-                        key={entry.id}
-                        className={cn(
-                          'flex items-center gap-2 px-2 py-1 rounded text-[9px] border',
-                          isActive 
-                            ? 'bg-green-500/10 border-green-500/30' 
-                            : 'bg-zinc-800/50 border-zinc-700/30'
-                        )}
+              ) : (
+                <>
+                  {/* Filter summary */}
+                  {(historyFilterType !== 'all' || historyFilterSection !== 'all' || historyFilterTime !== 'all') && (
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[8px] text-muted-foreground">
+                        Showing {filteredHistory.length} of {occupancyHistory.length} entries
+                      </span>
+                      <button
+                        onClick={() => {
+                          setHistoryFilterType('all');
+                          setHistoryFilterSection('all');
+                          setHistoryFilterTime('all');
+                        }}
+                        className="text-[8px] text-primary hover:underline"
                       >
-                        <span className={cn('font-mono font-bold', typeColors[entry.trainType])}>
-                          {entry.trainNumber}
-                        </span>
-                        <span className="text-muted-foreground">→</span>
-                        <span className="font-medium text-foreground">{entry.sectionName}</span>
-                        <span className="text-muted-foreground ml-auto">
-                          {entry.enteredAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                        </span>
-                        {isActive ? (
-                          <span className="px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 text-[8px] font-bold">
-                            IN ({duration}s)
-                          </span>
-                        ) : (
-                          <span className="px-1.5 py-0.5 rounded bg-zinc-600/20 text-zinc-400 text-[8px]">
-                            {duration}s
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
+                        Clear filters
+                      </button>
+                    </div>
+                  )}
+                  <div className="max-h-32 overflow-auto space-y-1">
+                    {filteredHistory.length === 0 ? (
+                      <p className="text-[9px] text-muted-foreground italic py-2">
+                        {occupancyHistory.length === 0 
+                          ? 'No occupancy records yet. History will appear as trains move through sections.'
+                          : 'No entries match the selected filters.'}
+                      </p>
+                    ) : (
+                      filteredHistory.map(entry => {
+                        const typeColors: Record<string, string> = {
+                          express: 'text-train-express',
+                          freight: 'text-train-freight',
+                          local: 'text-train-local',
+                          special: 'text-train-special'
+                        };
+                        const isActive = !entry.exitedAt;
+                        const duration = entry.exitedAt 
+                          ? Math.round((entry.exitedAt.getTime() - entry.enteredAt.getTime()) / 1000)
+                          : Math.round((Date.now() - entry.enteredAt.getTime()) / 1000);
+                        
+                        return (
+                          <div 
+                            key={entry.id}
+                            className={cn(
+                              'flex items-center gap-2 px-2 py-1 rounded text-[9px] border',
+                              isActive 
+                                ? 'bg-green-500/10 border-green-500/30' 
+                                : 'bg-zinc-800/50 border-zinc-700/30'
+                            )}
+                          >
+                            <span className={cn('font-mono font-bold', typeColors[entry.trainType])}>
+                              {entry.trainNumber}
+                            </span>
+                            <span className="text-muted-foreground">→</span>
+                            <span className="font-medium text-foreground">{entry.sectionName}</span>
+                            <span className="text-muted-foreground ml-auto">
+                              {entry.enteredAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                            </span>
+                            {isActive ? (
+                              <span className="px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 text-[8px] font-bold">
+                                IN ({duration}s)
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded bg-zinc-600/20 text-zinc-400 text-[8px]">
+                                {duration}s
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </motion.div>
         )}
