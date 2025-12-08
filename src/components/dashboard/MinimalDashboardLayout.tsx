@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Header } from '@/components/dashboard/Header';
 import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar';
 import { SidebarProvider } from '@/components/ui/sidebar';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useSectionMetrics, useTrains } from '@/hooks/useRailwayData';
 import { Train, AlertTriangle, TrendingUp, Clock, Target } from 'lucide-react';
 
@@ -19,25 +20,33 @@ interface MetricItemProps {
   unit?: string;
   bgColor: string;
   onClick?: () => void;
+  tooltip: string;
   className?: string;
 }
 
-const MetricItem = ({ icon, label, value, unit, bgColor, onClick, className = '' }: MetricItemProps) => (
-  <button
-    onClick={onClick}
-    className={`flex items-center gap-2 shrink-0 hover:bg-muted/50 rounded-lg px-2 py-1 -mx-2 -my-1 transition-colors ${className}`}
-  >
-    <div className={`p-1.5 rounded ${bgColor}`}>
-      {icon}
-    </div>
-    <div className="flex flex-col text-left">
-      <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</span>
-      <span className="text-sm font-semibold text-foreground tabular-nums">
-        {value}
-        {unit && <span className="text-xs text-muted-foreground ml-0.5">{unit}</span>}
-      </span>
-    </div>
-  </button>
+const MetricItem = ({ icon, label, value, unit, bgColor, onClick, tooltip, className = '' }: MetricItemProps) => (
+  <Tooltip>
+    <TooltipTrigger asChild>
+      <button
+        onClick={onClick}
+        className={`flex items-center gap-2 shrink-0 hover:bg-muted/50 rounded-lg px-2 py-1 -mx-2 -my-1 transition-colors ${className}`}
+      >
+        <div className={`p-1.5 rounded ${bgColor}`}>
+          {icon}
+        </div>
+        <div className="flex flex-col text-left">
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</span>
+          <span className="text-sm font-semibold text-foreground tabular-nums">
+            {value}
+            {unit && <span className="text-xs text-muted-foreground ml-0.5">{unit}</span>}
+          </span>
+        </div>
+      </button>
+    </TooltipTrigger>
+    <TooltipContent side="bottom" className="text-xs">
+      {tooltip}
+    </TooltipContent>
+  </Tooltip>
 );
 
 const CompactMetricsBar = () => {
@@ -57,6 +66,7 @@ const CompactMetricsBar = () => {
           value={metrics?.activeTrains ?? trains.length}
           bgColor="bg-primary/10"
           onClick={() => navigate('/dashboard')}
+          tooltip="Go to Dashboard"
         />
 
         <div className="w-px h-8 bg-border/50 shrink-0" />
@@ -67,6 +77,7 @@ const CompactMetricsBar = () => {
           value={metrics?.pendingConflicts ?? 0}
           bgColor="bg-warning/10"
           onClick={() => navigate('/conflicts')}
+          tooltip="Go to Conflict Detection"
         />
 
         <div className="w-px h-8 bg-border/50 shrink-0 hidden sm:block" />
@@ -78,6 +89,7 @@ const CompactMetricsBar = () => {
           unit="/hr"
           bgColor="bg-success/10"
           onClick={() => navigate('/kpis')}
+          tooltip="Go to KPI Dashboard"
           className="hidden sm:flex"
         />
 
@@ -90,6 +102,7 @@ const CompactMetricsBar = () => {
           unit="min"
           bgColor="bg-destructive/10"
           onClick={() => navigate('/predictions')}
+          tooltip="Go to Delay Prediction"
           className="hidden md:flex"
         />
 
@@ -102,25 +115,36 @@ const CompactMetricsBar = () => {
           unit="%"
           bgColor="bg-primary/10"
           onClick={() => navigate('/analytics')}
+          tooltip="Go to Analytics"
           className="hidden lg:flex"
         />
 
         <div className="ml-auto flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-success/10 border border-success/20 hover:bg-success/20 transition-colors"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-success" />
-            <span className="text-[10px] text-success font-medium">{onTimeCount} On Time</span>
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => navigate('/dashboard')}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-success/10 border border-success/20 hover:bg-success/20 transition-colors"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-success" />
+                <span className="text-[10px] text-success font-medium">{onTimeCount} On Time</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">Go to Dashboard</TooltipContent>
+          </Tooltip>
           {delayedCount > 0 && (
-            <button
-              onClick={() => navigate('/alerts')}
-              className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-warning/10 border border-warning/20 hover:bg-warning/20 transition-colors"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-warning" />
-              <span className="text-[10px] text-warning font-medium">{delayedCount} Delayed</span>
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => navigate('/alerts')}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-warning/10 border border-warning/20 hover:bg-warning/20 transition-colors"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-warning" />
+                  <span className="text-[10px] text-warning font-medium">{delayedCount} Delayed</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">Go to Active Alerts</TooltipContent>
+            </Tooltip>
           )}
         </div>
       </div>
