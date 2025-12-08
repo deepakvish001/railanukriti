@@ -1,11 +1,14 @@
+import { useState, useEffect } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { HelmetProvider } from "react-helmet-async";
+import { AnimatePresence } from "framer-motion";
 import { AuthProvider } from "@/hooks/useAuth";
 import { SoundProvider } from "@/hooks/useNotificationSound";
+import { SplashScreen } from "@/components/SplashScreen";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Auth from "./pages/Auth";
 import Map from "./pages/Map";
@@ -27,45 +30,62 @@ import Export from "./pages/dashboard/Export";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <HelmetProvider>
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <AuthProvider>
-          <SoundProvider>
-            <Toaster />
-            <Sonner />
-            <BrowserRouter>
-              <Routes>
-                {/* Dashboard Routes */}
-                <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-                <Route path="/recommendations" element={<ProtectedRoute><Recommendations /></ProtectedRoute>} />
-                <Route path="/predictions" element={<ProtectedRoute><Predictions /></ProtectedRoute>} />
-                <Route path="/conflicts" element={<ProtectedRoute><Conflicts /></ProtectedRoute>} />
-                <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
-                <Route path="/schedule" element={<ProtectedRoute><Schedule /></ProtectedRoute>} />
-                <Route path="/simulation" element={<ProtectedRoute><Simulation /></ProtectedRoute>} />
-                <Route path="/kpis" element={<ProtectedRoute><KPIs /></ProtectedRoute>} />
-                <Route path="/charts" element={<ProtectedRoute><Charts /></ProtectedRoute>} />
-                <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
-                <Route path="/audit" element={<ProtectedRoute><Audit /></ProtectedRoute>} />
-                <Route path="/export" element={<ProtectedRoute><Export /></ProtectedRoute>} />
-                
-                {/* Map Route */}
-                <Route path="/map" element={<ProtectedRoute><Map /></ProtectedRoute>} />
-                
-                {/* Auth Route */}
-                <Route path="/auth" element={<Auth />} />
-                
-                {/* Catch-all */}
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </BrowserRouter>
-          </SoundProvider>
-        </AuthProvider>
-      </TooltipProvider>
-    </QueryClientProvider>
-  </HelmetProvider>
-);
+const App = () => {
+  const [showSplash, setShowSplash] = useState(true);
+
+  useEffect(() => {
+    // Show splash screen for 2.5 seconds
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, 2500);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <HelmetProvider>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <AuthProvider>
+            <SoundProvider>
+              <AnimatePresence mode="wait">
+                {showSplash && <SplashScreen key="splash" />}
+              </AnimatePresence>
+              
+              <Toaster />
+              <Sonner />
+              <BrowserRouter>
+                <Routes>
+                  {/* Dashboard Routes */}
+                  <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                  <Route path="/recommendations" element={<ProtectedRoute><Recommendations /></ProtectedRoute>} />
+                  <Route path="/predictions" element={<ProtectedRoute><Predictions /></ProtectedRoute>} />
+                  <Route path="/conflicts" element={<ProtectedRoute><Conflicts /></ProtectedRoute>} />
+                  <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
+                  <Route path="/schedule" element={<ProtectedRoute><Schedule /></ProtectedRoute>} />
+                  <Route path="/simulation" element={<ProtectedRoute><Simulation /></ProtectedRoute>} />
+                  <Route path="/kpis" element={<ProtectedRoute><KPIs /></ProtectedRoute>} />
+                  <Route path="/charts" element={<ProtectedRoute><Charts /></ProtectedRoute>} />
+                  <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+                  <Route path="/audit" element={<ProtectedRoute><Audit /></ProtectedRoute>} />
+                  <Route path="/export" element={<ProtectedRoute><Export /></ProtectedRoute>} />
+                  
+                  {/* Map Route */}
+                  <Route path="/map" element={<ProtectedRoute><Map /></ProtectedRoute>} />
+                  
+                  {/* Auth Route */}
+                  <Route path="/auth" element={<Auth />} />
+                  
+                  {/* Catch-all */}
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </BrowserRouter>
+            </SoundProvider>
+          </AuthProvider>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </HelmetProvider>
+  );
+};
 
 export default App;
