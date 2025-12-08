@@ -1,17 +1,47 @@
 import { ReactNode } from 'react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { Header } from '@/components/dashboard/Header';
 import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { useSectionMetrics, useTrains } from '@/hooks/useRailwayData';
-import { Train, AlertTriangle, TrendingUp, Clock, Gauge, Target } from 'lucide-react';
+import { Train, AlertTriangle, TrendingUp, Clock, Target } from 'lucide-react';
 
 interface MinimalDashboardLayoutProps {
   children: ReactNode;
   title: string;
 }
 
+interface MetricItemProps {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  unit?: string;
+  bgColor: string;
+  onClick?: () => void;
+  className?: string;
+}
+
+const MetricItem = ({ icon, label, value, unit, bgColor, onClick, className = '' }: MetricItemProps) => (
+  <button
+    onClick={onClick}
+    className={`flex items-center gap-2 shrink-0 hover:bg-muted/50 rounded-lg px-2 py-1 -mx-2 -my-1 transition-colors ${className}`}
+  >
+    <div className={`p-1.5 rounded ${bgColor}`}>
+      {icon}
+    </div>
+    <div className="flex flex-col text-left">
+      <span className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</span>
+      <span className="text-sm font-semibold text-foreground tabular-nums">
+        {value}
+        {unit && <span className="text-xs text-muted-foreground ml-0.5">{unit}</span>}
+      </span>
+    </div>
+  </button>
+);
+
 const CompactMetricsBar = () => {
+  const navigate = useNavigate();
   const { metrics } = useSectionMetrics();
   const { trains } = useTrains();
 
@@ -21,74 +51,76 @@ const CompactMetricsBar = () => {
   return (
     <div className="px-3 lg:px-4 py-2 border-b border-border/30 bg-card/30 backdrop-blur-sm">
       <div className="flex items-center gap-3 lg:gap-6 overflow-x-auto">
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="p-1.5 rounded bg-primary/10">
-            <Train className="w-3.5 h-3.5 text-primary" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Active</span>
-            <span className="text-sm font-semibold text-foreground tabular-nums">{metrics?.activeTrains ?? trains.length}</span>
-          </div>
-        </div>
+        <MetricItem
+          icon={<Train className="w-3.5 h-3.5 text-primary" />}
+          label="Active"
+          value={metrics?.activeTrains ?? trains.length}
+          bgColor="bg-primary/10"
+          onClick={() => navigate('/dashboard')}
+        />
 
         <div className="w-px h-8 bg-border/50 shrink-0" />
 
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="p-1.5 rounded bg-warning/10">
-            <AlertTriangle className="w-3.5 h-3.5 text-warning" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Conflicts</span>
-            <span className="text-sm font-semibold text-foreground tabular-nums">{metrics?.pendingConflicts ?? 0}</span>
-          </div>
-        </div>
+        <MetricItem
+          icon={<AlertTriangle className="w-3.5 h-3.5 text-warning" />}
+          label="Conflicts"
+          value={metrics?.pendingConflicts ?? 0}
+          bgColor="bg-warning/10"
+          onClick={() => navigate('/conflicts')}
+        />
 
         <div className="w-px h-8 bg-border/50 shrink-0 hidden sm:block" />
 
-        <div className="flex items-center gap-2 shrink-0 hidden sm:flex">
-          <div className="p-1.5 rounded bg-success/10">
-            <TrendingUp className="w-3.5 h-3.5 text-success" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Throughput</span>
-            <span className="text-sm font-semibold text-foreground tabular-nums">{metrics?.throughput ?? 0}<span className="text-xs text-muted-foreground ml-0.5">/hr</span></span>
-          </div>
-        </div>
+        <MetricItem
+          icon={<TrendingUp className="w-3.5 h-3.5 text-success" />}
+          label="Throughput"
+          value={metrics?.throughput ?? 0}
+          unit="/hr"
+          bgColor="bg-success/10"
+          onClick={() => navigate('/kpis')}
+          className="hidden sm:flex"
+        />
 
         <div className="w-px h-8 bg-border/50 shrink-0 hidden md:block" />
 
-        <div className="flex items-center gap-2 shrink-0 hidden md:flex">
-          <div className="p-1.5 rounded bg-destructive/10">
-            <Clock className="w-3.5 h-3.5 text-destructive" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Avg Delay</span>
-            <span className="text-sm font-semibold text-foreground tabular-nums">{metrics?.averageDelay?.toFixed(1) ?? '0'}<span className="text-xs text-muted-foreground ml-0.5">min</span></span>
-          </div>
-        </div>
+        <MetricItem
+          icon={<Clock className="w-3.5 h-3.5 text-destructive" />}
+          label="Avg Delay"
+          value={metrics?.averageDelay?.toFixed(1) ?? '0'}
+          unit="min"
+          bgColor="bg-destructive/10"
+          onClick={() => navigate('/predictions')}
+          className="hidden md:flex"
+        />
 
         <div className="w-px h-8 bg-border/50 shrink-0 hidden lg:block" />
 
-        <div className="flex items-center gap-2 shrink-0 hidden lg:flex">
-          <div className="p-1.5 rounded bg-primary/10">
-            <Target className="w-3.5 h-3.5 text-primary" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] text-muted-foreground uppercase tracking-wide">On-Time</span>
-            <span className="text-sm font-semibold text-foreground tabular-nums">{metrics?.onTimePerformance ?? 0}<span className="text-xs text-muted-foreground ml-0.5">%</span></span>
-          </div>
-        </div>
+        <MetricItem
+          icon={<Target className="w-3.5 h-3.5 text-primary" />}
+          label="On-Time"
+          value={metrics?.onTimePerformance ?? 0}
+          unit="%"
+          bgColor="bg-primary/10"
+          onClick={() => navigate('/analytics')}
+          className="hidden lg:flex"
+        />
 
         <div className="ml-auto flex items-center gap-2 shrink-0">
-          <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-success/10 border border-success/20">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-success/10 border border-success/20 hover:bg-success/20 transition-colors"
+          >
             <span className="w-1.5 h-1.5 rounded-full bg-success" />
             <span className="text-[10px] text-success font-medium">{onTimeCount} On Time</span>
-          </span>
+          </button>
           {delayedCount > 0 && (
-            <span className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-warning/10 border border-warning/20">
+            <button
+              onClick={() => navigate('/alerts')}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-warning/10 border border-warning/20 hover:bg-warning/20 transition-colors"
+            >
               <span className="w-1.5 h-1.5 rounded-full bg-warning" />
               <span className="text-[10px] text-warning font-medium">{delayedCount} Delayed</span>
-            </span>
+            </button>
           )}
         </div>
       </div>
