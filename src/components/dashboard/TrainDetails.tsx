@@ -1,9 +1,15 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Train } from '@/types/railway';
 import { cn } from '@/lib/utils';
-import { X, Clock, MapPin, Gauge, Route, Calendar, ArrowRight, AlertTriangle } from 'lucide-react';
+import { 
+  X, Clock, MapPin, Gauge, Route, ArrowRight, AlertTriangle, 
+  Play, Pause, Square, Radio, Send, Activity
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { useState } from 'react';
+import { toast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface TrainDetailsProps {
   train: Train | null;
@@ -11,20 +17,64 @@ interface TrainDetailsProps {
 }
 
 const priorityConfig = {
-  critical: { label: 'CRITICAL', className: 'bg-destructive text-destructive-foreground' },
-  high: { label: 'HIGH', className: 'bg-warning text-warning-foreground' },
-  medium: { label: 'MEDIUM', className: 'bg-primary text-primary-foreground' },
-  low: { label: 'LOW', className: 'bg-muted text-muted-foreground' },
+  critical: { label: 'CRITICAL', className: 'bg-destructive text-destructive-foreground', glow: 'shadow-destructive/30' },
+  high: { label: 'HIGH', className: 'bg-warning text-warning-foreground', glow: 'shadow-warning/30' },
+  medium: { label: 'MEDIUM', className: 'bg-primary text-primary-foreground', glow: 'shadow-primary/30' },
+  low: { label: 'LOW', className: 'bg-muted text-muted-foreground', glow: '' },
 };
 
 const statusConfig = {
-  'on-time': { label: 'On Time', className: 'text-success', bg: 'bg-success/10' },
-  delayed: { label: 'Delayed', className: 'text-destructive', bg: 'bg-destructive/10' },
-  halted: { label: 'Halted', className: 'text-warning', bg: 'bg-warning/10' },
-  approaching: { label: 'Approaching', className: 'text-primary', bg: 'bg-primary/10' },
+  'on-time': { label: 'On Time', className: 'text-success', bg: 'bg-success/10', border: 'border-success/30' },
+  delayed: { label: 'Delayed', className: 'text-destructive', bg: 'bg-destructive/10', border: 'border-destructive/30' },
+  halted: { label: 'Halted', className: 'text-warning', bg: 'bg-warning/10', border: 'border-warning/30' },
+  approaching: { label: 'Approaching', className: 'text-primary', bg: 'bg-primary/10', border: 'border-primary/30' },
+};
+
+const trainTypeConfig = {
+  express: { label: 'Express', color: 'text-primary' },
+  freight: { label: 'Freight', color: 'text-muted-foreground' },
+  local: { label: 'Local', color: 'text-success' },
+  special: { label: 'Special', color: 'text-warning' },
 };
 
 export const TrainDetails = ({ train, onClose }: TrainDetailsProps) => {
+  const [isActioning, setIsActioning] = useState(false);
+
+  const handleCommand = async (command: 'proceed' | 'hold' | 'stop') => {
+    if (!train) return;
+    
+    setIsActioning(true);
+
+    const statusMap = {
+      proceed: 'on-time' as const,
+      hold: 'halted' as const,
+      stop: 'halted' as const,
+    };
+
+    const { error } = await supabase
+      .from('trains')
+      .update({ 
+        status: statusMap[command],
+        speed: command === 'stop' || command === 'hold' ? 0 : train.speed,
+      })
+      .eq('id', train.id);
+
+    setIsActioning(false);
+
+    if (error) {
+      toast({
+        title: 'Command Failed',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } else {
+      toast({
+        title: 'Command Sent',
+        description: `${command.charAt(0).toUpperCase() + command.slice(1)} command sent to ${train.number}.`,
+      });
+    }
+  };
+
   return (
     <AnimatePresence>
       {train && (
@@ -32,131 +82,178 @@ export const TrainDetails = ({ train, onClose }: TrainDetailsProps) => {
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 20 }}
-          className="bg-card border border-border rounded-lg p-4 h-full flex flex-col"
+          className="bg-card border border-border rounded-xl p-5 h-full flex flex-col overflow-hidden"
         >
+          {/* Header */}
           <div className="flex items-start justify-between mb-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="font-mono text-lg font-semibold text-foreground">{train.number}</span>
-                <span className={cn('px-2 py-0.5 rounded text-[10px] font-medium', priorityConfig[train.priority].className)}>
+                <span className="font-mono text-xl font-bold text-foreground">{train.number}</span>
+                <span className={cn(
+                  'px-2 py-0.5 rounded-full text-[10px] font-bold shadow-lg',
+                  priorityConfig[train.priority].className,
+                  priorityConfig[train.priority].glow
+                )}>
                   {priorityConfig[train.priority].label}
                 </span>
               </div>
-              <h2 className="text-sm text-muted-foreground">{train.name}</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm text-muted-foreground">{train.name}</h2>
+                <span className={cn('text-xs', trainTypeConfig[train.type].color)}>
+                  • {trainTypeConfig[train.type].label}
+                </span>
+              </div>
             </div>
-            <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
+            <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 rounded-full">
               <X className="w-4 h-4" />
             </Button>
           </div>
 
-          <div className={cn('rounded-lg p-3 mb-4', statusConfig[train.status].bg)}>
+          {/* Status Banner */}
+          <div className={cn(
+            'rounded-xl p-4 mb-4 border',
+            statusConfig[train.status].bg,
+            statusConfig[train.status].border
+          )}>
             <div className="flex items-center justify-between">
-              <span className={cn('text-sm font-medium', statusConfig[train.status].className)}>
-                {statusConfig[train.status].label}
-              </span>
+              <div className="flex items-center gap-2">
+                <Activity className={cn('w-4 h-4', statusConfig[train.status].className)} />
+                <span className={cn('text-sm font-semibold', statusConfig[train.status].className)}>
+                  {statusConfig[train.status].label}
+                </span>
+              </div>
               {train.delay !== 0 && (
                 <span className={cn(
-                  'font-mono text-sm font-semibold',
-                  train.delay > 0 ? 'text-destructive' : 'text-success'
+                  'font-mono text-lg font-bold px-3 py-1 rounded-lg',
+                  train.delay > 0 ? 'text-destructive bg-destructive/10' : 'text-success bg-success/10'
                 )}>
                   {train.delay > 0 ? `+${train.delay}` : train.delay} min
                 </span>
               )}
             </div>
-            {train.delay > 0 && (
-              <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
-                <AlertTriangle className="w-3.5 h-3.5 text-warning" />
-                <span>Delay propagation risk: Medium</span>
+            {train.delay > 15 && (
+              <div className="flex items-center gap-2 mt-3 p-2 bg-warning/10 rounded-lg border border-warning/20">
+                <AlertTriangle className="w-4 h-4 text-warning" />
+                <span className="text-xs text-warning">High delay - May affect downstream trains</span>
               </div>
             )}
           </div>
 
-          <div className="space-y-4 flex-1">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <p className="data-label mb-1">Origin</p>
-                <p className="text-sm text-foreground">{train.origin}</p>
+          {/* Content */}
+          <div className="space-y-4 flex-1 overflow-y-auto">
+            {/* Route */}
+            <div className="flex items-center gap-3 p-3 bg-muted/30 rounded-xl">
+              <div className="flex-1">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">From</p>
+                <p className="text-sm font-medium text-foreground">{train.origin}</p>
               </div>
-              <div>
-                <p className="data-label mb-1">Destination</p>
-                <p className="text-sm text-foreground">{train.destination}</p>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <div className="w-8 h-px bg-border" />
+                <ArrowRight className="w-4 h-4" />
+                <div className="w-8 h-px bg-border" />
+              </div>
+              <div className="flex-1 text-right">
+                <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">To</p>
+                <p className="text-sm font-medium text-foreground">{train.destination}</p>
               </div>
             </div>
 
-            <div className="border-t border-border pt-4">
-              <p className="data-label mb-3">Journey Progress</p>
+            {/* Journey Progress */}
+            <div>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-3">Section Progress</p>
               <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">{train.origin}</span>
-                  <span className="text-muted-foreground">{train.destination}</span>
-                </div>
-                <Progress value={(train.currentSection / 8) * 100} className="h-2" />
-                <div className="flex items-center justify-center gap-2 text-xs">
-                  <MapPin className="w-3 h-3 text-primary" />
-                  <span className="text-foreground">Currently at Section {train.currentSection}</span>
+                <Progress value={(train.currentSection / 6) * 100} className="h-2" />
+                <div className="flex items-center justify-center gap-2">
+                  <MapPin className="w-3.5 h-3.5 text-primary" />
+                  <span className="text-xs text-foreground">Section {train.currentSection} of 6</span>
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 border-t border-border pt-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-md bg-muted">
+            {/* Stats Grid */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="bg-muted/30 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
                   <Clock className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Scheduled</span>
                 </div>
-                <div>
-                  <p className="data-label">Scheduled</p>
-                  <p className="font-mono text-sm text-foreground">{train.scheduledTime}</p>
-                </div>
+                <p className="font-mono text-lg font-semibold text-foreground">{train.scheduledTime}</p>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-md bg-muted">
+              <div className="bg-muted/30 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
                   <Clock className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Actual</span>
                 </div>
-                <div>
-                  <p className="data-label">Actual</p>
-                  <p className="font-mono text-sm text-foreground">{train.actualTime}</p>
-                </div>
+                <p className="font-mono text-lg font-semibold text-foreground">{train.actualTime}</p>
               </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-md bg-muted">
+              <div className="bg-muted/30 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
                   <Gauge className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wide">Speed</span>
                 </div>
-                <div>
-                  <p className="data-label">Speed</p>
-                  <p className="font-mono text-sm text-foreground">{train.speed} km/h</p>
-                </div>
+                <p className="font-mono text-lg font-semibold text-foreground">
+                  {train.speed} <span className="text-xs text-muted-foreground">km/h</span>
+                </p>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-md bg-muted">
+              <div className="bg-muted/30 rounded-xl p-3">
+                <div className="flex items-center gap-2 mb-2">
                   <Route className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wide">ETA</span>
                 </div>
-                <div>
-                  <p className="data-label">ETA</p>
-                  <p className="font-mono text-sm text-foreground">{train.eta}</p>
-                </div>
+                <p className="font-mono text-lg font-semibold text-foreground">{train.eta || '--:--'}</p>
               </div>
             </div>
 
-            <div className="border-t border-border pt-4">
-              <p className="data-label mb-2">Next Station</p>
-              <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-                <MapPin className="w-4 h-4 text-primary" />
-                <span className="text-sm font-medium text-foreground">{train.nextStation}</span>
-                <ArrowRight className="w-3 h-3 text-muted-foreground ml-auto" />
+            {/* Next Station */}
+            <div className="p-3 bg-primary/5 rounded-xl border border-primary/20">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-2">Next Station</p>
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-primary/20">
+                  <MapPin className="w-4 h-4 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <span className="text-sm font-semibold text-foreground">{train.nextStation || 'N/A'}</span>
+                </div>
+                <Radio className="w-4 h-4 text-primary animate-pulse" />
               </div>
             </div>
           </div>
 
-          <div className="flex gap-2 mt-4 pt-4 border-t border-border">
-            <Button variant="outline" size="sm" className="flex-1">
-              View History
-            </Button>
-            <Button variant="default" size="sm" className="flex-1">
-              Send Command
-            </Button>
+          {/* Command Buttons */}
+          <div className="mt-4 pt-4 border-t border-border">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-3">Train Commands</p>
+            <div className="grid grid-cols-3 gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 border-success/30 text-success hover:bg-success/10 h-10"
+                onClick={() => handleCommand('proceed')}
+                disabled={isActioning || train.status === 'on-time'}
+              >
+                <Play className="w-4 h-4" />
+                Proceed
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 border-warning/30 text-warning hover:bg-warning/10 h-10"
+                onClick={() => handleCommand('hold')}
+                disabled={isActioning || train.status === 'halted'}
+              >
+                <Pause className="w-4 h-4" />
+                Hold
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 border-destructive/30 text-destructive hover:bg-destructive/10 h-10"
+                onClick={() => handleCommand('stop')}
+                disabled={isActioning}
+              >
+                <Square className="w-4 h-4" />
+                Stop
+              </Button>
+            </div>
           </div>
         </motion.div>
       )}
