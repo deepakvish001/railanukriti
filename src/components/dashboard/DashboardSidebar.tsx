@@ -1,7 +1,7 @@
 import {
   Sparkles, Bell, FlaskConical, History, BarChart3, AlertTriangle,
   GanttChart, Download, TrendingUp, Target, Brain, Train, ChevronLeft, ChevronRight,
-  LayoutDashboard, Upload
+  LayoutDashboard, Upload, Settings2
 } from 'lucide-react';
 import {
   Sidebar,
@@ -35,6 +35,7 @@ const operationsItems = [
   { id: 'alerts', title: 'Active Alerts', icon: Bell, path: '/alerts' },
   { id: 'schedule', title: 'Train Schedule', icon: GanttChart, path: '/schedule' },
   { id: 'simulation', title: 'Scenario Sim', icon: FlaskConical, path: '/simulation' },
+  { id: 'infrastructure', title: 'Infrastructure', icon: Settings2, path: '/infrastructure' },
 ];
 
 const analyticsItems = [
