@@ -654,6 +654,67 @@ export const SignalBoxVisualization = ({
 
   // Section statistics view toggle
   const [showSectionStats, setShowSectionStats] = useState(false);
+  const [showHeatmap, setShowHeatmap] = useState(false);
+
+  // Heatmap data - tracks occupancy over time intervals
+  const [heatmapData, setHeatmapData] = useState<{
+    sectionId: number;
+    sectionName: string;
+    timeSlots: { time: Date; occupied: boolean; trainType?: string }[];
+  }[]>([]);
+
+  // Update heatmap data every 5 seconds
+  useEffect(() => {
+    const updateHeatmap = () => {
+      const now = new Date();
+      setHeatmapData(prev => {
+        const newData = sections.map(section => {
+          const existing = prev.find(d => d.sectionId === section.id);
+          const train = trains.find(t => t.currentSection === section.id);
+          const newSlot = {
+            time: now,
+            occupied: section.status === 'occupied',
+            trainType: train?.type
+          };
+          
+          // Keep last 12 time slots (60 seconds of data at 5s intervals)
+          const timeSlots = existing 
+            ? [...existing.timeSlots.slice(-11), newSlot]
+            : [newSlot];
+          
+          return {
+            sectionId: section.id,
+            sectionName: section.name,
+            timeSlots
+          };
+        });
+        return newData;
+      });
+    };
+
+    updateHeatmap(); // Initial update
+    const interval = setInterval(updateHeatmap, 5000);
+    return () => clearInterval(interval);
+  }, [sections, trains]);
+
+  // Get heatmap cell color based on occupancy
+  const getHeatmapColor = (slot: { occupied: boolean; trainType?: string }) => {
+    if (!slot.occupied) return 'bg-zinc-800/50';
+    switch (slot.trainType) {
+      case 'express': return 'bg-train-express';
+      case 'freight': return 'bg-train-freight';
+      case 'local': return 'bg-train-local';
+      case 'special': return 'bg-train-special';
+      default: return 'bg-red-500';
+    }
+  };
+
+  // Calculate section utilization percentage for heatmap
+  const getSectionUtilization = (timeSlots: { occupied: boolean }[]) => {
+    if (timeSlots.length === 0) return 0;
+    const occupiedCount = timeSlots.filter(s => s.occupied).length;
+    return Math.round((occupiedCount / timeSlots.length) * 100);
+  };
 
   // Calculate section occupancy statistics
   const sectionStats = useMemo(() => {
@@ -1290,27 +1351,36 @@ export const SignalBoxVisualization = ({
                   {/* View toggle */}
                   <div className="flex rounded bg-zinc-800 border border-zinc-700 overflow-hidden">
                     <button
-                      onClick={() => setShowSectionStats(false)}
+                      onClick={() => { setShowSectionStats(false); setShowHeatmap(false); }}
                       className={cn(
                         'px-2 py-0.5 text-[8px] font-medium transition-colors',
-                        !showSectionStats ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                        !showSectionStats && !showHeatmap ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
                       )}
                     >
                       History
                     </button>
                     <button
-                      onClick={() => setShowSectionStats(true)}
+                      onClick={() => { setShowSectionStats(true); setShowHeatmap(false); }}
                       className={cn(
                         'px-2 py-0.5 text-[8px] font-medium transition-colors',
-                        showSectionStats ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                        showSectionStats && !showHeatmap ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
                       )}
                     >
                       Statistics
                     </button>
+                    <button
+                      onClick={() => { setShowSectionStats(false); setShowHeatmap(true); }}
+                      className={cn(
+                        'px-2 py-0.5 text-[8px] font-medium transition-colors',
+                        showHeatmap ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      Heatmap
+                    </button>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {!showSectionStats && (
+                  {!showSectionStats && !showHeatmap && (
                     <>
                       {/* Filter controls */}
                       <select
@@ -1347,7 +1417,7 @@ export const SignalBoxVisualization = ({
                       </select>
                     </>
                   )}
-                  {occupancyHistory.length > 0 && (
+                  {occupancyHistory.length > 0 && !showHeatmap && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -1360,8 +1430,96 @@ export const SignalBoxVisualization = ({
                 </div>
               </div>
 
-              {/* Statistics View */}
-              {showSectionStats ? (
+              {/* Heatmap View */}
+              {showHeatmap ? (
+                <div className="space-y-2">
+                  {heatmapData.length === 0 || heatmapData[0]?.timeSlots.length === 0 ? (
+                    <p className="text-[9px] text-muted-foreground italic py-2">Collecting heatmap data... Updates every 5 seconds.</p>
+                  ) : (
+                    <>
+                      {/* Heatmap Legend */}
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className="text-[8px] text-muted-foreground">Legend:</span>
+                        <div className="flex items-center gap-1">
+                          <div className="w-3 h-3 rounded bg-zinc-800/50 border border-zinc-700" />
+                          <span className="text-[8px] text-muted-foreground">Clear</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <div className="w-3 h-3 rounded bg-train-express" />
+                          <span className="text-[8px] text-train-express">Express</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <div className="w-3 h-3 rounded bg-train-freight" />
+                          <span className="text-[8px] text-train-freight">Freight</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <div className="w-3 h-3 rounded bg-train-local" />
+                          <span className="text-[8px] text-train-local">Local</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <div className="w-3 h-3 rounded bg-train-special" />
+                          <span className="text-[8px] text-train-special">Special</span>
+                        </div>
+                      </div>
+                      {/* Heatmap Grid */}
+                      <div className="overflow-auto max-h-48">
+                        <div className="min-w-[400px]">
+                          {/* Time header */}
+                          <div className="flex items-center gap-0.5 mb-1">
+                            <div className="w-20 text-[8px] text-muted-foreground font-semibold">Section</div>
+                            {heatmapData[0]?.timeSlots.map((slot, idx) => (
+                              <div 
+                                key={idx} 
+                                className="flex-1 min-w-[24px] text-[7px] text-muted-foreground text-center"
+                                title={slot.time.toLocaleTimeString()}
+                              >
+                                {idx === 0 ? '-60s' : idx === heatmapData[0].timeSlots.length - 1 ? 'Now' : ''}
+                              </div>
+                            ))}
+                            <div className="w-12 text-[8px] text-muted-foreground text-right">Util%</div>
+                          </div>
+                          {/* Section rows */}
+                          {heatmapData.map(section => {
+                            const utilization = getSectionUtilization(section.timeSlots);
+                            return (
+                              <div key={section.sectionId} className="flex items-center gap-0.5 mb-0.5">
+                                <div className="w-20 text-[8px] text-foreground font-mono truncate" title={section.sectionName}>
+                                  {section.sectionName}
+                                </div>
+                                {section.timeSlots.map((slot, idx) => (
+                                  <motion.div
+                                    key={idx}
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    className={cn(
+                                      'flex-1 min-w-[24px] h-5 rounded-sm transition-colors',
+                                      getHeatmapColor(slot)
+                                    )}
+                                    title={`${slot.time.toLocaleTimeString()} - ${slot.occupied ? `Occupied (${slot.trainType})` : 'Clear'}`}
+                                  />
+                                ))}
+                                <div className={cn(
+                                  'w-12 text-[9px] font-mono font-bold text-right px-1 py-0.5 rounded',
+                                  utilization >= 75 && 'text-red-400 bg-red-500/20',
+                                  utilization >= 50 && utilization < 75 && 'text-amber-400 bg-amber-500/20',
+                                  utilization >= 25 && utilization < 50 && 'text-yellow-400 bg-yellow-500/20',
+                                  utilization < 25 && 'text-green-400 bg-green-500/20'
+                                )}>
+                                  {utilization}%
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <p className="text-[8px] text-muted-foreground mt-1">
+                        Showing last 60 seconds of section occupancy. Each cell = 5 second interval.
+                      </p>
+                    </>
+                  )}
+                </div>
+              ) : showSectionStats ? (
+                /* Statistics View */
                 <div className="space-y-2">
                   {sectionStats.length === 0 ? (
                     <p className="text-[9px] text-muted-foreground italic py-2">No statistics available yet. Data will appear as trains move through sections.</p>
@@ -1430,6 +1588,7 @@ export const SignalBoxVisualization = ({
                   )}
                 </div>
               ) : (
+                /* History View */
                 <>
                   {/* Filter summary */}
                   {(historyFilterType !== 'all' || historyFilterSection !== 'all' || historyFilterTime !== 'all') && (
