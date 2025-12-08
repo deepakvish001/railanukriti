@@ -73,10 +73,10 @@ export const Header = () => {
             </div>
             <div className="hidden sm:block">
               <h1 className="text-base lg:text-lg font-bold text-foreground tracking-tight">
-                Section Control <span className="text-primary">AI</span>
+                Rail<span className="text-primary">Anukriti</span>
               </h1>
               <p className="text-[10px] lg:text-xs text-muted-foreground font-medium">
-                Northern Railway • Kanpur Division
+                AI-Powered Smart Traffic Optimizer
               </p>
             </div>
           </motion.div>

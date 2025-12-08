@@ -129,7 +129,7 @@ const Auth = () => {
     } else {
       toast({
         title: 'Account Created',
-        description: 'Welcome to Railway Traffic Control.',
+        description: 'Welcome to RailAnukriti.',
       });
     }
   };
@@ -206,9 +206,9 @@ const Auth = () => {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-foreground">
-                Section Control AI
+                RailAnukriti
               </h1>
-              <p className="text-sm text-muted-foreground">Indian Railways Network</p>
+              <p className="text-sm text-muted-foreground">AI-Powered Smart Traffic Optimizer</p>
             </div>
           </motion.div>
 
@@ -220,12 +220,12 @@ const Auth = () => {
             className="mb-12"
           >
             <h2 className="text-5xl font-bold text-foreground leading-tight mb-4">
-              Smart Railway
+              Intelligent Rail
               <br />
-              <span className="text-primary">Operations</span>
+              <span className="text-primary">Optimization</span>
             </h2>
             <p className="text-lg text-muted-foreground max-w-md">
-              AI-powered traffic management for efficient train operations and real-time decision support.
+              AI-powered traffic optimizer using RL, OR-Tools & GNNs with real-time simulation and human-in-the-loop control.
             </p>
           </motion.div>
 
@@ -297,13 +297,12 @@ const Auth = () => {
           animate={{ opacity: 1, x: 0 }}
           className="w-full max-w-md"
         >
-          {/* Mobile Logo */}
           <div className="lg:hidden flex items-center gap-3 mb-8 justify-center">
             <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center border border-primary/30">
               <Train className="w-6 h-6 text-primary" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-foreground">Section Control AI</h1>
+              <h1 className="text-xl font-bold text-foreground">RailAnukriti</h1>
             </div>
           </div>
 
