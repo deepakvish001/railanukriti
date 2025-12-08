@@ -56,6 +56,18 @@ interface RouteLock {
   status: 'setting' | 'locked' | 'releasing';
 }
 
+// Track occupancy history entry
+interface OccupancyHistoryEntry {
+  id: string;
+  sectionId: number;
+  sectionName: string;
+  trainId: string;
+  trainNumber: string;
+  trainType: string;
+  enteredAt: Date;
+  exitedAt?: Date;
+}
+
 // Signal component with interactive controls
 const Signal = ({ 
   id,
@@ -604,6 +616,61 @@ export const SignalBoxVisualization = ({
   // Route locks for interlocking
   const [routeLocks, setRouteLocks] = useState<RouteLock[]>([]);
 
+  // Track occupancy history
+  const [occupancyHistory, setOccupancyHistory] = useState<OccupancyHistoryEntry[]>([]);
+  const [showOccupancyHistory, setShowOccupancyHistory] = useState(false);
+  const previousTrainSections = useRef<Map<string, number | null>>(new Map());
+
+  // Track train movements for occupancy history
+  useEffect(() => {
+    trains.forEach(train => {
+      const previousSection = previousTrainSections.current.get(train.id);
+      const currentSection = train.currentSection;
+
+      // Train entered a new section
+      if (currentSection && currentSection !== previousSection) {
+        const section = sections.find(s => s.id === currentSection);
+        
+        // Mark exit from previous section
+        if (previousSection) {
+          setOccupancyHistory(prev => 
+            prev.map(entry => 
+              entry.trainId === train.id && entry.sectionId === previousSection && !entry.exitedAt
+                ? { ...entry, exitedAt: new Date() }
+                : entry
+            )
+          );
+        }
+
+        // Add entry for new section
+        const newEntry: OccupancyHistoryEntry = {
+          id: `${train.id}-${currentSection}-${Date.now()}`,
+          sectionId: currentSection,
+          sectionName: section?.name || `Section ${currentSection}`,
+          trainId: train.id,
+          trainNumber: train.number,
+          trainType: train.type,
+          enteredAt: new Date()
+        };
+        
+        setOccupancyHistory(prev => [newEntry, ...prev].slice(0, 100)); // Keep last 100 entries
+      }
+
+      // Train left section completely
+      if (previousSection && !currentSection) {
+        setOccupancyHistory(prev => 
+          prev.map(entry => 
+            entry.trainId === train.id && entry.sectionId === previousSection && !entry.exitedAt
+              ? { ...entry, exitedAt: new Date() }
+              : entry
+          )
+        );
+      }
+
+      previousTrainSections.current.set(train.id, currentSection);
+    });
+  }, [trains, sections]);
+
   // Check if signal is locked by any route
   const isSignalLocked = (signalId: string): RouteLock | undefined => {
     return routeLocks.find(lock => lock.lockedSignals.includes(signalId) && lock.status === 'locked');
@@ -1066,6 +1133,14 @@ export const SignalBoxVisualization = ({
           >
             Reset Points
           </Button>
+          <Button
+            variant={showOccupancyHistory ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-6 text-[10px] px-2"
+            onClick={() => setShowOccupancyHistory(!showOccupancyHistory)}
+          >
+            📋 History {occupancyHistory.length > 0 && `(${occupancyHistory.length})`}
+          </Button>
         </div>
       </div>
 
@@ -1097,6 +1172,82 @@ export const SignalBoxVisualization = ({
           </div>
         </div>
       )}
+
+      {/* Occupancy History Panel */}
+      <AnimatePresence>
+        {showOccupancyHistory && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="border-b border-border/30 overflow-hidden"
+          >
+            <div className="px-3 py-2 bg-zinc-800/30">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-semibold text-foreground">Track Occupancy History</span>
+                {occupancyHistory.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 text-[9px] px-2 text-muted-foreground hover:text-destructive"
+                    onClick={() => setOccupancyHistory([])}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              <div className="max-h-32 overflow-auto space-y-1">
+                {occupancyHistory.length === 0 ? (
+                  <p className="text-[9px] text-muted-foreground italic py-2">No occupancy records yet. History will appear as trains move through sections.</p>
+                ) : (
+                  occupancyHistory.map(entry => {
+                    const typeColors: Record<string, string> = {
+                      express: 'text-train-express',
+                      freight: 'text-train-freight',
+                      local: 'text-train-local',
+                      special: 'text-train-special'
+                    };
+                    const isActive = !entry.exitedAt;
+                    const duration = entry.exitedAt 
+                      ? Math.round((entry.exitedAt.getTime() - entry.enteredAt.getTime()) / 1000)
+                      : Math.round((Date.now() - entry.enteredAt.getTime()) / 1000);
+                    
+                    return (
+                      <div 
+                        key={entry.id}
+                        className={cn(
+                          'flex items-center gap-2 px-2 py-1 rounded text-[9px] border',
+                          isActive 
+                            ? 'bg-green-500/10 border-green-500/30' 
+                            : 'bg-zinc-800/50 border-zinc-700/30'
+                        )}
+                      >
+                        <span className={cn('font-mono font-bold', typeColors[entry.trainType])}>
+                          {entry.trainNumber}
+                        </span>
+                        <span className="text-muted-foreground">→</span>
+                        <span className="font-medium text-foreground">{entry.sectionName}</span>
+                        <span className="text-muted-foreground ml-auto">
+                          {entry.enteredAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </span>
+                        {isActive ? (
+                          <span className="px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 text-[8px] font-bold">
+                            IN ({duration}s)
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded bg-zinc-600/20 text-zinc-400 text-[8px]">
+                            {duration}s
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Control hint */}
       <div className="px-3 py-1.5 bg-primary/5 border-b border-border/30 flex items-center justify-between">
