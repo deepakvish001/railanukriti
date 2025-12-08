@@ -20,7 +20,7 @@ import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar';
 import { useTrains, useTrackSections, useAIRecommendations, useSectionMetrics } from '@/hooks/useRailwayData';
 import { Helmet } from 'react-helmet-async';
 import { Loader2, MousePointerClick } from 'lucide-react';
-import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
+import { SidebarProvider } from '@/components/ui/sidebar';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
@@ -143,12 +143,9 @@ const DashboardContent = () => {
         
         {/* Main Content Area */}
         <main className="flex-1 flex flex-col overflow-hidden bg-gradient-to-br from-background via-background to-muted/10">
-          {/* Top Bar with Trigger + Metrics */}
-          <div className="flex items-center gap-3 p-3 lg:p-4 border-b border-border/30 bg-card/30 backdrop-blur-sm">
-            <SidebarTrigger className="shrink-0 h-8 w-8 rounded-lg border border-border/50 hover:bg-muted/50" />
-            <div className="flex-1 overflow-hidden">
-              {metrics && <MetricsPanel metrics={metrics} />}
-            </div>
+          {/* Top Bar with Metrics */}
+          <div className="p-3 lg:p-4 border-b border-border/30 bg-card/30 backdrop-blur-sm">
+            {metrics && <MetricsPanel metrics={metrics} />}
           </div>
 
           {/* Scrollable Content */}
