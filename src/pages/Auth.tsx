@@ -8,10 +8,11 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { 
-  Train, AlertCircle, Loader2, Mail, Lock, User, Eye, EyeOff,
+  AlertCircle, Loader2, Mail, Lock, User, Eye, EyeOff,
   Signal, Clock, Shield
 } from 'lucide-react';
 import { z } from 'zod';
+import railanukritiLogo from '@/assets/railanukriti-logo.png';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -201,8 +202,8 @@ const Auth = () => {
             animate={{ opacity: 1, y: 0 }}
             className="flex items-center gap-4 mb-12"
           >
-            <div className="w-16 h-16 rounded-2xl bg-primary/20 flex items-center justify-center border border-primary/30">
-              <Train className="w-8 h-8 text-primary" />
+            <div className="w-16 h-16 rounded-2xl overflow-hidden border border-primary/30">
+              <img src={railanukritiLogo} alt="RailAnukriti" className="w-full h-full object-cover" />
             </div>
             <div>
               <h1 className="text-2xl font-bold text-foreground">
@@ -298,8 +299,8 @@ const Auth = () => {
           className="w-full max-w-md"
         >
           <div className="lg:hidden flex items-center gap-3 mb-8 justify-center">
-            <div className="w-12 h-12 rounded-xl bg-primary/20 flex items-center justify-center border border-primary/30">
-              <Train className="w-6 h-6 text-primary" />
+            <div className="w-12 h-12 rounded-xl overflow-hidden border border-primary/30">
+              <img src={railanukritiLogo} alt="RailAnukriti" className="w-full h-full object-cover" />
             </div>
             <div>
               <h1 className="text-xl font-bold text-foreground">RailAnukriti</h1>
