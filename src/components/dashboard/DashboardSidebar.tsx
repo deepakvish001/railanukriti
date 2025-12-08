@@ -1,6 +1,7 @@
 import {
   Sparkles, Bell, FlaskConical, History, BarChart3, AlertTriangle,
-  GanttChart, Download, TrendingUp, Target, Brain, Train, ChevronLeft, ChevronRight
+  GanttChart, Download, TrendingUp, Target, Brain, Train, ChevronLeft, ChevronRight,
+  LayoutDashboard
 } from 'lucide-react';
 import {
   Sidebar,
@@ -20,8 +21,12 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { NavLink, useLocation } from 'react-router-dom';
 
+const mainItems = [
+  { id: 'dashboard', title: 'Dashboard', icon: LayoutDashboard, path: '/' },
+];
+
 const aiItems = [
-  { id: 'recommendations', title: 'AI Recommendations', icon: Sparkles, path: '/' },
+  { id: 'recommendations', title: 'AI Recommendations', icon: Sparkles, path: '/recommendations' },
   { id: 'predictions', title: 'Delay Prediction', icon: Brain, path: '/predictions' },
   { id: 'conflicts', title: 'Conflict Detection', icon: AlertTriangle, path: '/conflicts' },
 ];
@@ -161,6 +166,10 @@ export const DashboardSidebar = () => {
       </SidebarHeader>
 
       <SidebarContent className="pt-3 gap-3">
+        {renderGroup('Main', mainItems)}
+        
+        <div className={cn("h-px bg-border/30", collapsed ? "mx-2" : "mx-4")} />
+        
         {renderGroup('AI Intelligence', aiItems)}
         
         <div className={cn("h-px bg-border/30", collapsed ? "mx-2" : "mx-4")} />

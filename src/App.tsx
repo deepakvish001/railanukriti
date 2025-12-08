@@ -12,6 +12,7 @@ import Map from "./pages/Map";
 import NotFound from "./pages/NotFound";
 
 // Dashboard pages
+import Dashboard from "./pages/dashboard/Dashboard";
 import Recommendations from "./pages/dashboard/Recommendations";
 import Predictions from "./pages/dashboard/Predictions";
 import Conflicts from "./pages/dashboard/Conflicts";
@@ -37,7 +38,8 @@ const App = () => (
             <BrowserRouter>
               <Routes>
                 {/* Dashboard Routes */}
-                <Route path="/" element={<ProtectedRoute><Recommendations /></ProtectedRoute>} />
+                <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+                <Route path="/recommendations" element={<ProtectedRoute><Recommendations /></ProtectedRoute>} />
                 <Route path="/predictions" element={<ProtectedRoute><Predictions /></ProtectedRoute>} />
                 <Route path="/conflicts" element={<ProtectedRoute><Conflicts /></ProtectedRoute>} />
                 <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
