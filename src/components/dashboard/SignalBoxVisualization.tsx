@@ -716,6 +716,84 @@ export const SignalBoxVisualization = ({
     return Math.round((occupiedCount / timeSlots.length) * 100);
   };
 
+  // Overstay alert configuration and state
+  const [overstayThreshold, setOverstayThreshold] = useState(30); // seconds
+  const [overstayAlerts, setOverstayAlerts] = useState<{
+    id: string;
+    trainId: string;
+    trainNumber: string;
+    trainType: string;
+    sectionId: number;
+    sectionName: string;
+    enteredAt: Date;
+    duration: number;
+    acknowledged: boolean;
+  }[]>([]);
+  const [showOverstayPanel, setShowOverstayPanel] = useState(true);
+  const acknowledgedAlerts = useRef<Set<string>>(new Set());
+
+  // Check for overstay alerts
+  useEffect(() => {
+    const checkOverstays = () => {
+      const now = Date.now();
+      const activeOccupancies = occupancyHistory.filter(entry => !entry.exitedAt);
+      
+      const newAlerts = activeOccupancies
+        .map(entry => {
+          const duration = Math.round((now - entry.enteredAt.getTime()) / 1000);
+          if (duration >= overstayThreshold) {
+            return {
+              id: `${entry.trainId}-${entry.sectionId}`,
+              trainId: entry.trainId,
+              trainNumber: entry.trainNumber,
+              trainType: entry.trainType,
+              sectionId: entry.sectionId,
+              sectionName: entry.sectionName,
+              enteredAt: entry.enteredAt,
+              duration,
+              acknowledged: acknowledgedAlerts.current.has(`${entry.trainId}-${entry.sectionId}`)
+            };
+          }
+          return null;
+        })
+        .filter((alert): alert is NonNullable<typeof alert> => alert !== null);
+
+      setOverstayAlerts(newAlerts);
+    };
+
+    checkOverstays();
+    const interval = setInterval(checkOverstays, 1000);
+    return () => clearInterval(interval);
+  }, [occupancyHistory, overstayThreshold]);
+
+  // Acknowledge an alert
+  const acknowledgeAlert = (alertId: string) => {
+    acknowledgedAlerts.current.add(alertId);
+    setOverstayAlerts(prev => 
+      prev.map(alert => 
+        alert.id === alertId ? { ...alert, acknowledged: true } : alert
+      )
+    );
+    logAction(
+      'alert_acknowledge',
+      'alert',
+      `Overstay alert acknowledged for ${alertId}`,
+      alertId,
+      {}
+    );
+  };
+
+  // Get alert severity based on overstay duration
+  const getAlertSeverity = (duration: number) => {
+    const excess = duration - overstayThreshold;
+    if (excess >= overstayThreshold) return 'critical'; // 2x threshold
+    if (excess >= overstayThreshold / 2) return 'warning'; // 1.5x threshold
+    return 'info';
+  };
+
+  // Unacknowledged alert count
+  const unacknowledgedCount = overstayAlerts.filter(a => !a.acknowledged).length;
+
   // Calculate section occupancy statistics
   const sectionStats = useMemo(() => {
     const stats: Record<number, {
@@ -1201,6 +1279,136 @@ export const SignalBoxVisualization = ({
             </Button>
           </div>
         </motion.div>
+      )}
+
+      {/* Overstay Alerts Panel */}
+      <AnimatePresence>
+        {overstayAlerts.length > 0 && showOverstayPanel && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className={cn(
+              'border-b-2 px-3 py-2',
+              unacknowledgedCount > 0 
+                ? 'bg-amber-500/10 border-amber-500' 
+                : 'bg-zinc-800/30 border-zinc-700'
+            )}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                {unacknowledgedCount > 0 && (
+                  <motion.div 
+                    className="w-2 h-2 rounded-full bg-amber-500"
+                    animate={{ scale: [1, 1.3, 1], opacity: [1, 0.5, 1] }}
+                    transition={{ duration: 0.5, repeat: Infinity }}
+                  />
+                )}
+                <span className="text-[10px] font-semibold text-amber-400">
+                  ⏱️ Overstay Alerts ({overstayAlerts.length})
+                </span>
+                <span className="text-[9px] text-muted-foreground">
+                  Threshold: {overstayThreshold}s
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={overstayThreshold}
+                  onChange={(e) => setOverstayThreshold(Number(e.target.value))}
+                  className="h-5 text-[9px] px-1.5 rounded bg-zinc-800 border border-zinc-700 text-foreground focus:outline-none"
+                >
+                  <option value="15">15s</option>
+                  <option value="30">30s</option>
+                  <option value="45">45s</option>
+                  <option value="60">60s</option>
+                  <option value="90">90s</option>
+                  <option value="120">120s</option>
+                </select>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-5 text-[9px] px-2"
+                  onClick={() => setShowOverstayPanel(false)}
+                >
+                  Hide
+                </Button>
+              </div>
+            </div>
+            <div className="flex gap-2 flex-wrap max-h-20 overflow-auto">
+              {overstayAlerts.map(alert => {
+                const severity = getAlertSeverity(alert.duration);
+                const typeColors: Record<string, string> = {
+                  express: 'border-train-express',
+                  freight: 'border-train-freight',
+                  local: 'border-train-local',
+                  special: 'border-train-special'
+                };
+                return (
+                  <motion.div 
+                    key={alert.id}
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className={cn(
+                      'flex items-center gap-2 px-2 py-1 rounded text-[9px] border-l-2',
+                      typeColors[alert.trainType],
+                      alert.acknowledged ? 'bg-zinc-800/50 opacity-60' : 'bg-zinc-800',
+                      severity === 'critical' && !alert.acknowledged && 'ring-1 ring-red-500/50',
+                      severity === 'warning' && !alert.acknowledged && 'ring-1 ring-amber-500/50'
+                    )}
+                  >
+                    <span className={cn(
+                      'font-mono font-bold',
+                      severity === 'critical' && 'text-red-400',
+                      severity === 'warning' && 'text-amber-400',
+                      severity === 'info' && 'text-foreground'
+                    )}>
+                      {alert.trainNumber}
+                    </span>
+                    <span className="text-muted-foreground">in</span>
+                    <span className="font-medium">{alert.sectionName}</span>
+                    <span className={cn(
+                      'font-mono px-1.5 py-0.5 rounded',
+                      severity === 'critical' && 'bg-red-500/20 text-red-400',
+                      severity === 'warning' && 'bg-amber-500/20 text-amber-400',
+                      severity === 'info' && 'bg-zinc-600/20 text-zinc-300'
+                    )}>
+                      {alert.duration}s
+                    </span>
+                    {!alert.acknowledged && (
+                      <button
+                        onClick={() => acknowledgeAlert(alert.id)}
+                        className="text-[8px] px-1.5 py-0.5 rounded bg-primary/20 text-primary hover:bg-primary/30"
+                      >
+                        ACK
+                      </button>
+                    )}
+                  </motion.div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Collapsed Overstay Alert Indicator */}
+      {overstayAlerts.length > 0 && !showOverstayPanel && (
+        <button
+          onClick={() => setShowOverstayPanel(true)}
+          className={cn(
+            'px-3 py-1 border-b text-[9px] flex items-center gap-2 transition-colors',
+            unacknowledgedCount > 0 
+              ? 'bg-amber-500/10 border-amber-500/50 text-amber-400 hover:bg-amber-500/20' 
+              : 'bg-zinc-800/30 border-zinc-700 text-muted-foreground hover:bg-zinc-800/50'
+          )}
+        >
+          <span>⏱️ {overstayAlerts.length} overstay alert{overstayAlerts.length > 1 ? 's' : ''}</span>
+          {unacknowledgedCount > 0 && (
+            <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold">
+              {unacknowledgedCount} new
+            </span>
+          )}
+          <span className="text-muted-foreground ml-auto">Click to expand</span>
+        </button>
       )}
 
       {/* Header */}
