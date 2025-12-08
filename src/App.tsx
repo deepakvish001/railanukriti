@@ -8,6 +8,7 @@ import { AuthProvider } from "@/hooks/useAuth";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import Map from "./pages/Map";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -26,6 +27,14 @@ const App = () => (
                 element={
                   <ProtectedRoute>
                     <Index />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/map"
+                element={
+                  <ProtectedRoute>
+                    <Map />
                   </ProtectedRoute>
                 }
               />
