@@ -6,26 +6,32 @@ import { TrackVisualization } from '@/components/dashboard/TrackVisualization';
 import { TrainList } from '@/components/dashboard/TrainList';
 import { AIRecommendations } from '@/components/dashboard/AIRecommendations';
 import { TrainDetails } from '@/components/dashboard/TrainDetails';
-import { mockTrains, mockTrackSections, mockRecommendations, mockMetrics } from '@/data/mockData';
-import { Train } from '@/types/railway';
+import { useTrains, useTrackSections, useAIRecommendations, useSectionMetrics } from '@/hooks/useRailwayData';
 import { Helmet } from 'react-helmet-async';
+import { Loader2 } from 'lucide-react';
 
 const Index = () => {
   const [selectedTrainId, setSelectedTrainId] = useState<string | null>(null);
-  const [trains, setTrains] = useState(mockTrains);
-  const [metrics, setMetrics] = useState(mockMetrics);
+  
+  const { trains, loading: trainsLoading, setTrains } = useTrains();
+  const { sections, loading: sectionsLoading } = useTrackSections();
+  const { recommendations, loading: recommendationsLoading } = useAIRecommendations();
+  const { metrics, loading: metricsLoading, setMetrics } = useSectionMetrics();
 
   const selectedTrain = selectedTrainId 
     ? trains.find(t => t.id === selectedTrainId) || null 
     : null;
 
-  // Simulate real-time updates
+  const isLoading = trainsLoading || sectionsLoading || recommendationsLoading || metricsLoading;
+
+  // Simulate real-time speed updates (in production, this would come from actual sensors)
   useEffect(() => {
+    if (trains.length === 0) return;
+
     const interval = setInterval(() => {
       setTrains(prev => prev.map(train => {
         if (train.status === 'halted') return train;
         
-        // Randomly adjust speed slightly
         const speedChange = (Math.random() - 0.5) * 5;
         const newSpeed = Math.max(0, Math.min(150, train.speed + speedChange));
         
@@ -35,16 +41,29 @@ const Index = () => {
         };
       }));
 
-      // Update metrics slightly
-      setMetrics(prev => ({
-        ...prev,
-        throughput: prev.throughput + (Math.random() > 0.5 ? 0 : Math.random() > 0.5 ? 1 : -1),
-        averageDelay: Math.max(0, prev.averageDelay + (Math.random() - 0.5) * 0.5),
-      }));
+      // Slightly update metrics for realistic feel
+      if (metrics) {
+        setMetrics(prev => prev ? {
+          ...prev,
+          throughput: prev.throughput + (Math.random() > 0.7 ? (Math.random() > 0.5 ? 1 : -1) : 0),
+          averageDelay: Math.max(0, prev.averageDelay + (Math.random() - 0.5) * 0.3),
+        } : null);
+      }
     }, 3000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [trains.length, metrics, setTrains, setMetrics]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-muted-foreground font-mono">Loading section data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -58,7 +77,7 @@ const Index = () => {
         
         <main className="flex-1 p-6 space-y-6 overflow-hidden">
           {/* Metrics Row */}
-          <MetricsPanel metrics={metrics} />
+          {metrics && <MetricsPanel metrics={metrics} />}
 
           {/* Main Content */}
           <div className="grid grid-cols-12 gap-6 h-[calc(100vh-320px)]">
@@ -74,13 +93,13 @@ const Index = () => {
             {/* Center Panel - Track Visualization & AI Recommendations */}
             <div className="col-span-6 flex flex-col gap-6">
               <TrackVisualization
-                sections={mockTrackSections}
+                sections={sections}
                 trains={trains}
                 selectedTrain={selectedTrainId}
                 onTrainSelect={setSelectedTrainId}
               />
               <div className="flex-1 min-h-0">
-                <AIRecommendations recommendations={mockRecommendations} />
+                <AIRecommendations recommendations={recommendations} />
               </div>
             </div>
 

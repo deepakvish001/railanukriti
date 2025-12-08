@@ -14,6 +14,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_recommendations: {
+        Row: {
+          action: string
+          confidence: number
+          created_at: string
+          id: string
+          impact: string
+          is_active: boolean
+          reason: string
+          resolved_at: string | null
+          resolved_by: string | null
+          train_id: string | null
+          type: Database["public"]["Enums"]["recommendation_type"]
+        }
+        Insert: {
+          action: string
+          confidence?: number
+          created_at?: string
+          id?: string
+          impact: string
+          is_active?: boolean
+          reason: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          train_id?: string | null
+          type: Database["public"]["Enums"]["recommendation_type"]
+        }
+        Update: {
+          action?: string
+          confidence?: number
+          created_at?: string
+          id?: string
+          impact?: string
+          is_active?: boolean
+          reason?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          train_id?: string | null
+          type?: Database["public"]["Enums"]["recommendation_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_recommendations_train_id_fkey"
+            columns: ["train_id"]
+            isOneToOne: false
+            referencedRelation: "trains"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           assigned_section: string | null
@@ -44,6 +94,143 @@ export type Database = {
         }
         Relationships: []
       }
+      section_metrics: {
+        Row: {
+          active_trains: number
+          average_delay: number
+          id: string
+          on_time_performance: number
+          pending_conflicts: number
+          recorded_at: string
+          throughput: number
+          utilization: number
+        }
+        Insert: {
+          active_trains?: number
+          average_delay?: number
+          id?: string
+          on_time_performance?: number
+          pending_conflicts?: number
+          recorded_at?: string
+          throughput?: number
+          utilization?: number
+        }
+        Update: {
+          active_trains?: number
+          average_delay?: number
+          id?: string
+          on_time_performance?: number
+          pending_conflicts?: number
+          recorded_at?: string
+          throughput?: number
+          utilization?: number
+        }
+        Relationships: []
+      }
+      track_sections: {
+        Row: {
+          created_at: string
+          gradient: number
+          id: number
+          length: number
+          max_speed: number
+          name: string
+          occupied_by: string | null
+          status: Database["public"]["Enums"]["track_status"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          gradient?: number
+          id?: number
+          length?: number
+          max_speed?: number
+          name: string
+          occupied_by?: string | null
+          status?: Database["public"]["Enums"]["track_status"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          gradient?: number
+          id?: number
+          length?: number
+          max_speed?: number
+          name?: string
+          occupied_by?: string | null
+          status?: Database["public"]["Enums"]["track_status"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      trains: {
+        Row: {
+          actual_time: string | null
+          created_at: string
+          current_section: number | null
+          delay: number
+          destination: string
+          eta: string | null
+          id: string
+          name: string
+          next_station: string | null
+          number: string
+          origin: string
+          priority: Database["public"]["Enums"]["priority_level"]
+          scheduled_time: string
+          speed: number
+          status: Database["public"]["Enums"]["train_status"]
+          type: Database["public"]["Enums"]["train_type"]
+          updated_at: string
+        }
+        Insert: {
+          actual_time?: string | null
+          created_at?: string
+          current_section?: number | null
+          delay?: number
+          destination: string
+          eta?: string | null
+          id?: string
+          name: string
+          next_station?: string | null
+          number: string
+          origin: string
+          priority?: Database["public"]["Enums"]["priority_level"]
+          scheduled_time: string
+          speed?: number
+          status?: Database["public"]["Enums"]["train_status"]
+          type?: Database["public"]["Enums"]["train_type"]
+          updated_at?: string
+        }
+        Update: {
+          actual_time?: string | null
+          created_at?: string
+          current_section?: number | null
+          delay?: number
+          destination?: string
+          eta?: string | null
+          id?: string
+          name?: string
+          next_station?: string | null
+          number?: string
+          origin?: string
+          priority?: Database["public"]["Enums"]["priority_level"]
+          scheduled_time?: string
+          speed?: number
+          status?: Database["public"]["Enums"]["train_status"]
+          type?: Database["public"]["Enums"]["train_type"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trains_current_section_fkey"
+            columns: ["current_section"]
+            isOneToOne: false
+            referencedRelation: "track_sections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -52,7 +239,11 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      priority_level: "critical" | "high" | "medium" | "low"
+      recommendation_type: "precedence" | "crossing" | "reroute" | "hold"
+      track_status: "clear" | "occupied" | "blocked"
+      train_status: "on-time" | "delayed" | "halted" | "approaching"
+      train_type: "express" | "freight" | "local" | "special"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -179,6 +370,12 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      priority_level: ["critical", "high", "medium", "low"],
+      recommendation_type: ["precedence", "crossing", "reroute", "hold"],
+      track_status: ["clear", "occupied", "blocked"],
+      train_status: ["on-time", "delayed", "halted", "approaching"],
+      train_type: ["express", "freight", "local", "special"],
+    },
   },
 } as const
