@@ -976,6 +976,68 @@ export const SignalBoxVisualization = ({
     toast.info('Recommendation dismissed');
   };
 
+  // Auto-refresh state
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(false);
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState(60); // seconds
+  const [nextRefreshIn, setNextRefreshIn] = useState(0);
+  const autoRefreshTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const countdownRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Auto-refresh effect
+  useEffect(() => {
+    // Clear existing timers
+    if (autoRefreshTimerRef.current) {
+      clearInterval(autoRefreshTimerRef.current);
+      autoRefreshTimerRef.current = null;
+    }
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+
+    if (autoRefreshEnabled && !forecastLoading) {
+      setNextRefreshIn(autoRefreshInterval);
+      
+      // Countdown timer
+      countdownRef.current = setInterval(() => {
+        setNextRefreshIn(prev => {
+          if (prev <= 1) return autoRefreshInterval;
+          return prev - 1;
+        });
+      }, 1000);
+      
+      // Refresh timer
+      autoRefreshTimerRef.current = setInterval(() => {
+        fetchCongestionForecast();
+        setNextRefreshIn(autoRefreshInterval);
+      }, autoRefreshInterval * 1000);
+    }
+
+    return () => {
+      if (autoRefreshTimerRef.current) clearInterval(autoRefreshTimerRef.current);
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, [autoRefreshEnabled, autoRefreshInterval, forecastLoading]);
+
+  // Toggle auto-refresh
+  const toggleAutoRefresh = () => {
+    const newState = !autoRefreshEnabled;
+    setAutoRefreshEnabled(newState);
+    
+    if (newState) {
+      toast.success('Auto-refresh enabled', {
+        description: `Forecast will refresh every ${autoRefreshInterval} seconds`
+      });
+      // Immediately fetch if no forecast exists
+      if (!congestionForecast) {
+        fetchCongestionForecast();
+      }
+    } else {
+      toast.info('Auto-refresh disabled');
+      setNextRefreshIn(0);
+    }
+  };
+
   // Fetch congestion forecast
   const fetchCongestionForecast = async () => {
     setForecastLoading(true);
@@ -1680,8 +1742,43 @@ export const SignalBoxVisualization = ({
                       Updated: {lastForecastTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   )}
+                  {autoRefreshEnabled && (
+                    <span className="text-[8px] text-emerald-400 flex items-center gap-1">
+                      <motion.div 
+                        className="w-1.5 h-1.5 rounded-full bg-emerald-500"
+                        animate={{ opacity: [1, 0.3, 1] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                      />
+                      Auto ({nextRefreshIn}s)
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* Auto-refresh controls */}
+                  <div className="flex items-center gap-1 mr-2 border-r border-zinc-700/50 pr-2">
+                    <button
+                      onClick={toggleAutoRefresh}
+                      className={cn(
+                        'h-5 px-2 rounded text-[8px] font-medium transition-colors',
+                        autoRefreshEnabled 
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' 
+                          : 'bg-zinc-800 text-muted-foreground border border-zinc-700 hover:text-foreground'
+                      )}
+                    >
+                      {autoRefreshEnabled ? '⏸ Auto' : '▶ Auto'}
+                    </button>
+                    <select
+                      value={autoRefreshInterval}
+                      onChange={(e) => setAutoRefreshInterval(Number(e.target.value))}
+                      className="h-5 text-[8px] px-1 rounded bg-zinc-800 border border-zinc-700 text-foreground focus:outline-none"
+                      disabled={autoRefreshEnabled}
+                    >
+                      <option value="30">30s</option>
+                      <option value="60">1m</option>
+                      <option value="120">2m</option>
+                      <option value="300">5m</option>
+                    </select>
+                  </div>
                   <Button
                     variant="outline"
                     size="sm"
