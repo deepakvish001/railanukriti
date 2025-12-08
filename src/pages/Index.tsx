@@ -16,15 +16,17 @@ import { ExportPanel } from '@/components/dashboard/ExportPanel';
 import { AnalyticsDashboard } from '@/components/dashboard/AnalyticsDashboard';
 import { KPIDashboard } from '@/components/dashboard/KPIDashboard';
 import { DelayPrediction } from '@/components/dashboard/DelayPrediction';
+import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar';
 import { useTrains, useTrackSections, useAIRecommendations, useSectionMetrics } from '@/hooks/useRailwayData';
 import { Helmet } from 'react-helmet-async';
-import { Loader2, FlaskConical, Bell, History, BarChart3, AlertTriangle, GanttChart, Download, TrendingUp, Target, Brain } from 'lucide-react';
+import { Loader2, PanelLeftClose, PanelLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { SidebarProvider, SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
+import { cn } from '@/lib/utils';
 
-const Index = () => {
+const DashboardContent = () => {
   const [selectedTrainId, setSelectedTrainId] = useState<string | null>(null);
-  const [showSimulation, setShowSimulation] = useState(false);
+  const [activeTab, setActiveTab] = useState('recommendations');
   
   const { trains, loading: trainsLoading, setTrains } = useTrains();
   const { sections, loading: sectionsLoading } = useTrackSections();
@@ -66,6 +68,35 @@ const Index = () => {
     return () => clearInterval(interval);
   }, [trains.length, metrics, setTrains, setMetrics]);
 
+  const renderActiveContent = () => {
+    switch (activeTab) {
+      case 'recommendations':
+        return <AIRecommendations recommendations={recommendations} />;
+      case 'alerts':
+        return <AlertsPanel className="h-full" />;
+      case 'simulation':
+        return <ScenarioSimulation trains={trains} />;
+      case 'audit':
+        return <AuditLog />;
+      case 'charts':
+        return <PerformanceCharts />;
+      case 'conflicts':
+        return <ConflictDetection />;
+      case 'schedule':
+        return <TrainScheduleGantt />;
+      case 'export':
+        return <ExportPanel />;
+      case 'analytics':
+        return <AnalyticsDashboard />;
+      case 'kpis':
+        return <KPIDashboard />;
+      case 'predictions':
+        return <DelayPrediction />;
+      default:
+        return <AIRecommendations recommendations={recommendations} />;
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -78,20 +109,24 @@ const Index = () => {
   }
 
   return (
-    <>
-      <Helmet>
-        <title>Section Control AI | Railway Traffic Management</title>
-        <meta name="description" content="AI-powered train traffic control system for maximizing section throughput and minimizing delays on Indian Railways." />
-      </Helmet>
+    <div className="min-h-screen bg-background flex flex-col w-full">
+      <Header />
       
-      <div className="min-h-screen bg-background flex flex-col">
-        <Header />
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Sidebar - Navigation */}
+        <DashboardSidebar activeTab={activeTab} onTabChange={setActiveTab} />
         
+        {/* Main Content Area */}
         <main className="flex-1 p-4 lg:p-6 space-y-4 lg:space-y-6 overflow-auto">
-          {/* Metrics Row */}
-          {metrics && <MetricsPanel metrics={metrics} />}
+          {/* Sidebar Toggle + Metrics Row */}
+          <div className="flex items-start gap-4">
+            <SidebarTrigger className="mt-1 shrink-0" />
+            <div className="flex-1">
+              {metrics && <MetricsPanel metrics={metrics} />}
+            </div>
+          </div>
 
-          {/* Main Content */}
+          {/* Main Content Grid */}
           <div className="grid grid-cols-12 gap-4 lg:gap-6 min-h-[600px]">
             {/* Left Panel - Train List */}
             <div className="col-span-12 lg:col-span-3 xl:col-span-2">
@@ -102,7 +137,7 @@ const Index = () => {
               />
             </div>
 
-            {/* Center Panel - Track Visualization & Tabs */}
+            {/* Center Panel - Track Visualization & Active Content */}
             <div className="col-span-12 lg:col-span-6 xl:col-span-7 flex flex-col gap-4 lg:gap-6">
               <TrackVisualization
                 sections={sections}
@@ -111,100 +146,10 @@ const Index = () => {
                 onTrainSelect={setSelectedTrainId}
               />
               
-              {/* Tabbed Content */}
-              <Tabs defaultValue="recommendations" className="flex-1 min-h-0 flex flex-col">
-                <div className="flex items-center justify-between">
-                  <TabsList className="bg-muted h-9">
-                    <TabsTrigger value="recommendations" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                      AI Recommendations
-                    </TabsTrigger>
-                    <TabsTrigger value="alerts" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                      <Bell className="w-3 h-3 mr-1" />
-                      Alerts
-                    </TabsTrigger>
-                    <TabsTrigger value="simulation" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                      <FlaskConical className="w-3 h-3 mr-1" />
-                      Simulation
-                    </TabsTrigger>
-                    <TabsTrigger value="audit" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                      <History className="w-3 h-3 mr-1" />
-                      Audit Log
-                    </TabsTrigger>
-                    <TabsTrigger value="charts" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                      <BarChart3 className="w-3 h-3 mr-1" />
-                      Charts
-                    </TabsTrigger>
-                    <TabsTrigger value="conflicts" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                      <AlertTriangle className="w-3 h-3 mr-1" />
-                      Conflicts
-                    </TabsTrigger>
-                    <TabsTrigger value="schedule" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                      <GanttChart className="w-3 h-3 mr-1" />
-                      Schedule
-                    </TabsTrigger>
-                    <TabsTrigger value="export" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                      <Download className="w-3 h-3 mr-1" />
-                      Export
-                    </TabsTrigger>
-                    <TabsTrigger value="analytics" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                      <TrendingUp className="w-3 h-3 mr-1" />
-                      Analytics
-                    </TabsTrigger>
-                    <TabsTrigger value="kpis" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                      <Target className="w-3 h-3 mr-1" />
-                      KPIs
-                    </TabsTrigger>
-                    <TabsTrigger value="predictions" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                      <Brain className="w-3 h-3 mr-1" />
-                      AI Predict
-                    </TabsTrigger>
-                  </TabsList>
-                </div>
-                
-                <TabsContent value="recommendations" className="flex-1 mt-3 min-h-0">
-                  <AIRecommendations recommendations={recommendations} />
-                </TabsContent>
-                
-                <TabsContent value="alerts" className="flex-1 mt-3 min-h-0">
-                  <AlertsPanel className="h-full" />
-                </TabsContent>
-                
-                <TabsContent value="simulation" className="flex-1 mt-3 min-h-0">
-                  <ScenarioSimulation trains={trains} />
-                </TabsContent>
-                
-                <TabsContent value="audit" className="flex-1 mt-3 min-h-0">
-                  <AuditLog />
-                </TabsContent>
-                
-                <TabsContent value="charts" className="flex-1 mt-3 min-h-0">
-                  <PerformanceCharts />
-                </TabsContent>
-                
-                <TabsContent value="conflicts" className="flex-1 mt-3 min-h-0">
-                  <ConflictDetection />
-                </TabsContent>
-                
-                <TabsContent value="schedule" className="flex-1 mt-3 min-h-0">
-                  <TrainScheduleGantt />
-                </TabsContent>
-                
-                <TabsContent value="export" className="flex-1 mt-3 min-h-0">
-                  <ExportPanel />
-                </TabsContent>
-                
-                <TabsContent value="analytics" className="flex-1 mt-3 min-h-0 overflow-auto">
-                  <AnalyticsDashboard />
-                </TabsContent>
-                
-                <TabsContent value="kpis" className="flex-1 mt-3 min-h-0 overflow-auto">
-                  <KPIDashboard />
-                </TabsContent>
-                
-                <TabsContent value="predictions" className="flex-1 mt-3 min-h-0 overflow-auto">
-                  <DelayPrediction />
-                </TabsContent>
-              </Tabs>
+              {/* Active Tab Content */}
+              <div className="flex-1 min-h-[300px] overflow-auto">
+                {renderActiveContent()}
+              </div>
             </div>
 
             {/* Right Panel - Train Details */}
@@ -246,24 +191,39 @@ const Index = () => {
             </div>
           </div>
         </main>
-
-        {/* Footer Status Bar */}
-        <footer className="border-t border-border bg-card/50 px-4 lg:px-6 py-2">
-          <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <div className="flex items-center gap-4">
-              <span>Last sync: Just now</span>
-              <span className="hidden sm:inline">•</span>
-              <span className="hidden sm:inline">Network: Connected</span>
-              <span className="hidden md:inline">•</span>
-              <span className="hidden md:inline">TMS Integration: Active</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-              <span>All systems operational</span>
-            </div>
-          </div>
-        </footer>
       </div>
+
+      {/* Footer Status Bar */}
+      <footer className="border-t border-border bg-card/50 px-4 lg:px-6 py-2">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <div className="flex items-center gap-4">
+            <span>Last sync: Just now</span>
+            <span className="hidden sm:inline">•</span>
+            <span className="hidden sm:inline">Network: Connected</span>
+            <span className="hidden md:inline">•</span>
+            <span className="hidden md:inline">TMS Integration: Active</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+            <span>All systems operational</span>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+};
+
+const Index = () => {
+  return (
+    <>
+      <Helmet>
+        <title>Section Control AI | Railway Traffic Management</title>
+        <meta name="description" content="AI-powered train traffic control system for maximizing section throughput and minimizing delays on Indian Railways." />
+      </Helmet>
+      
+      <SidebarProvider defaultOpen={true}>
+        <DashboardContent />
+      </SidebarProvider>
     </>
   );
 };
