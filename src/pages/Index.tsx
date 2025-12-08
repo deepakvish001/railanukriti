@@ -196,21 +196,62 @@ const DashboardContent = () => {
                   </div>
                 </motion.div>
 
-                {/* Right Panel - Train Details */}
+                {/* Right Panel - Train Details & Quick Info */}
                 <motion.div 
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.2 }}
-                  className="col-span-12 lg:col-span-3 xl:col-span-3"
+                  className="col-span-12 lg:col-span-3 xl:col-span-3 flex flex-col gap-3 lg:gap-4"
                 >
-                  <div className="bg-card/50 backdrop-blur-sm rounded-xl border border-border/50 overflow-hidden h-full min-h-[400px] lg:min-h-[500px]">
+                  {/* Quick Stats Cards */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="bg-card/50 backdrop-blur-sm rounded-lg border border-border/50 p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-2 h-2 rounded-full bg-success" />
+                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">On Time</span>
+                      </div>
+                      <p className="text-lg font-bold text-success">{trains.filter(t => t.status === 'on-time').length}</p>
+                    </div>
+                    <div className="bg-card/50 backdrop-blur-sm rounded-lg border border-border/50 p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-2 h-2 rounded-full bg-warning" />
+                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Delayed</span>
+                      </div>
+                      <p className="text-lg font-bold text-warning">{trains.filter(t => t.status === 'delayed').length}</p>
+                    </div>
+                    <div className="bg-card/50 backdrop-blur-sm rounded-lg border border-border/50 p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-2 h-2 rounded-full bg-destructive" />
+                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Halted</span>
+                      </div>
+                      <p className="text-lg font-bold text-destructive">{trains.filter(t => t.status === 'halted').length}</p>
+                    </div>
+                    <div className="bg-card/50 backdrop-blur-sm rounded-lg border border-border/50 p-3">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-2 h-2 rounded-full bg-primary" />
+                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Active</span>
+                      </div>
+                      <p className="text-lg font-bold text-primary">{trains.filter(t => t.status === 'approaching').length}</p>
+                    </div>
+                  </div>
+
+                  {/* Train Details Card */}
+                  <div className="bg-card/50 backdrop-blur-sm rounded-xl border border-border/50 overflow-hidden flex-1 min-h-[300px] lg:min-h-[380px]">
+                    <div className="px-4 py-2.5 border-b border-border/30 bg-muted/20 flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-foreground">Train Details</h3>
+                      {selectedTrain && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/20 text-primary font-medium">
+                          {selectedTrain.number}
+                        </span>
+                      )}
+                    </div>
                     {selectedTrain ? (
                       <TrainDetails
                         train={selectedTrain}
                         onClose={() => setSelectedTrainId(null)}
                       />
                     ) : (
-                      <div className="h-full flex flex-col items-center justify-center p-6 text-center">
+                      <div className="h-full flex flex-col items-center justify-center p-6 text-center min-h-[260px]">
                         <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-muted/80 to-muted/40 flex items-center justify-center mb-4 border border-border/30">
                           <MousePointerClick className="w-6 h-6 text-muted-foreground" />
                         </div>
