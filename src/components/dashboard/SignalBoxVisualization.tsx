@@ -2167,9 +2167,27 @@ export const SignalBoxVisualization = ({
 
       {/* Header */}
       <div className="px-4 py-3 border-b border-border/30 bg-zinc-800/50 flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-bold text-foreground">Block Section Diagram</h3>
-          <p className="text-xs text-muted-foreground">Kanpur - Allahabad Section</p>
+        <div className="flex items-center gap-4">
+          <div>
+            <h3 className="text-sm font-bold text-foreground">Block Section Diagram</h3>
+            <p className="text-xs text-muted-foreground">Kanpur - Allahabad Section</p>
+          </div>
+          {/* Collapse All Button */}
+          {(showOverstayPanel || showForecastPanel || showSchedulingPanel || showOccupancyHistory) && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs px-3 border-zinc-600 text-muted-foreground hover:text-foreground hover:bg-zinc-700/50"
+              onClick={() => {
+                setShowOverstayPanel(false);
+                setShowForecastPanel(false);
+                setShowSchedulingPanel(false);
+                setShowOccupancyHistory(false);
+              }}
+            >
+              ⬆️ Collapse All
+            </Button>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {/* Emergency Stop Button */}
