@@ -863,13 +863,106 @@ export const SignalBoxVisualization = ({
     toast.info('All points reset to normal position');
   };
 
+  // Emergency stop state
+  const [emergencyStopActive, setEmergencyStopActive] = useState(false);
+
+  // Emergency stop - halt all trains and set all signals to danger
+  const activateEmergencyStop = () => {
+    setEmergencyStopActive(true);
+
+    // Set all signals to danger
+    const allSignals: SignalState = {};
+    sections.forEach(section => {
+      allSignals[`UP-S${section.id}`] = 'danger';
+      allSignals[`DN-S${section.id}`] = 'danger';
+    });
+    // Add any additional signals
+    for (let i = 9; i <= 16; i++) {
+      allSignals[`DN-S${i}`] = 'danger';
+    }
+    setSignalOverrides(allSignals);
+
+    // Release all routes
+    routeLocks.forEach(lock => {
+      if (lock.status === 'locked') {
+        setRouteLocks(prev => prev.filter(l => l.id !== lock.id));
+      }
+    });
+
+    logAction(
+      'emergency_stop',
+      'system',
+      'EMERGENCY STOP ACTIVATED - All signals set to DANGER',
+      'system',
+      { 
+        trainsAffected: trains.length,
+        signalsSet: Object.keys(allSignals).length
+      }
+    );
+
+    toast.error('🚨 EMERGENCY STOP ACTIVATED', {
+      description: 'All signals set to DANGER - All trains must halt immediately',
+      duration: 10000
+    });
+  };
+
+  // Reset emergency stop
+  const resetEmergencyStop = () => {
+    setEmergencyStopActive(false);
+    setSignalOverrides({});
+    
+    logAction(
+      'emergency_reset',
+      'system',
+      'Emergency stop reset - Signals returned to automatic control',
+      'system',
+      {}
+    );
+
+    toast.success('Emergency stop reset', {
+      description: 'Signals returned to automatic control'
+    });
+  };
+
   // Count manual overrides
   const overrideCount = Object.keys(signalOverrides).length;
   const pointOverrideCount = Object.values(pointPositions).filter(p => p === 'reverse').length;
   const activeRoutes = routeLocks.filter(l => l.status === 'locked').length;
 
   return (
-    <div className="h-full flex flex-col bg-zinc-900/50 rounded-lg overflow-hidden">
+    <div className={cn(
+      'h-full flex flex-col bg-zinc-900/50 rounded-lg overflow-hidden',
+      emergencyStopActive && 'ring-2 ring-red-500 ring-offset-2 ring-offset-background'
+    )}>
+      {/* Emergency Stop Banner */}
+      {emergencyStopActive && (
+        <motion.div 
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          className="bg-red-500/20 border-b-2 border-red-500 px-3 py-2"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <motion.div 
+                className="w-3 h-3 rounded-full bg-red-500"
+                animate={{ scale: [1, 1.3, 1], opacity: [1, 0.5, 1] }}
+                transition={{ duration: 0.5, repeat: Infinity }}
+              />
+              <span className="text-sm font-bold text-red-400">🚨 EMERGENCY STOP ACTIVE</span>
+              <span className="text-[10px] text-red-300">All signals at DANGER - Trains must halt</span>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-6 text-[10px] px-3 border-red-500 text-red-400 hover:bg-red-500/20"
+              onClick={resetEmergencyStop}
+            >
+              Reset Emergency Stop
+            </Button>
+          </div>
+        </motion.div>
+      )}
+
       {/* Header */}
       <div className="px-3 py-2 border-b border-border/30 bg-zinc-800/50 flex items-center justify-between">
         <div>
@@ -877,12 +970,28 @@ export const SignalBoxVisualization = ({
           <p className="text-[10px] text-muted-foreground">Kanpur - Allahabad Section</p>
         </div>
         <div className="flex items-center gap-2">
+          {/* Emergency Stop Button */}
+          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+            <Button
+              variant="destructive"
+              size="sm"
+              className={cn(
+                'h-7 text-[10px] px-3 font-bold shadow-lg',
+                !emergencyStopActive && 'bg-red-600 hover:bg-red-700 animate-pulse'
+              )}
+              onClick={activateEmergencyStop}
+              disabled={emergencyStopActive}
+            >
+              🛑 EMERGENCY STOP
+            </Button>
+          </motion.div>
+          
           {activeRoutes > 0 && (
             <span className="text-[9px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
               {activeRoutes} route{activeRoutes > 1 ? 's' : ''} locked
             </span>
           )}
-          {overrideCount > 0 && (
+          {overrideCount > 0 && !emergencyStopActive && (
             <span className="text-[9px] px-2 py-0.5 rounded-full bg-warning/20 text-warning border border-warning/30">
               {overrideCount} signal override{overrideCount > 1 ? 's' : ''}
             </span>
@@ -897,7 +1006,7 @@ export const SignalBoxVisualization = ({
             size="sm"
             className="h-6 text-[10px] px-2"
             onClick={resetAllSignals}
-            disabled={overrideCount === 0}
+            disabled={overrideCount === 0 || emergencyStopActive}
           >
             Reset Signals
           </Button>
