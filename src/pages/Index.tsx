@@ -9,9 +9,10 @@ import { TrainDetails } from '@/components/dashboard/TrainDetails';
 import { ScenarioSimulation } from '@/components/dashboard/ScenarioSimulation';
 import { AlertsPanel } from '@/components/dashboard/AlertsPanel';
 import { AuditLog } from '@/components/dashboard/AuditLog';
+import { PerformanceCharts } from '@/components/dashboard/PerformanceCharts';
 import { useTrains, useTrackSections, useAIRecommendations, useSectionMetrics } from '@/hooks/useRailwayData';
 import { Helmet } from 'react-helmet-async';
-import { Loader2, FlaskConical, Bell, History } from 'lucide-react';
+import { Loader2, FlaskConical, Bell, History, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -123,6 +124,10 @@ const Index = () => {
                       <History className="w-3 h-3 mr-1" />
                       Audit Log
                     </TabsTrigger>
+                    <TabsTrigger value="charts" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                      <BarChart3 className="w-3 h-3 mr-1" />
+                      Charts
+                    </TabsTrigger>
                   </TabsList>
                 </div>
                 
@@ -140,6 +145,10 @@ const Index = () => {
                 
                 <TabsContent value="audit" className="flex-1 mt-3 min-h-0">
                   <AuditLog />
+                </TabsContent>
+                
+                <TabsContent value="charts" className="flex-1 mt-3 min-h-0">
+                  <PerformanceCharts />
                 </TabsContent>
               </Tabs>
             </div>
