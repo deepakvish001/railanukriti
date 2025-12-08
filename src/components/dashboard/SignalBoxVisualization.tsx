@@ -621,6 +621,37 @@ export const SignalBoxVisualization = ({
   const [showOccupancyHistory, setShowOccupancyHistory] = useState(false);
   const previousTrainSections = useRef<Map<string, number | null>>(new Map());
 
+  // History filters
+  const [historyFilterType, setHistoryFilterType] = useState<string>('all');
+  const [historyFilterSection, setHistoryFilterSection] = useState<string>('all');
+  const [historyFilterTime, setHistoryFilterTime] = useState<string>('all');
+
+  // Filter the occupancy history
+  const filteredHistory = occupancyHistory.filter(entry => {
+    // Train type filter
+    if (historyFilterType !== 'all' && entry.trainType !== historyFilterType) {
+      return false;
+    }
+    // Section filter
+    if (historyFilterSection !== 'all' && entry.sectionId.toString() !== historyFilterSection) {
+      return false;
+    }
+    // Time range filter
+    if (historyFilterTime !== 'all') {
+      const now = Date.now();
+      const entryTime = entry.enteredAt.getTime();
+      const minutesAgo = (now - entryTime) / (1000 * 60);
+      if (historyFilterTime === '1min' && minutesAgo > 1) return false;
+      if (historyFilterTime === '5min' && minutesAgo > 5) return false;
+      if (historyFilterTime === '15min' && minutesAgo > 15) return false;
+      if (historyFilterTime === '30min' && minutesAgo > 30) return false;
+    }
+    return true;
+  });
+
+  // Get unique sections from history for filter dropdown
+  const uniqueSections = [...new Set(occupancyHistory.map(e => e.sectionId))].sort((a, b) => a - b);
+
   // Track train movements for occupancy history
   useEffect(() => {
     trains.forEach(train => {
@@ -1185,22 +1216,79 @@ export const SignalBoxVisualization = ({
             <div className="px-3 py-2 bg-zinc-800/30">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] font-semibold text-foreground">Track Occupancy History</span>
-                {occupancyHistory.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-5 text-[9px] px-2 text-muted-foreground hover:text-destructive"
-                    onClick={() => setOccupancyHistory([])}
+                <div className="flex items-center gap-2">
+                  {/* Filter controls */}
+                  <select
+                    value={historyFilterType}
+                    onChange={(e) => setHistoryFilterType(e.target.value)}
+                    className="h-5 text-[9px] px-1.5 rounded bg-zinc-800 border border-zinc-700 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   >
-                    Clear
-                  </Button>
-                )}
+                    <option value="all">All Types</option>
+                    <option value="express">Express</option>
+                    <option value="freight">Freight</option>
+                    <option value="local">Local</option>
+                    <option value="special">Special</option>
+                  </select>
+                  <select
+                    value={historyFilterSection}
+                    onChange={(e) => setHistoryFilterSection(e.target.value)}
+                    className="h-5 text-[9px] px-1.5 rounded bg-zinc-800 border border-zinc-700 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="all">All Sections</option>
+                    {uniqueSections.map(sectionId => (
+                      <option key={sectionId} value={sectionId.toString()}>Section {sectionId}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={historyFilterTime}
+                    onChange={(e) => setHistoryFilterTime(e.target.value)}
+                    className="h-5 text-[9px] px-1.5 rounded bg-zinc-800 border border-zinc-700 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="all">All Time</option>
+                    <option value="1min">Last 1 min</option>
+                    <option value="5min">Last 5 min</option>
+                    <option value="15min">Last 15 min</option>
+                    <option value="30min">Last 30 min</option>
+                  </select>
+                  {occupancyHistory.length > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-5 text-[9px] px-2 text-muted-foreground hover:text-destructive"
+                      onClick={() => setOccupancyHistory([])}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
               </div>
+              {/* Filter summary */}
+              {(historyFilterType !== 'all' || historyFilterSection !== 'all' || historyFilterTime !== 'all') && (
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[8px] text-muted-foreground">
+                    Showing {filteredHistory.length} of {occupancyHistory.length} entries
+                  </span>
+                  <button
+                    onClick={() => {
+                      setHistoryFilterType('all');
+                      setHistoryFilterSection('all');
+                      setHistoryFilterTime('all');
+                    }}
+                    className="text-[8px] text-primary hover:underline"
+                  >
+                    Clear filters
+                  </button>
+                </div>
+              )}
               <div className="max-h-32 overflow-auto space-y-1">
-                {occupancyHistory.length === 0 ? (
-                  <p className="text-[9px] text-muted-foreground italic py-2">No occupancy records yet. History will appear as trains move through sections.</p>
+                {filteredHistory.length === 0 ? (
+                  <p className="text-[9px] text-muted-foreground italic py-2">
+                    {occupancyHistory.length === 0 
+                      ? 'No occupancy records yet. History will appear as trains move through sections.'
+                      : 'No entries match the selected filters.'}
+                  </p>
                 ) : (
-                  occupancyHistory.map(entry => {
+                  filteredHistory.map(entry => {
                     const typeColors: Record<string, string> = {
                       express: 'text-train-express',
                       freight: 'text-train-freight',
