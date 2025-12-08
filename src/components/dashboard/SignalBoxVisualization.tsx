@@ -33,19 +33,36 @@ interface PointState {
   [key: string]: PointPosition;
 }
 
+// Route lock interface for interlocking
+interface RouteLock {
+  id: string;
+  trainId: string;
+  trainNumber: string;
+  fromSection: number;
+  toSection: number;
+  lockedSignals: string[];
+  lockedPoints: string[];
+  setAt: Date;
+  status: 'setting' | 'locked' | 'releasing';
+}
+
 // Signal component with interactive controls
 const Signal = ({ 
   id,
   status, 
   direction = 'up',
   onStatusChange,
-  disabled = false
+  disabled = false,
+  locked = false,
+  lockedBy
 }: { 
   id: string;
   status: SignalStatus; 
   direction?: 'up' | 'down';
   onStatusChange: (newStatus: SignalStatus) => void;
   disabled?: boolean;
+  locked?: boolean;
+  lockedBy?: string;
 }) => {
   const [open, setOpen] = useState(false);
 
@@ -70,14 +87,17 @@ const Signal = ({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
-          disabled={disabled}
+          disabled={disabled || locked}
           className={cn(
-            'flex flex-col items-center gap-0.5 cursor-pointer transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-primary/50 rounded',
+            'flex flex-col items-center gap-0.5 cursor-pointer transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-primary/50 rounded relative',
             direction === 'down' && 'rotate-180',
-            disabled && 'opacity-50 cursor-not-allowed hover:scale-100'
+            (disabled || locked) && 'opacity-50 cursor-not-allowed hover:scale-100'
           )}
         >
-          <div className="w-3 h-6 bg-zinc-800 rounded-sm flex flex-col items-center justify-center gap-0.5 p-0.5 border border-zinc-600 hover:border-primary/50 transition-colors">
+          <div className={cn(
+            'w-3 h-6 bg-zinc-800 rounded-sm flex flex-col items-center justify-center gap-0.5 p-0.5 border transition-colors',
+            locked ? 'border-cyan-500/50' : 'border-zinc-600 hover:border-primary/50'
+          )}>
             <motion.div 
               className={cn('w-2 h-2 rounded-full transition-all', colors[status])}
               animate={{ scale: [1, 1.1, 1] }}
@@ -85,35 +105,49 @@ const Signal = ({
             />
           </div>
           <div className="w-0.5 h-3 bg-zinc-600" />
+          {/* Lock indicator */}
+          {locked && (
+            <motion.div 
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="absolute -top-1 -right-1 w-2 h-2 bg-cyan-500 rounded-full"
+            />
+          )}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-48 p-2" side="top">
         <div className="space-y-2">
-          <p className="text-xs font-semibold text-foreground mb-2">Set Signal {id}</p>
-          <div className="flex flex-col gap-1">
-            {(['clear', 'caution', 'danger'] as SignalStatus[]).map((s) => (
-              <Button
-                key={s}
-                variant={status === s ? 'default' : 'ghost'}
-                size="sm"
-                className={cn(
-                  'justify-start gap-2 h-8',
-                  status === s && s === 'clear' && 'bg-green-600 hover:bg-green-700',
-                  status === s && s === 'caution' && 'bg-yellow-600 hover:bg-yellow-700',
-                  status === s && s === 'danger' && 'bg-red-600 hover:bg-red-700'
-                )}
-                onClick={() => handleStatusChange(s)}
-              >
-                <div className={cn(
-                  'w-3 h-3 rounded-full',
-                  s === 'clear' && 'bg-green-500',
-                  s === 'caution' && 'bg-yellow-500',
-                  s === 'danger' && 'bg-red-500'
-                )} />
-                <span className="text-xs">{statusLabels[s]}</span>
-              </Button>
-            ))}
-          </div>
+          <p className="text-xs font-semibold text-foreground mb-2">Signal {id}</p>
+          {locked ? (
+            <p className="text-[10px] text-cyan-400 bg-cyan-500/10 p-2 rounded">
+              🔒 Locked by route for {lockedBy}
+            </p>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {(['clear', 'caution', 'danger'] as SignalStatus[]).map((s) => (
+                <Button
+                  key={s}
+                  variant={status === s ? 'default' : 'ghost'}
+                  size="sm"
+                  className={cn(
+                    'justify-start gap-2 h-8',
+                    status === s && s === 'clear' && 'bg-green-600 hover:bg-green-700',
+                    status === s && s === 'caution' && 'bg-yellow-600 hover:bg-yellow-700',
+                    status === s && s === 'danger' && 'bg-red-600 hover:bg-red-700'
+                  )}
+                  onClick={() => handleStatusChange(s)}
+                >
+                  <div className={cn(
+                    'w-3 h-3 rounded-full',
+                    s === 'clear' && 'bg-green-500',
+                    s === 'caution' && 'bg-yellow-500',
+                    s === 'danger' && 'bg-red-500'
+                  )} />
+                  <span className="text-xs">{statusLabels[s]}</span>
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
       </PopoverContent>
     </Popover>
@@ -132,7 +166,10 @@ const BlockIndicator = ({
   train,
   isSelected,
   onTrainClick,
-  trainProgress = 0
+  onRouteSet,
+  trainProgress = 0,
+  signalLocked,
+  signalLockedBy
 }: { 
   number: number; 
   occupied: boolean;
@@ -144,7 +181,10 @@ const BlockIndicator = ({
   train?: Train;
   isSelected?: boolean;
   onTrainClick?: () => void;
+  onRouteSet?: () => void;
   trainProgress?: number;
+  signalLocked?: boolean;
+  signalLockedBy?: string;
 }) => {
   return (
     <div className="flex flex-col items-center relative">
@@ -154,6 +194,8 @@ const BlockIndicator = ({
             id={signalId}
             status={signalStatus} 
             onStatusChange={onSignalChange}
+            locked={signalLocked}
+            lockedBy={signalLockedBy}
           />
         </div>
       )}
@@ -188,6 +230,7 @@ const BlockIndicator = ({
                 train={train}
                 isSelected={isSelected || false}
                 onClick={() => onTrainClick?.()}
+                onDoubleClick={() => onRouteSet?.()}
                 animatedProgress={trainProgress}
               />
             </motion.div>
@@ -242,12 +285,16 @@ const PointSwitch = ({
   id,
   position, 
   onToggle,
-  label
+  label,
+  locked,
+  lockedBy
 }: { 
   id: string;
   position: PointPosition;
   onToggle: () => void;
   label?: string;
+  locked?: boolean;
+  lockedBy?: string;
 }) => {
   const [open, setOpen] = useState(false);
 
@@ -260,12 +307,19 @@ const PointSwitch = ({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
-          className="flex flex-col items-center gap-0.5 cursor-pointer transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-primary/50 rounded group"
+          disabled={locked}
+          className={cn(
+            'flex flex-col items-center gap-0.5 cursor-pointer transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-primary/50 rounded group relative',
+            locked && 'opacity-50 cursor-not-allowed hover:scale-100'
+          )}
         >
           {label && (
             <span className="text-[7px] font-mono text-muted-foreground mb-0.5">{label}</span>
           )}
-          <div className="relative w-8 h-6 bg-zinc-800 rounded border border-zinc-600 group-hover:border-primary/50 transition-colors overflow-hidden">
+          <div className={cn(
+            'relative w-8 h-6 bg-zinc-800 rounded border transition-colors overflow-hidden',
+            locked ? 'border-cyan-500/50' : 'border-zinc-600 group-hover:border-primary/50'
+          )}>
             {/* Track lines showing switch position */}
             <svg viewBox="0 0 32 24" className="w-full h-full">
               {/* Main track */}
@@ -309,27 +363,43 @@ const PointSwitch = ({
           )}>
             {position === 'normal' ? 'N' : 'R'}
           </span>
+          {/* Lock indicator */}
+          {locked && (
+            <motion.div 
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              className="absolute -top-1 -right-1 w-2 h-2 bg-cyan-500 rounded-full"
+            />
+          )}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-44 p-2" side="top">
         <div className="space-y-2">
           <p className="text-xs font-semibold text-foreground">Point {id}</p>
-          <p className="text-[10px] text-muted-foreground">
-            Current: {position === 'normal' ? 'Normal (Main Line)' : 'Reverse (Diverging)'}
-          </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className={cn(
-              'w-full h-8 text-xs',
-              position === 'normal' 
-                ? 'hover:bg-amber-500/20 hover:text-amber-400 hover:border-amber-500/50' 
-                : 'hover:bg-green-500/20 hover:text-green-400 hover:border-green-500/50'
-            )}
-            onClick={handleToggle}
-          >
-            Set to {position === 'normal' ? 'Reverse' : 'Normal'}
-          </Button>
+          {locked ? (
+            <p className="text-[10px] text-cyan-400 bg-cyan-500/10 p-2 rounded">
+              🔒 Locked by route for {lockedBy}
+            </p>
+          ) : (
+            <>
+              <p className="text-[10px] text-muted-foreground">
+                Current: {position === 'normal' ? 'Normal (Main Line)' : 'Reverse (Diverging)'}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className={cn(
+                  'w-full h-8 text-xs',
+                  position === 'normal' 
+                    ? 'hover:bg-amber-500/20 hover:text-amber-400 hover:border-amber-500/50' 
+                    : 'hover:bg-green-500/20 hover:text-green-400 hover:border-green-500/50'
+                )}
+                onClick={handleToggle}
+              >
+                Set to {position === 'normal' ? 'Reverse' : 'Normal'}
+              </Button>
+            </>
+          )}
         </div>
       </PopoverContent>
     </Popover>
@@ -341,11 +411,13 @@ const AnimatedTrainMarker = ({
   train,
   isSelected,
   onClick,
+  onDoubleClick,
   animatedProgress = 0
 }: {
   train: Train;
   isSelected: boolean;
   onClick: () => void;
+  onDoubleClick?: () => void;
   animatedProgress?: number;
 }) => {
   const typeColors = {
@@ -358,6 +430,7 @@ const AnimatedTrainMarker = ({
   return (
     <motion.button
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
       initial={{ scale: 0.8, opacity: 0 }}
       animate={{ 
         scale: 1, 
@@ -378,6 +451,7 @@ const AnimatedTrainMarker = ({
         'text-white shadow-lg',
         isSelected && 'ring-2 ring-white ring-offset-2 ring-offset-background'
       )}
+      title="Double-click to set route"
     >
       {train.type[0].toUpperCase()}
       {/* Movement indicator pulse */}
@@ -474,6 +548,148 @@ export const SignalBoxVisualization = ({
     'PT-4': 'normal',
   });
 
+  // Route locks for interlocking
+  const [routeLocks, setRouteLocks] = useState<RouteLock[]>([]);
+
+  // Check if signal is locked by any route
+  const isSignalLocked = (signalId: string): RouteLock | undefined => {
+    return routeLocks.find(lock => lock.lockedSignals.includes(signalId) && lock.status === 'locked');
+  };
+
+  // Check if point is locked by any route
+  const isPointLocked = (pointId: string): RouteLock | undefined => {
+    return routeLocks.find(lock => lock.lockedPoints.includes(pointId) && lock.status === 'locked');
+  };
+
+  // Set route for a train (locks signals and points)
+  const setRoute = (train: Train, fromSection: number, toSection: number) => {
+    const routeId = `R-${train.number}-${Date.now()}`;
+    
+    // Determine which signals and points to lock based on route
+    const lockedSignals: string[] = [];
+    const lockedPoints: string[] = [];
+    
+    // Lock entrance signal to clear
+    lockedSignals.push(`UP-S${fromSection}`);
+    
+    // Lock points if route crosses junctions
+    if (fromSection <= 4 && toSection >= 5) {
+      lockedPoints.push('PT-1', 'PT-2');
+    }
+    
+    // Check for conflicts with existing locks
+    const conflicts = routeLocks.filter(lock => 
+      lock.status === 'locked' && (
+        lock.lockedSignals.some(s => lockedSignals.includes(s)) ||
+        lock.lockedPoints.some(p => lockedPoints.includes(p))
+      )
+    );
+
+    if (conflicts.length > 0) {
+      toast.error('Route conflict detected!', {
+        description: `Cannot set route - conflicting with ${conflicts[0].trainNumber}`
+      });
+      logAction(
+        'route_conflict',
+        'route',
+        `Route setting blocked for ${train.number} due to conflict with ${conflicts[0].trainNumber}`,
+        routeId,
+        { conflictingRoute: conflicts[0].id }
+      );
+      return false;
+    }
+
+    // Create new route lock
+    const newLock: RouteLock = {
+      id: routeId,
+      trainId: train.id,
+      trainNumber: train.number,
+      fromSection,
+      toSection,
+      lockedSignals,
+      lockedPoints,
+      setAt: new Date(),
+      status: 'locked'
+    };
+
+    setRouteLocks(prev => [...prev, newLock]);
+
+    // Set signals for the route
+    lockedSignals.forEach(signalId => {
+      setSignalOverrides(prev => ({
+        ...prev,
+        [signalId]: 'clear'
+      }));
+    });
+
+    // Set exit signals to caution
+    setSignalOverrides(prev => ({
+      ...prev,
+      [`UP-S${toSection}`]: 'caution'
+    }));
+
+    logAction(
+      'route_set',
+      'route',
+      `Route set for ${train.number}: Section ${fromSection} → ${toSection}`,
+      routeId,
+      { lockedSignals, lockedPoints }
+    );
+
+    toast.success(`Route set for ${train.number}`, {
+      description: `Sections ${fromSection} → ${toSection} locked`
+    });
+
+    return true;
+  };
+
+  // Release route lock
+  const releaseRoute = (routeId: string) => {
+    const lock = routeLocks.find(l => l.id === routeId);
+    if (!lock) return;
+
+    // Update lock status to releasing
+    setRouteLocks(prev => prev.map(l => 
+      l.id === routeId ? { ...l, status: 'releasing' as const } : l
+    ));
+
+    // Set signals back to danger
+    lock.lockedSignals.forEach(signalId => {
+      setSignalOverrides(prev => {
+        const newState = { ...prev };
+        delete newState[signalId];
+        return newState;
+      });
+    });
+
+    // Remove lock after brief delay
+    setTimeout(() => {
+      setRouteLocks(prev => prev.filter(l => l.id !== routeId));
+    }, 500);
+
+    logAction(
+      'route_release',
+      'route',
+      `Route released for ${lock.trainNumber}`,
+      routeId,
+      {}
+    );
+
+    toast.info(`Route released for ${lock.trainNumber}`);
+  };
+
+  // Auto-release routes when train clears section
+  useEffect(() => {
+    routeLocks.forEach(lock => {
+      if (lock.status === 'locked') {
+        const train = trains.find(t => t.id === lock.trainId);
+        if (train && train.currentSection && train.currentSection > lock.toSection) {
+          releaseRoute(lock.id);
+        }
+      }
+    });
+  }, [trains, routeLocks]);
+
   // Get train at specific section
   const getTrainAtSection = (sectionNum: number) => {
     return trains.find(t => t.currentSection === sectionNum);
@@ -493,6 +709,15 @@ export const SignalBoxVisualization = ({
 
   // Handle signal status change
   const handleSignalChange = (signalId: string, sectionId: number, newStatus: SignalStatus) => {
+    // Check if signal is locked
+    const lock = isSignalLocked(signalId);
+    if (lock) {
+      toast.error(`Signal ${signalId} is locked`, {
+        description: `Route locked for train ${lock.trainNumber}`
+      });
+      return;
+    }
+
     setSignalOverrides(prev => ({
       ...prev,
       [signalId]: newStatus
@@ -514,6 +739,15 @@ export const SignalBoxVisualization = ({
 
   // Handle point toggle
   const handlePointToggle = (pointId: string) => {
+    // Check if point is locked
+    const lock = isPointLocked(pointId);
+    if (lock) {
+      toast.error(`Point ${pointId} is locked`, {
+        description: `Route locked for train ${lock.trainNumber}`
+      });
+      return;
+    }
+
     const currentPosition = pointPositions[pointId] || 'normal';
     const newPosition: PointPosition = currentPosition === 'normal' ? 'reverse' : 'normal';
     
@@ -533,6 +767,26 @@ export const SignalBoxVisualization = ({
     toast.success(`Point ${pointId} set to ${newPosition.toUpperCase()}`, {
       description: newPosition === 'normal' ? 'Routing to main line' : 'Routing to diverging line'
     });
+  };
+
+  // Handle train click to set route
+  const handleTrainRouteSet = (train: Train) => {
+    if (!train.currentSection) return;
+    
+    // Check if train already has a route
+    const existingRoute = routeLocks.find(l => l.trainId === train.id && l.status === 'locked');
+    if (existingRoute) {
+      toast.info(`Route already set for ${train.number}`, {
+        description: 'Release existing route first to set a new one'
+      });
+      return;
+    }
+
+    // Set route to next section (simplified - in real system would be more complex)
+    const nextSection = train.currentSection + 1;
+    if (nextSection <= 8) {
+      setRoute(train, train.currentSection, nextSection);
+    }
   };
 
   // Reset all signals to automatic
@@ -569,6 +823,7 @@ export const SignalBoxVisualization = ({
   // Count manual overrides
   const overrideCount = Object.keys(signalOverrides).length;
   const pointOverrideCount = Object.values(pointPositions).filter(p => p === 'reverse').length;
+  const activeRoutes = routeLocks.filter(l => l.status === 'locked').length;
 
   return (
     <div className="h-full flex flex-col bg-zinc-900/50 rounded-lg overflow-hidden">
@@ -579,6 +834,11 @@ export const SignalBoxVisualization = ({
           <p className="text-[10px] text-muted-foreground">Kanpur - Allahabad Section</p>
         </div>
         <div className="flex items-center gap-2">
+          {activeRoutes > 0 && (
+            <span className="text-[9px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+              {activeRoutes} route{activeRoutes > 1 ? 's' : ''} locked
+            </span>
+          )}
           {overrideCount > 0 && (
             <span className="text-[9px] px-2 py-0.5 rounded-full bg-warning/20 text-warning border border-warning/30">
               {overrideCount} signal override{overrideCount > 1 ? 's' : ''}
@@ -610,10 +870,39 @@ export const SignalBoxVisualization = ({
         </div>
       </div>
 
+      {/* Route locks panel */}
+      {routeLocks.length > 0 && (
+        <div className="px-3 py-1.5 bg-cyan-500/5 border-b border-border/30">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-[9px] font-semibold text-cyan-400">Active Routes:</span>
+            {routeLocks.map(lock => (
+              <div 
+                key={lock.id} 
+                className={cn(
+                  'flex items-center gap-2 px-2 py-0.5 rounded-full text-[9px] border',
+                  lock.status === 'locked' && 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+                  lock.status === 'releasing' && 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30 opacity-50'
+                )}
+              >
+                <span className="font-mono">{lock.trainNumber}</span>
+                <span className="text-muted-foreground">S{lock.fromSection}→S{lock.toSection}</span>
+                <button
+                  onClick={() => releaseRoute(lock.id)}
+                  className="text-red-400 hover:text-red-300 text-[8px] font-bold"
+                  disabled={lock.status === 'releasing'}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Control hint */}
       <div className="px-3 py-1.5 bg-primary/5 border-b border-border/30 flex items-center justify-between">
         <p className="text-[9px] text-primary/80">
-          💡 Click signals to override state • Click points to toggle routing
+          💡 Click trains to set routes • Locked signals/points cannot be changed
         </p>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1">
@@ -650,6 +939,7 @@ export const SignalBoxVisualization = ({
                 const signalId = `UP-S${section.id}`;
                 const hasSignal = idx % 2 === 0;
                 const progress = train ? (trainPositions.get(train.id)?.progress || 0) : 0;
+                const signalLock = hasSignal ? isSignalLocked(signalId) : undefined;
                 return (
                   <div key={section.id} className="flex items-center">
                     <BlockIndicator
@@ -663,7 +953,10 @@ export const SignalBoxVisualization = ({
                       train={train}
                       isSelected={train?.id === selectedTrain}
                       onTrainClick={() => train && onTrainSelect(train.id)}
+                      onRouteSet={() => train && handleTrainRouteSet(train)}
                       trainProgress={progress}
+                      signalLocked={!!signalLock}
+                      signalLockedBy={signalLock?.trainNumber}
                     />
                     <TrackLine status={section.status === 'occupied' ? 'occupied' : 'clear'} />
                   </div>
@@ -695,6 +988,7 @@ export const SignalBoxVisualization = ({
                 const signalId = `UP-S${section.id}`;
                 const hasSignal = idx % 2 === 0;
                 const progress = train ? (trainPositions.get(train.id)?.progress || 0) : 0;
+                const signalLock = hasSignal ? isSignalLocked(signalId) : undefined;
                 return (
                   <div key={section.id} className="flex items-center">
                     <TrackLine status={section.status === 'occupied' ? 'occupied' : 'clear'} />
@@ -709,7 +1003,10 @@ export const SignalBoxVisualization = ({
                       train={train}
                       isSelected={train?.id === selectedTrain}
                       onTrainClick={() => train && onTrainSelect(train.id)}
+                      onRouteSet={() => train && handleTrainRouteSet(train)}
                       trainProgress={progress}
+                      signalLocked={!!signalLock}
+                      signalLockedBy={signalLock?.trainNumber}
                     />
                   </div>
                 );
