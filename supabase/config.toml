@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.predict-delays]
 verify_jwt = false
+
+[functions.forecast-congestion]
+verify_jwt = false
