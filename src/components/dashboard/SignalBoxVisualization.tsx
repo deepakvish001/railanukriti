@@ -427,52 +427,95 @@ const AnimatedTrainMarker = ({
     special: 'bg-train-special'
   };
 
+  // Speed thresholds for color coding
+  const getSpeedColor = (speed: number) => {
+    if (speed === 0) return { bg: 'bg-red-500', text: 'text-red-400', label: 'STOP' };
+    if (speed < 30) return { bg: 'bg-amber-500', text: 'text-amber-400', label: 'SLOW' };
+    if (speed < 80) return { bg: 'bg-yellow-500', text: 'text-yellow-400', label: 'MED' };
+    return { bg: 'bg-green-500', text: 'text-green-400', label: 'NORM' };
+  };
+
+  const speedInfo = getSpeedColor(train.speed);
+
   return (
-    <motion.button
-      onClick={onClick}
-      onDoubleClick={onDoubleClick}
-      initial={{ scale: 0.8, opacity: 0 }}
-      animate={{ 
-        scale: 1, 
-        opacity: 1,
-        x: animatedProgress * 100 // Animate within block
-      }}
-      exit={{ scale: 0.8, opacity: 0 }}
-      whileHover={{ scale: 1.15 }}
-      transition={{ 
-        type: "spring", 
-        stiffness: 300, 
-        damping: 25,
-        x: { duration: 2, ease: "linear" }
-      }}
-      className={cn(
-        'relative w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold cursor-pointer z-10',
-        typeColors[train.type],
-        'text-white shadow-lg',
-        isSelected && 'ring-2 ring-white ring-offset-2 ring-offset-background'
-      )}
-      title="Double-click to set route"
-    >
-      {train.type[0].toUpperCase()}
-      {/* Movement indicator pulse */}
-      {train.status === 'on-time' && (
-        <motion.div
-          className="absolute inset-0 rounded-full bg-white/30"
-          animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
-          transition={{ duration: 1.5, repeat: Infinity }}
-        />
-      )}
-      {/* Direction arrow */}
-      <motion.div 
-        className="absolute -right-1 top-1/2 -translate-y-1/2"
-        animate={{ x: [0, 3, 0] }}
-        transition={{ duration: 0.8, repeat: Infinity }}
+    <div className="flex flex-col items-center gap-0.5">
+      <motion.button
+        onClick={onClick}
+        onDoubleClick={onDoubleClick}
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ 
+          scale: 1, 
+          opacity: 1,
+          x: animatedProgress * 100 // Animate within block
+        }}
+        exit={{ scale: 0.8, opacity: 0 }}
+        whileHover={{ scale: 1.15 }}
+        transition={{ 
+          type: "spring", 
+          stiffness: 300, 
+          damping: 25,
+          x: { duration: 2, ease: "linear" }
+        }}
+        className={cn(
+          'relative w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold cursor-pointer z-10',
+          typeColors[train.type],
+          'text-white shadow-lg',
+          isSelected && 'ring-2 ring-white ring-offset-2 ring-offset-background'
+        )}
+        title={`${train.number} - ${train.speed} km/h - Double-click to set route`}
       >
-        <svg width="6" height="6" viewBox="0 0 6 6" fill="currentColor">
-          <path d="M0 0L6 3L0 6V0Z" />
-        </svg>
+        {train.type[0].toUpperCase()}
+        {/* Movement indicator pulse */}
+        {train.status === 'on-time' && train.speed > 0 && (
+          <motion.div
+            className="absolute inset-0 rounded-full bg-white/30"
+            animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
+            transition={{ duration: 1.5, repeat: Infinity }}
+          />
+        )}
+        {/* Direction arrow - only show when moving */}
+        {train.speed > 0 && (
+          <motion.div 
+            className="absolute -right-1 top-1/2 -translate-y-1/2"
+            animate={{ x: [0, 3, 0] }}
+            transition={{ duration: Math.max(0.3, 1 - train.speed / 120), repeat: Infinity }}
+          >
+            <svg width="6" height="6" viewBox="0 0 6 6" fill="currentColor">
+              <path d="M0 0L6 3L0 6V0Z" />
+            </svg>
+          </motion.div>
+        )}
+        {/* Stopped indicator */}
+        {train.speed === 0 && (
+          <motion.div 
+            className="absolute inset-0 rounded-full border-2 border-red-500"
+            animate={{ opacity: [1, 0.5, 1] }}
+            transition={{ duration: 0.5, repeat: Infinity }}
+          />
+        )}
+      </motion.button>
+      
+      {/* Speed indicator badge */}
+      <motion.div
+        initial={{ opacity: 0, y: -5 }}
+        animate={{ opacity: 1, y: 0 }}
+        className={cn(
+          'flex items-center gap-0.5 px-1 py-0.5 rounded text-[7px] font-mono font-bold',
+          'bg-zinc-900/80 border',
+          train.speed === 0 && 'border-red-500/50',
+          train.speed > 0 && train.speed < 30 && 'border-amber-500/50',
+          train.speed >= 30 && train.speed < 80 && 'border-yellow-500/50',
+          train.speed >= 80 && 'border-green-500/50'
+        )}
+      >
+        <motion.div 
+          className={cn('w-1.5 h-1.5 rounded-full', speedInfo.bg)}
+          animate={train.speed > 0 ? { scale: [1, 1.2, 1] } : { opacity: [1, 0.5, 1] }}
+          transition={{ duration: train.speed > 0 ? 0.5 : 0.3, repeat: Infinity }}
+        />
+        <span className={speedInfo.text}>{train.speed}</span>
       </motion.div>
-    </motion.button>
+    </div>
   );
 };
 
@@ -1129,6 +1172,24 @@ export const SignalBoxVisualization = ({
             <div className="flex items-center gap-1.5">
               <div className="w-3 h-3 rounded-full bg-train-local" />
               <span className="text-[9px] text-muted-foreground">Local</span>
+            </div>
+            <div className="w-px h-3 bg-border" />
+            {/* Speed indicators legend */}
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
+              <span className="text-[9px] text-muted-foreground">≥80 km/h</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-yellow-500" />
+              <span className="text-[9px] text-muted-foreground">30-79</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              <span className="text-[9px] text-muted-foreground">1-29</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
+              <span className="text-[9px] text-muted-foreground">Stopped</span>
             </div>
           </div>
         </div>
