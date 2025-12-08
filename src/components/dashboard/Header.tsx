@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Activity, Radio, Clock, Shield, LogOut, User } from 'lucide-react';
+import { Activity, Radio, Clock, Shield, LogOut, User, Map } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,6 +14,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 
 export const Header = () => {
+  const navigate = useNavigate();
   const { user, signOut } = useAuth();
   const [profile, setProfile] = useState<{ full_name: string | null; role: string | null } | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -87,6 +89,16 @@ export const Header = () => {
             <Radio className="w-3.5 h-3.5 text-success animate-pulse-subtle" />
             <span className="text-xs font-medium text-success">SYSTEM ACTIVE</span>
           </motion.div>
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate('/map')}
+            className="gap-2 border-primary/30 text-primary hover:bg-primary/10"
+          >
+            <Map className="w-4 h-4" />
+            <span className="hidden md:inline">Track Map</span>
+          </Button>
         </div>
 
         <div className="flex items-center gap-6">
