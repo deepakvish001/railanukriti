@@ -6,6 +6,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { useLogAction } from '@/hooks/useAuditLog';
+import { useNotificationSound } from '@/hooks/useNotificationSound';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -570,6 +571,7 @@ export const SignalBoxVisualization = ({
   onTrainSelect 
 }: SignalBoxVisualizationProps) => {
   const { logAction } = useLogAction();
+  const { playSound } = useNotificationSound();
   
   // Animated train positions
   const [trainPositions, setTrainPositions] = useState<Map<string, { progress: number; moving: boolean }>>(new Map());
@@ -766,6 +768,40 @@ export const SignalBoxVisualization = ({
     return () => clearInterval(interval);
   }, [occupancyHistory, overstayThreshold]);
 
+  // Track previously alerted train-section combos to avoid repeated sounds
+  const alertedCriticalRef = useRef<Set<string>>(new Set());
+  const alertedWarningRef = useRef<Set<string>>(new Set());
+
+  // Play sound for new critical/warning overstay alerts
+  useEffect(() => {
+    overstayAlerts.forEach(alert => {
+      if (alert.acknowledged) return;
+      
+      const severity = getAlertSeverity(alert.duration);
+      const alertKey = alert.id;
+      
+      if (severity === 'critical' && !alertedCriticalRef.current.has(alertKey)) {
+        alertedCriticalRef.current.add(alertKey);
+        playSound('critical');
+        toast.error(`Critical Overstay: ${alert.trainNumber}`, {
+          description: `Train in ${alert.sectionName} for ${alert.duration}s - exceeds 2x threshold`
+        });
+      } else if (severity === 'warning' && !alertedWarningRef.current.has(alertKey)) {
+        alertedWarningRef.current.add(alertKey);
+        playSound('warning');
+      }
+    });
+    
+    // Clean up alerts that no longer exist
+    const currentAlertIds = new Set(overstayAlerts.map(a => a.id));
+    alertedCriticalRef.current.forEach(id => {
+      if (!currentAlertIds.has(id)) alertedCriticalRef.current.delete(id);
+    });
+    alertedWarningRef.current.forEach(id => {
+      if (!currentAlertIds.has(id)) alertedWarningRef.current.delete(id);
+    });
+  }, [overstayAlerts, playSound]);
+
   // Acknowledge an alert
   const acknowledgeAlert = (alertId: string) => {
     acknowledgedAlerts.current.add(alertId);
@@ -930,6 +966,14 @@ export const SignalBoxVisualization = ({
     setShowSchedulingPanel(true);
     
     if (recommendations.length > 0) {
+      // Play sound based on recommendation priority
+      const hasHighPriority = recommendations.some(r => r.impactLevel === 'high');
+      if (hasHighPriority) {
+        playSound('warning');
+      } else {
+        playSound('info');
+      }
+      
       toast.success('Scheduling Recommendations Generated', {
         description: `${recommendations.length} trains can be rescheduled to optimize flow`
       });
@@ -1070,6 +1114,24 @@ export const SignalBoxVisualization = ({
       const forecast = await response.json();
       setCongestionForecast(forecast);
       setLastForecastTime(new Date());
+      
+      // Play sound based on forecast severity
+      const maxCongestionLevel = forecast.forecasts.reduce((max: string, f: any) => {
+        const levels = ['low', 'medium', 'high', 'critical'];
+        return levels.indexOf(f.level) > levels.indexOf(max) ? f.level : max;
+      }, 'low');
+      
+      if (maxCongestionLevel === 'critical') {
+        playSound('critical');
+        toast.error('Critical Congestion Alert', {
+          description: 'Critical congestion levels predicted - immediate action required'
+        });
+      } else if (maxCongestionLevel === 'high') {
+        playSound('warning');
+        toast.warning('High Congestion Warning', {
+          description: 'High congestion levels predicted in upcoming periods'
+        });
+      }
       
       logAction(
         'forecast_request',
