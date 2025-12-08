@@ -1,5 +1,5 @@
 import { Helmet } from 'react-helmet-async';
-import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
+import { MinimalDashboardLayout } from '@/components/dashboard/MinimalDashboardLayout';
 import { AuditLog } from '@/components/dashboard/AuditLog';
 
 const Audit = () => {
@@ -9,9 +9,9 @@ const Audit = () => {
         <title>Audit Log | Railway Traffic Management</title>
         <meta name="description" content="Audit trail for all railway operations." />
       </Helmet>
-      <DashboardLayout title="Audit Log">
+      <MinimalDashboardLayout title="Audit Log">
         <AuditLog />
-      </DashboardLayout>
+      </MinimalDashboardLayout>
     </>
   );
 };

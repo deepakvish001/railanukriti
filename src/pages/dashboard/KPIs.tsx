@@ -1,5 +1,5 @@
 import { Helmet } from 'react-helmet-async';
-import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
+import { MinimalDashboardLayout } from '@/components/dashboard/MinimalDashboardLayout';
 import { KPIDashboard } from '@/components/dashboard/KPIDashboard';
 
 const KPIs = () => {
@@ -9,9 +9,9 @@ const KPIs = () => {
         <title>KPI Dashboard | Railway Traffic Management</title>
         <meta name="description" content="Key performance indicators for railway operations." />
       </Helmet>
-      <DashboardLayout title="KPI Dashboard">
+      <MinimalDashboardLayout title="KPI Dashboard">
         <KPIDashboard />
-      </DashboardLayout>
+      </MinimalDashboardLayout>
     </>
   );
 };

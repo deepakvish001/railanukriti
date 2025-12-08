@@ -1,5 +1,5 @@
 import { Helmet } from 'react-helmet-async';
-import { DashboardLayout } from '@/components/dashboard/DashboardLayout';
+import { MinimalDashboardLayout } from '@/components/dashboard/MinimalDashboardLayout';
 import { TrainScheduleGantt } from '@/components/dashboard/TrainScheduleGantt';
 
 const Schedule = () => {
@@ -9,9 +9,9 @@ const Schedule = () => {
         <title>Train Schedule | Railway Traffic Management</title>
         <meta name="description" content="Train schedule and Gantt chart visualization." />
       </Helmet>
-      <DashboardLayout title="Train Schedule">
+      <MinimalDashboardLayout title="Train Schedule">
         <TrainScheduleGantt />
-      </DashboardLayout>
+      </MinimalDashboardLayout>
     </>
   );
 };
