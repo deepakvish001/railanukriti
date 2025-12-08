@@ -195,7 +195,8 @@ const BlockIndicator = ({
   signalLocked,
   signalLockedBy,
   trainTrail = [],
-  isTrainMoving = false
+  isTrainMoving = false,
+  trainDirection = 'right'
 }: { 
   number: number; 
   occupied: boolean;
@@ -213,6 +214,7 @@ const BlockIndicator = ({
   signalLockedBy?: string;
   trainTrail?: number[];
   isTrainMoving?: boolean;
+  trainDirection?: 'left' | 'right';
 }) => {
   return (
     <div className="flex flex-col items-center relative">
@@ -245,7 +247,7 @@ const BlockIndicator = ({
         <AnimatePresence>
           {hasTrain && train && (
             <motion.div
-              className="absolute -top-14 left-0 right-0 flex justify-center"
+              className="absolute -top-16 left-0 right-0 flex justify-center"
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}
@@ -262,6 +264,7 @@ const BlockIndicator = ({
                 animatedProgress={trainProgress}
                 trail={trainTrail}
                 isMoving={isTrainMoving}
+                direction={trainDirection}
               />
             </motion.div>
           )}
@@ -457,7 +460,7 @@ const PointSwitch = ({
   );
 };
 
-// Enhanced Animated train marker with smooth spring physics
+// Enhanced Animated train marker with smooth spring physics and lighting effects
 const AnimatedTrainMarker = ({
   train,
   isSelected,
@@ -465,7 +468,8 @@ const AnimatedTrainMarker = ({
   onDoubleClick,
   animatedProgress = 0,
   trail = [],
-  isMoving = false
+  isMoving = false,
+  direction = 'right'
 }: {
   train: Train;
   isSelected: boolean;
@@ -474,6 +478,7 @@ const AnimatedTrainMarker = ({
   animatedProgress?: number;
   trail?: number[];
   isMoving?: boolean;
+  direction?: 'left' | 'right';
 }) => {
   // Spring-based position for ultra-smooth movement
   const x = useMotionValue(animatedProgress * 40 - 20);
@@ -514,9 +519,155 @@ const AnimatedTrainMarker = ({
 
   // Calculate wheel rotation speed based on train speed
   const wheelRotationDuration = Math.max(0.2, 1 - (train.speed / 150));
+  
+  // Headlight intensity based on speed
+  const headlightIntensity = Math.min(1, train.speed / 60);
+  const headlightSize = 8 + (train.speed / 20);
 
   return (
-    <div className="flex flex-col items-center gap-1">
+    <div className="flex flex-col items-center gap-1 relative">
+      {/* HEADLIGHT - Front of train (direction-based) */}
+      {train.speed > 0 && (
+        <motion.div
+          className={cn(
+            'absolute top-1/2 -translate-y-1/2 pointer-events-none',
+            direction === 'right' ? '-right-6' : '-left-6'
+          )}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+        >
+          {/* Main headlight beam */}
+          <motion.div
+            className="relative"
+            animate={{
+              opacity: [0.7, 1, 0.7],
+            }}
+            transition={{ duration: 0.3, repeat: Infinity }}
+          >
+            {/* Core bright light */}
+            <motion.div
+              className="absolute rounded-full bg-yellow-200"
+              style={{
+                width: headlightSize,
+                height: headlightSize,
+                top: '50%',
+                left: direction === 'right' ? 0 : 'auto',
+                right: direction === 'left' ? 0 : 'auto',
+                transform: 'translateY(-50%)',
+                boxShadow: `0 0 ${10 + train.speed / 10}px ${4 + train.speed / 20}px rgba(255, 255, 200, ${0.6 + headlightIntensity * 0.4})`,
+              }}
+              animate={{
+                boxShadow: [
+                  `0 0 ${10 + train.speed / 10}px ${4 + train.speed / 20}px rgba(255, 255, 200, ${0.5 + headlightIntensity * 0.3})`,
+                  `0 0 ${14 + train.speed / 8}px ${6 + train.speed / 15}px rgba(255, 255, 200, ${0.7 + headlightIntensity * 0.3})`,
+                  `0 0 ${10 + train.speed / 10}px ${4 + train.speed / 20}px rgba(255, 255, 200, ${0.5 + headlightIntensity * 0.3})`,
+                ]
+              }}
+              transition={{ duration: 0.5, repeat: Infinity }}
+            />
+            {/* Light cone effect */}
+            <motion.div
+              className="absolute"
+              style={{
+                width: 0,
+                height: 0,
+                top: '50%',
+                left: direction === 'right' ? headlightSize : 'auto',
+                right: direction === 'left' ? headlightSize : 'auto',
+                transform: `translateY(-50%) ${direction === 'left' ? 'rotate(180deg)' : ''}`,
+                borderTop: `${6 + train.speed / 20}px solid transparent`,
+                borderBottom: `${6 + train.speed / 20}px solid transparent`,
+                borderLeft: direction === 'right' ? 'none' : `${20 + train.speed / 4}px solid rgba(255, 255, 200, ${0.15 + headlightIntensity * 0.15})`,
+                borderRight: direction === 'right' ? `${20 + train.speed / 4}px solid rgba(255, 255, 200, ${0.15 + headlightIntensity * 0.15})` : 'none',
+                filter: 'blur(3px)',
+              }}
+              animate={{
+                opacity: [0.6, 1, 0.6]
+              }}
+              transition={{ duration: 0.8, repeat: Infinity }}
+            />
+          </motion.div>
+        </motion.div>
+      )}
+
+      {/* TAILLIGHT - Back of train (opposite to direction) */}
+      {train.speed > 0 && (
+        <motion.div
+          className={cn(
+            'absolute top-1/2 -translate-y-1/2 pointer-events-none',
+            direction === 'right' ? '-left-4' : '-right-4'
+          )}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+        >
+          {/* Dual red taillights */}
+          <div className="flex flex-col gap-1">
+            <motion.div
+              className="w-2 h-2 rounded-full bg-red-600"
+              style={{
+                boxShadow: '0 0 6px 2px rgba(239, 68, 68, 0.8)',
+              }}
+              animate={{
+                opacity: [0.7, 1, 0.7],
+                boxShadow: [
+                  '0 0 4px 1px rgba(239, 68, 68, 0.6)',
+                  '0 0 8px 3px rgba(239, 68, 68, 0.9)',
+                  '0 0 4px 1px rgba(239, 68, 68, 0.6)',
+                ]
+              }}
+              transition={{ duration: 0.6, repeat: Infinity }}
+            />
+            <motion.div
+              className="w-2 h-2 rounded-full bg-red-600"
+              style={{
+                boxShadow: '0 0 6px 2px rgba(239, 68, 68, 0.8)',
+              }}
+              animate={{
+                opacity: [0.7, 1, 0.7],
+                boxShadow: [
+                  '0 0 4px 1px rgba(239, 68, 68, 0.6)',
+                  '0 0 8px 3px rgba(239, 68, 68, 0.9)',
+                  '0 0 4px 1px rgba(239, 68, 68, 0.6)',
+                ]
+              }}
+              transition={{ duration: 0.6, repeat: Infinity, delay: 0.1 }}
+            />
+          </div>
+        </motion.div>
+      )}
+
+      {/* Stationary marker lights (when stopped) */}
+      {train.speed === 0 && (
+        <>
+          {/* Left marker light - amber */}
+          <motion.div
+            className="absolute -left-3 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-amber-500"
+            animate={{
+              opacity: [0.5, 1, 0.5],
+              boxShadow: [
+                '0 0 3px 1px rgba(245, 158, 11, 0.4)',
+                '0 0 6px 2px rgba(245, 158, 11, 0.8)',
+                '0 0 3px 1px rgba(245, 158, 11, 0.4)',
+              ]
+            }}
+            transition={{ duration: 1, repeat: Infinity }}
+          />
+          {/* Right marker light - amber */}
+          <motion.div
+            className="absolute -right-3 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-amber-500"
+            animate={{
+              opacity: [0.5, 1, 0.5],
+              boxShadow: [
+                '0 0 3px 1px rgba(245, 158, 11, 0.4)',
+                '0 0 6px 2px rgba(245, 158, 11, 0.8)',
+                '0 0 3px 1px rgba(245, 158, 11, 0.4)',
+              ]
+            }}
+            transition={{ duration: 1, repeat: Infinity, delay: 0.5 }}
+          />
+        </>
+      )}
+
       {/* Trail particles - show movement history */}
       {isMoving && trail.length > 0 && (
         <div className="absolute inset-0 pointer-events-none">
@@ -583,7 +734,7 @@ const AnimatedTrainMarker = ({
         {isMoving && (
           <motion.div 
             className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full flex justify-between px-1"
-            animate={{ rotate: 360 }}
+            animate={{ rotate: direction === 'right' ? 360 : -360 }}
             transition={{ 
               duration: wheelRotationDuration, 
               repeat: Infinity, 
@@ -598,9 +749,13 @@ const AnimatedTrainMarker = ({
         {/* Direction arrow with speed-based animation */}
         {train.speed > 0 && (
           <motion.div 
-            className="absolute -right-3 top-1/2 -translate-y-1/2"
+            className={cn(
+              "absolute top-1/2 -translate-y-1/2",
+              direction === 'right' ? '-right-3' : '-left-3'
+            )}
+            style={{ transform: direction === 'left' ? 'translateY(-50%) rotate(180deg)' : 'translateY(-50%)' }}
             animate={{ 
-              x: [0, 6, 0],
+              x: direction === 'right' ? [0, 6, 0] : [0, -6, 0],
               opacity: [0.8, 1, 0.8]
             }}
             transition={{ 
@@ -2944,6 +3099,7 @@ export const SignalBoxVisualization = ({
                       signalLockedBy={signalLock?.trainNumber}
                       trainTrail={trail}
                       isTrainMoving={moving}
+                      trainDirection="right"
                     />
                     <TrackLine status={section.status === 'occupied' ? 'occupied' : 'clear'} />
                   </div>
@@ -2998,6 +3154,7 @@ export const SignalBoxVisualization = ({
                       signalLockedBy={signalLock?.trainNumber}
                       trainTrail={trail}
                       isTrainMoving={moving}
+                      trainDirection="right"
                     />
                   </div>
                 );
@@ -3030,6 +3187,7 @@ export const SignalBoxVisualization = ({
                       signalId={hasSignal ? signalId : undefined}
                       signalStatus={signalOverrides[signalId] || 'clear'}
                       onSignalChange={hasSignal ? (status) => handleSignalChange(signalId, blockNum, status) : undefined}
+                      trainDirection="left"
                     />
                     <TrackLine />
                   </div>
@@ -3058,6 +3216,7 @@ export const SignalBoxVisualization = ({
                       signalId={hasSignal ? signalId : undefined}
                       signalStatus={signalOverrides[signalId] || 'clear'}
                       onSignalChange={hasSignal ? (status) => handleSignalChange(signalId, blockNum, status) : undefined}
+                      trainDirection="left"
                     />
                   </div>
                 );
@@ -3081,6 +3240,7 @@ export const SignalBoxVisualization = ({
                       occupied={false}
                       hasSignal={false}
                       signalStatus={'clear'}
+                      trainDirection="left"
                     />
                   </div>
                 );
