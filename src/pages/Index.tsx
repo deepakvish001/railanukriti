@@ -15,9 +15,10 @@ import { TrainScheduleGantt } from '@/components/dashboard/TrainScheduleGantt';
 import { ExportPanel } from '@/components/dashboard/ExportPanel';
 import { AnalyticsDashboard } from '@/components/dashboard/AnalyticsDashboard';
 import { KPIDashboard } from '@/components/dashboard/KPIDashboard';
+import { DelayPrediction } from '@/components/dashboard/DelayPrediction';
 import { useTrains, useTrackSections, useAIRecommendations, useSectionMetrics } from '@/hooks/useRailwayData';
 import { Helmet } from 'react-helmet-async';
-import { Loader2, FlaskConical, Bell, History, BarChart3, AlertTriangle, GanttChart, Download, TrendingUp, Target } from 'lucide-react';
+import { Loader2, FlaskConical, Bell, History, BarChart3, AlertTriangle, GanttChart, Download, TrendingUp, Target, Brain } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -153,6 +154,10 @@ const Index = () => {
                       <Target className="w-3 h-3 mr-1" />
                       KPIs
                     </TabsTrigger>
+                    <TabsTrigger value="predictions" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                      <Brain className="w-3 h-3 mr-1" />
+                      AI Predict
+                    </TabsTrigger>
                   </TabsList>
                 </div>
                 
@@ -194,6 +199,10 @@ const Index = () => {
                 
                 <TabsContent value="kpis" className="flex-1 mt-3 min-h-0 overflow-auto">
                   <KPIDashboard />
+                </TabsContent>
+                
+                <TabsContent value="predictions" className="flex-1 mt-3 min-h-0 overflow-auto">
+                  <DelayPrediction />
                 </TabsContent>
               </Tabs>
             </div>
