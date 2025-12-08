@@ -697,7 +697,17 @@ const AnimatedTrainMarker = ({
       <motion.button
         onClick={onClick}
         onDoubleClick={onDoubleClick}
-        style={{ x: springX }}
+        style={{ 
+          x: springX,
+          boxShadow: isMoving 
+            ? `0 0 ${12 + train.speed / 10}px ${4 + train.speed / 30}px ${
+                train.type === 'express' ? 'rgba(59, 130, 246, 0.5)' :
+                train.type === 'freight' ? 'rgba(245, 158, 11, 0.5)' :
+                train.type === 'local' ? 'rgba(34, 197, 94, 0.5)' :
+                'rgba(168, 85, 247, 0.5)'
+              }`
+            : undefined
+        }}
         initial={{ scale: 0.8, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.8, opacity: 0 }}
@@ -706,15 +716,12 @@ const AnimatedTrainMarker = ({
         className={cn(
           'relative w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold cursor-pointer z-10',
           typeColors[train.type],
-          'text-white shadow-lg',
-          typeGlowColors[train.type],
+          'text-white',
           isSelected && 'ring-3 ring-white ring-offset-2 ring-offset-background'
         )}
         title={`${train.number} - ${train.speed} km/h - Double-click to set route`}
       >
         {train.type[0].toUpperCase()}
-        
-        
         {/* Direction arrow with speed-based animation */}
         {train.speed > 0 && (
           <motion.div 
