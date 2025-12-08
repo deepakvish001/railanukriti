@@ -10,9 +10,10 @@ import { ScenarioSimulation } from '@/components/dashboard/ScenarioSimulation';
 import { AlertsPanel } from '@/components/dashboard/AlertsPanel';
 import { AuditLog } from '@/components/dashboard/AuditLog';
 import { PerformanceCharts } from '@/components/dashboard/PerformanceCharts';
+import { ConflictDetection } from '@/components/dashboard/ConflictDetection';
 import { useTrains, useTrackSections, useAIRecommendations, useSectionMetrics } from '@/hooks/useRailwayData';
 import { Helmet } from 'react-helmet-async';
-import { Loader2, FlaskConical, Bell, History, BarChart3 } from 'lucide-react';
+import { Loader2, FlaskConical, Bell, History, BarChart3, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -128,6 +129,10 @@ const Index = () => {
                       <BarChart3 className="w-3 h-3 mr-1" />
                       Charts
                     </TabsTrigger>
+                    <TabsTrigger value="conflicts" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                      <AlertTriangle className="w-3 h-3 mr-1" />
+                      Conflicts
+                    </TabsTrigger>
                   </TabsList>
                 </div>
                 
@@ -149,6 +154,10 @@ const Index = () => {
                 
                 <TabsContent value="charts" className="flex-1 mt-3 min-h-0">
                   <PerformanceCharts />
+                </TabsContent>
+                
+                <TabsContent value="conflicts" className="flex-1 mt-3 min-h-0">
+                  <ConflictDetection />
                 </TabsContent>
               </Tabs>
             </div>
