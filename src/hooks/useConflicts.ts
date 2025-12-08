@@ -1,6 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+
+// Sound context for playing notifications
+let playSoundCallback: ((type: 'critical' | 'warning' | 'success' | 'info') => void) | null = null;
+
+export const setSoundCallback = (callback: typeof playSoundCallback) => {
+  playSoundCallback = callback;
+};
 
 export interface Conflict {
   id: string;
@@ -84,6 +91,18 @@ export const useConflicts = () => {
           if (payload.eventType === 'INSERT') {
             const newConflict = mapDbConflict(payload.new as DbConflict);
             setConflicts(prev => [newConflict, ...prev]);
+            
+            // Play sound based on severity
+            if (playSoundCallback) {
+              if (newConflict.severity === 'critical') {
+                playSoundCallback('critical');
+              } else if (newConflict.severity === 'high') {
+                playSoundCallback('warning');
+              } else {
+                playSoundCallback('info');
+              }
+            }
+            
             toast({
               title: "New Conflict Detected",
               description: newConflict.description,

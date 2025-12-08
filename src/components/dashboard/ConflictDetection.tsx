@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AlertTriangle, AlertOctagon, Shield, Clock, Check, X, Sparkles, Loader2, ChevronDown, ChevronUp } from 'lucide-react';
-import { useConflicts, Conflict } from '@/hooks/useConflicts';
+import { useConflicts, Conflict, setSoundCallback } from '@/hooks/useConflicts';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useLogAction } from '@/hooks/useAuditLog';
 import { formatDistanceToNow } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useNotificationSound } from '@/hooks/useNotificationSound';
 
 const SeverityIcon = ({ severity }: { severity: Conflict['severity'] }) => {
   switch (severity) {
@@ -48,6 +49,7 @@ const ConflictCard = ({ conflict, onResolve, onDismiss }: ConflictCardProps) => 
   const [suggestion, setSuggestion] = useState(conflict.aiSuggestion);
   const { logAction } = useLogAction();
   const { toast } = useToast();
+  const { playSound } = useNotificationSound();
 
   const fetchSuggestion = async () => {
     if (suggestion) return;
@@ -75,6 +77,7 @@ const ConflictCard = ({ conflict, onResolve, onDismiss }: ConflictCardProps) => 
   const handleResolve = () => {
     logAction('conflict_resolved', 'conflict', `Resolved conflict: ${conflict.description}`, conflict.id);
     onResolve(conflict.id);
+    playSound('success');
     toast({
       title: "Conflict Resolved",
       description: "The conflict has been marked as resolved.",
@@ -186,6 +189,13 @@ const ConflictCard = ({ conflict, onResolve, onDismiss }: ConflictCardProps) => 
 
 export const ConflictDetection = () => {
   const { conflicts, loading, resolveConflict, dismissConflict } = useConflicts();
+  const { playSound } = useNotificationSound();
+
+  // Register sound callback for realtime updates
+  useEffect(() => {
+    setSoundCallback(playSound);
+    return () => setSoundCallback(null);
+  }, [playSound]);
 
   const criticalCount = conflicts.filter(c => c.severity === 'critical').length;
   const highCount = conflicts.filter(c => c.severity === 'high').length;
