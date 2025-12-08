@@ -13,9 +13,10 @@ import { PerformanceCharts } from '@/components/dashboard/PerformanceCharts';
 import { ConflictDetection } from '@/components/dashboard/ConflictDetection';
 import { TrainScheduleGantt } from '@/components/dashboard/TrainScheduleGantt';
 import { ExportPanel } from '@/components/dashboard/ExportPanel';
+import { AnalyticsDashboard } from '@/components/dashboard/AnalyticsDashboard';
 import { useTrains, useTrackSections, useAIRecommendations, useSectionMetrics } from '@/hooks/useRailwayData';
 import { Helmet } from 'react-helmet-async';
-import { Loader2, FlaskConical, Bell, History, BarChart3, AlertTriangle, GanttChart, Download } from 'lucide-react';
+import { Loader2, FlaskConical, Bell, History, BarChart3, AlertTriangle, GanttChart, Download, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -143,6 +144,10 @@ const Index = () => {
                       <Download className="w-3 h-3 mr-1" />
                       Export
                     </TabsTrigger>
+                    <TabsTrigger value="analytics" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                      <TrendingUp className="w-3 h-3 mr-1" />
+                      Analytics
+                    </TabsTrigger>
                   </TabsList>
                 </div>
                 
@@ -176,6 +181,10 @@ const Index = () => {
                 
                 <TabsContent value="export" className="flex-1 mt-3 min-h-0">
                   <ExportPanel />
+                </TabsContent>
+                
+                <TabsContent value="analytics" className="flex-1 mt-3 min-h-0 overflow-auto">
+                  <AnalyticsDashboard />
                 </TabsContent>
               </Tabs>
             </div>
