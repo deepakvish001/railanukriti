@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { supabase } from '@/integrations/supabase/client';
+import { SoundControl } from './SoundControl';
 
 export const Header = () => {
   const navigate = useNavigate();
@@ -136,6 +137,8 @@ export const Header = () => {
           </motion.div>
 
           <div className="h-8 w-px bg-border" />
+
+          <SoundControl />
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
