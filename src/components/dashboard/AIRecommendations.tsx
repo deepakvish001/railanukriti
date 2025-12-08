@@ -224,7 +224,7 @@ export const AIRecommendations = ({ recommendations }: AIRecommendationsProps) =
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="bg-card border border-border rounded-xl p-5 h-full flex flex-col"
+      className="bg-card border border-border rounded-xl p-5 flex flex-col"
     >
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
@@ -242,7 +242,7 @@ export const AIRecommendations = ({ recommendations }: AIRecommendationsProps) =
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto space-y-3 pr-1 min-h-0">
+      <div className="flex-1 overflow-y-auto space-y-3 pr-1">
         <AnimatePresence mode="popLayout">
           {localRecs.length > 0 ? (
             localRecs.map((rec, index) => (

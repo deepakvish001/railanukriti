@@ -125,7 +125,7 @@ export const TrainList = ({ trains, selectedTrain, onTrainSelect }: TrainListPro
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="bg-card border border-border rounded-lg p-4 h-full flex flex-col"
+      className="bg-card border border-border rounded-lg p-4 flex flex-col max-h-[600px]"
     >
       <div className="flex items-center justify-between mb-4">
         <div>

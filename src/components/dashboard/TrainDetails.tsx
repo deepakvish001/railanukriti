@@ -82,7 +82,7 @@ export const TrainDetails = ({ train, onClose }: TrainDetailsProps) => {
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 20 }}
-          className="bg-card border border-border rounded-xl p-5 h-full flex flex-col overflow-hidden"
+          className="bg-card border border-border rounded-xl p-5 flex flex-col"
         >
           {/* Header */}
           <div className="flex items-start justify-between mb-4">
@@ -140,7 +140,7 @@ export const TrainDetails = ({ train, onClose }: TrainDetailsProps) => {
           </div>
 
           {/* Content */}
-          <div className="space-y-4 flex-1 overflow-y-auto">
+          <div className="space-y-4">
             {/* Route */}
             <div className="flex items-center gap-3 p-3 bg-muted/30 rounded-xl">
               <div className="flex-1">
