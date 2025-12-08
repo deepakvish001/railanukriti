@@ -12,9 +12,10 @@ import { AuditLog } from '@/components/dashboard/AuditLog';
 import { PerformanceCharts } from '@/components/dashboard/PerformanceCharts';
 import { ConflictDetection } from '@/components/dashboard/ConflictDetection';
 import { TrainScheduleGantt } from '@/components/dashboard/TrainScheduleGantt';
+import { ExportPanel } from '@/components/dashboard/ExportPanel';
 import { useTrains, useTrackSections, useAIRecommendations, useSectionMetrics } from '@/hooks/useRailwayData';
 import { Helmet } from 'react-helmet-async';
-import { Loader2, FlaskConical, Bell, History, BarChart3, AlertTriangle, GanttChart } from 'lucide-react';
+import { Loader2, FlaskConical, Bell, History, BarChart3, AlertTriangle, GanttChart, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -138,6 +139,10 @@ const Index = () => {
                       <GanttChart className="w-3 h-3 mr-1" />
                       Schedule
                     </TabsTrigger>
+                    <TabsTrigger value="export" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                      <Download className="w-3 h-3 mr-1" />
+                      Export
+                    </TabsTrigger>
                   </TabsList>
                 </div>
                 
@@ -167,6 +172,10 @@ const Index = () => {
                 
                 <TabsContent value="schedule" className="flex-1 mt-3 min-h-0">
                   <TrainScheduleGantt />
+                </TabsContent>
+                
+                <TabsContent value="export" className="flex-1 mt-3 min-h-0">
+                  <ExportPanel />
                 </TabsContent>
               </Tabs>
             </div>
