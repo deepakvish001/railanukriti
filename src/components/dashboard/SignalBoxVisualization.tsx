@@ -6,6 +6,16 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { useLogAction } from '@/hooks/useAuditLog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 // Train position tracking for animation
 interface TrainPosition {
@@ -865,6 +875,7 @@ export const SignalBoxVisualization = ({
 
   // Emergency stop state
   const [emergencyStopActive, setEmergencyStopActive] = useState(false);
+  const [showEmergencyConfirm, setShowEmergencyConfirm] = useState(false);
 
   // Emergency stop - halt all trains and set all signals to danger
   const activateEmergencyStop = () => {
@@ -979,12 +990,48 @@ export const SignalBoxVisualization = ({
                 'h-7 text-[10px] px-3 font-bold shadow-lg',
                 !emergencyStopActive && 'bg-red-600 hover:bg-red-700 animate-pulse'
               )}
-              onClick={activateEmergencyStop}
+              onClick={() => setShowEmergencyConfirm(true)}
               disabled={emergencyStopActive}
             >
               🛑 EMERGENCY STOP
             </Button>
           </motion.div>
+
+          {/* Emergency Stop Confirmation Dialog */}
+          <AlertDialog open={showEmergencyConfirm} onOpenChange={setShowEmergencyConfirm}>
+            <AlertDialogContent className="bg-zinc-900 border-red-500/50">
+              <AlertDialogHeader>
+                <AlertDialogTitle className="text-red-500 flex items-center gap-2">
+                  🛑 Confirm Emergency Stop
+                </AlertDialogTitle>
+                <AlertDialogDescription className="text-muted-foreground">
+                  This will immediately:
+                  <ul className="list-disc list-inside mt-2 space-y-1">
+                    <li>Set ALL signals to DANGER</li>
+                    <li>Release ALL route locks</li>
+                    <li>Halt ALL train movements</li>
+                  </ul>
+                  <p className="mt-3 text-warning font-medium">
+                    Are you sure you want to activate the emergency stop?
+                  </p>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel className="bg-zinc-800 hover:bg-zinc-700">
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                  onClick={() => {
+                    activateEmergencyStop();
+                    setShowEmergencyConfirm(false);
+                  }}
+                >
+                  Activate Emergency Stop
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
           
           {activeRoutes > 0 && (
             <span className="text-[9px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
