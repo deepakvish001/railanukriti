@@ -1679,10 +1679,10 @@ export const SignalBoxVisualization = ({
                     transition={{ duration: 0.5, repeat: Infinity }}
                   />
                 )}
-                <span className="text-[10px] font-semibold text-amber-400">
+                <span className="text-xs font-bold text-amber-400">
                   ⏱️ Overstay Alerts ({overstayAlerts.length})
                 </span>
-                <span className="text-[9px] text-muted-foreground">
+                <span className="text-[10px] text-muted-foreground">
                   Threshold: {overstayThreshold}s
                 </span>
               </div>
@@ -1690,7 +1690,7 @@ export const SignalBoxVisualization = ({
                 <select
                   value={overstayThreshold}
                   onChange={(e) => setOverstayThreshold(Number(e.target.value))}
-                  className="h-5 text-[9px] px-1.5 rounded bg-zinc-800 border border-zinc-700 text-foreground focus:outline-none"
+                  className="h-7 text-xs px-2 rounded bg-zinc-800 border border-zinc-700 text-foreground focus:outline-none"
                 >
                   <option value="15">15s</option>
                   <option value="30">30s</option>
@@ -1702,14 +1702,14 @@ export const SignalBoxVisualization = ({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-5 text-[9px] px-2"
+                  className="h-7 text-xs px-3"
                   onClick={() => setShowOverstayPanel(false)}
                 >
                   Hide
                 </Button>
               </div>
             </div>
-            <div className="flex gap-2 flex-wrap max-h-20 overflow-auto">
+            <div className="flex gap-3 flex-wrap">
               {overstayAlerts.map(alert => {
                 const severity = getAlertSeverity(alert.duration);
                 const typeColors: Record<string, string> = {
@@ -1724,7 +1724,7 @@ export const SignalBoxVisualization = ({
                     initial={{ scale: 0.9, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     className={cn(
-                      'flex items-center gap-2 px-2 py-1 rounded text-[9px] border-l-2',
+                      'flex items-center gap-3 px-3 py-2 rounded-lg text-sm border-l-3',
                       typeColors[alert.trainType],
                       alert.acknowledged ? 'bg-zinc-800/50 opacity-60' : 'bg-zinc-800',
                       severity === 'critical' && !alert.acknowledged && 'ring-1 ring-red-500/50',
@@ -1740,9 +1740,9 @@ export const SignalBoxVisualization = ({
                       {alert.trainNumber}
                     </span>
                     <span className="text-muted-foreground">in</span>
-                    <span className="font-medium">{alert.sectionName}</span>
+                    <span className="font-semibold">{alert.sectionName}</span>
                     <span className={cn(
-                      'font-mono px-1.5 py-0.5 rounded',
+                      'font-mono px-2 py-1 rounded text-sm font-bold',
                       severity === 'critical' && 'bg-red-500/20 text-red-400',
                       severity === 'warning' && 'bg-amber-500/20 text-amber-400',
                       severity === 'info' && 'bg-zinc-600/20 text-zinc-300'
@@ -1752,7 +1752,7 @@ export const SignalBoxVisualization = ({
                     {!alert.acknowledged && (
                       <button
                         onClick={() => acknowledgeAlert(alert.id)}
-                        className="text-[8px] px-1.5 py-0.5 rounded bg-primary/20 text-primary hover:bg-primary/30"
+                        className="text-xs px-2 py-1 rounded bg-primary/20 text-primary hover:bg-primary/30 font-medium"
                       >
                         ACK
                       </button>
@@ -1770,7 +1770,7 @@ export const SignalBoxVisualization = ({
         <button
           onClick={() => setShowOverstayPanel(true)}
           className={cn(
-            'px-3 py-1 border-b text-[9px] flex items-center gap-2 transition-colors',
+            'px-4 py-2 border-b text-sm flex items-center gap-3 transition-colors',
             unacknowledgedCount > 0 
               ? 'bg-amber-500/10 border-amber-500/50 text-amber-400 hover:bg-amber-500/20' 
               : 'bg-zinc-800/30 border-zinc-700 text-muted-foreground hover:bg-zinc-800/50'
@@ -1778,7 +1778,7 @@ export const SignalBoxVisualization = ({
         >
           <span>⏱️ {overstayAlerts.length} overstay alert{overstayAlerts.length > 1 ? 's' : ''}</span>
           {unacknowledgedCount > 0 && (
-            <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-bold">
+            <span className="px-2 py-1 rounded bg-amber-500/20 text-amber-400 font-bold">
               {unacknowledgedCount} new
             </span>
           )}
@@ -1797,17 +1797,17 @@ export const SignalBoxVisualization = ({
           >
             <div className="px-3 py-2 bg-gradient-to-r from-cyan-500/5 to-primary/5">
               <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-semibold text-cyan-400">📊 Congestion Forecast</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-bold text-cyan-400">📊 Congestion Forecast</span>
                   {lastForecastTime && (
-                    <span className="text-[8px] text-muted-foreground">
+                    <span className="text-xs text-muted-foreground">
                       Updated: {lastForecastTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   )}
                   {autoRefreshEnabled && (
-                    <span className="text-[8px] text-emerald-400 flex items-center gap-1">
+                    <span className="text-xs text-emerald-400 flex items-center gap-1">
                       <motion.div 
-                        className="w-1.5 h-1.5 rounded-full bg-emerald-500"
+                        className="w-2 h-2 rounded-full bg-emerald-500"
                         animate={{ opacity: [1, 0.3, 1] }}
                         transition={{ duration: 1.5, repeat: Infinity }}
                       />
@@ -1815,13 +1815,13 @@ export const SignalBoxVisualization = ({
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   {/* Auto-refresh controls */}
-                  <div className="flex items-center gap-1 mr-2 border-r border-zinc-700/50 pr-2">
+                  <div className="flex items-center gap-2 mr-2 border-r border-zinc-700/50 pr-3">
                     <button
                       onClick={toggleAutoRefresh}
                       className={cn(
-                        'h-5 px-2 rounded text-[8px] font-medium transition-colors',
+                        'h-7 px-3 rounded text-xs font-medium transition-colors',
                         autoRefreshEnabled 
                           ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/50' 
                           : 'bg-zinc-800 text-muted-foreground border border-zinc-700 hover:text-foreground'
@@ -1832,7 +1832,7 @@ export const SignalBoxVisualization = ({
                     <select
                       value={autoRefreshInterval}
                       onChange={(e) => setAutoRefreshInterval(Number(e.target.value))}
-                      className="h-5 text-[8px] px-1 rounded bg-zinc-800 border border-zinc-700 text-foreground focus:outline-none"
+                      className="h-7 text-xs px-2 rounded bg-zinc-800 border border-zinc-700 text-foreground focus:outline-none"
                       disabled={autoRefreshEnabled}
                     >
                       <option value="30">30s</option>
@@ -1844,7 +1844,7 @@ export const SignalBoxVisualization = ({
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-5 text-[9px] px-2 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
+                    className="h-8 text-xs px-3 border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10"
                     onClick={fetchCongestionForecast}
                     disabled={forecastLoading}
                   >
@@ -1853,7 +1853,7 @@ export const SignalBoxVisualization = ({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-5 text-[9px] px-2"
+                    className="h-8 text-xs px-3"
                     onClick={() => setShowForecastPanel(false)}
                   >
                     Hide
@@ -1862,30 +1862,30 @@ export const SignalBoxVisualization = ({
               </div>
 
               {forecastLoading ? (
-                <div className="flex items-center justify-center py-4">
+                <div className="flex items-center justify-center py-6">
                   <motion.div 
-                    className="w-6 h-6 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full"
+                    className="w-8 h-8 border-2 border-cyan-500/30 border-t-cyan-500 rounded-full"
                     animate={{ rotate: 360 }}
                     transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
                   />
-                  <span className="ml-2 text-[10px] text-muted-foreground">Analyzing patterns...</span>
+                  <span className="ml-3 text-sm text-muted-foreground">Analyzing patterns...</span>
                 </div>
               ) : congestionForecast ? (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {/* Forecast Timeline */}
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-4 gap-3">
                     {congestionForecast.forecasts.map(forecast => (
                       <div 
                         key={forecast.timeframe}
                         className={cn(
-                          'p-2 rounded border text-center',
+                          'p-3 rounded-lg border text-center',
                           getCongestionColor(forecast.level)
                         )}
                       >
-                        <div className="text-[8px] text-muted-foreground mb-1">+{forecast.timeframe}</div>
-                        <div className="text-[10px] font-mono font-bold">{forecast.timestamp}</div>
-                        <div className="mt-1">
-                          <div className="h-1.5 bg-zinc-700 rounded-full overflow-hidden">
+                        <div className="text-xs text-muted-foreground mb-1">+{forecast.timeframe}</div>
+                        <div className="text-sm font-mono font-bold">{forecast.timestamp}</div>
+                        <div className="mt-2">
+                          <div className="h-2 bg-zinc-700 rounded-full overflow-hidden">
                             <motion.div 
                               initial={{ width: 0 }}
                               animate={{ width: `${forecast.overallCongestion}%` }}
@@ -1893,10 +1893,10 @@ export const SignalBoxVisualization = ({
                               className={cn('h-full rounded-full', getCongestionBarColor(forecast.level))}
                             />
                           </div>
-                          <div className="text-[9px] font-bold mt-0.5">{forecast.overallCongestion}%</div>
+                          <div className="text-sm font-bold mt-1">{forecast.overallCongestion}%</div>
                         </div>
                         <div className={cn(
-                          'text-[7px] uppercase font-bold mt-1',
+                          'text-xs uppercase font-bold mt-1',
                           forecast.level === 'critical' && 'text-red-400',
                           forecast.level === 'high' && 'text-amber-400',
                           forecast.level === 'medium' && 'text-yellow-400',
@@ -1910,17 +1910,17 @@ export const SignalBoxVisualization = ({
 
                   {/* Hotspots */}
                   {congestionForecast.hotspots.length > 0 && (
-                    <div className="pt-2 border-t border-zinc-700/50">
-                      <div className="text-[9px] font-semibold text-amber-400 mb-1">🔥 Hotspots</div>
-                      <div className="flex gap-2 flex-wrap">
+                    <div className="pt-3 border-t border-zinc-700/50">
+                      <div className="text-sm font-bold text-amber-400 mb-2">🔥 Hotspots</div>
+                      <div className="flex gap-3 flex-wrap">
                         {congestionForecast.hotspots.map((hotspot, idx) => (
                           <div 
                             key={idx}
-                            className="px-2 py-1 rounded bg-amber-500/10 border border-amber-500/30 text-[8px]"
+                            className="px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-sm"
                           >
-                            <span className="font-semibold text-amber-400">{hotspot.sectionName}</span>
-                            <span className="text-muted-foreground ml-1">@ {hotspot.peakTime}</span>
-                            <span className="ml-1 text-amber-300">({hotspot.peakCongestion}%)</span>
+                            <span className="font-bold text-amber-400">{hotspot.sectionName}</span>
+                            <span className="text-muted-foreground ml-2">@ {hotspot.peakTime}</span>
+                            <span className="ml-2 text-amber-300 font-semibold">({hotspot.peakCongestion}%)</span>
                           </div>
                         ))}
                       </div>
@@ -1929,21 +1929,21 @@ export const SignalBoxVisualization = ({
 
                   {/* Recommendations */}
                   {congestionForecast.recommendations.length > 0 && (
-                    <div className="pt-2 border-t border-zinc-700/50">
-                      <div className="text-[9px] font-semibold text-primary mb-1">💡 Recommendations</div>
-                      <div className="space-y-1">
+                    <div className="pt-3 border-t border-zinc-700/50">
+                      <div className="text-sm font-bold text-primary mb-2">💡 Recommendations</div>
+                      <div className="space-y-2">
                         {congestionForecast.recommendations.slice(0, 3).map((rec, idx) => (
                           <div 
                             key={idx}
                             className={cn(
-                              'px-2 py-1 rounded text-[8px] flex items-start gap-2',
+                              'px-3 py-2 rounded-lg text-sm flex items-start gap-3',
                               rec.priority === 'high' && 'bg-red-500/10 border border-red-500/30',
                               rec.priority === 'medium' && 'bg-amber-500/10 border border-amber-500/30',
                               rec.priority === 'low' && 'bg-zinc-700/30 border border-zinc-600/30'
                             )}
                           >
                             <span className={cn(
-                              'font-bold uppercase text-[7px] px-1 py-0.5 rounded',
+                              'font-bold uppercase text-xs px-2 py-1 rounded',
                               rec.priority === 'high' && 'bg-red-500/20 text-red-400',
                               rec.priority === 'medium' && 'bg-amber-500/20 text-amber-400',
                               rec.priority === 'low' && 'bg-zinc-600/20 text-zinc-400'
@@ -1958,17 +1958,17 @@ export const SignalBoxVisualization = ({
                   )}
 
                   {/* Summary */}
-                  <div className="pt-2 border-t border-zinc-700/50 text-[9px] text-muted-foreground italic">
+                  <div className="pt-3 border-t border-zinc-700/50 text-sm text-muted-foreground italic">
                     {congestionForecast.summary}
                   </div>
                 </div>
               ) : (
-                <div className="text-center py-4">
-                  <p className="text-[9px] text-muted-foreground mb-2">No forecast data available</p>
+                <div className="text-center py-6">
+                  <p className="text-sm text-muted-foreground mb-3">No forecast data available</p>
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-6 text-[9px] px-3 border-cyan-500/30 text-cyan-400"
+                    className="h-8 text-sm px-4 border-cyan-500/30 text-cyan-400"
                     onClick={fetchCongestionForecast}
                   >
                     Generate Forecast
@@ -1989,19 +1989,19 @@ export const SignalBoxVisualization = ({
             exit={{ height: 0, opacity: 0 }}
             className="border-b border-border/30"
           >
-            <div className="px-3 py-2 bg-gradient-to-r from-emerald-500/5 to-primary/5">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-semibold text-emerald-400">🕐 Scheduling Recommendations</span>
-                  <span className="text-[8px] text-muted-foreground">
+            <div className="px-4 py-3 bg-gradient-to-r from-emerald-500/5 to-primary/5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-bold text-emerald-400">🕐 Scheduling Recommendations</span>
+                  <span className="text-xs text-muted-foreground">
                     {schedulingRecommendations.length} suggestion{schedulingRecommendations.length !== 1 ? 's' : ''}
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-5 text-[9px] px-2 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                    className="h-8 text-xs px-3 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
                     onClick={generateSchedulingRecommendations}
                     disabled={schedulingLoading || !congestionForecast}
                   >
@@ -2010,7 +2010,7 @@ export const SignalBoxVisualization = ({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-5 text-[9px] px-2"
+                    className="h-8 text-xs px-3"
                     onClick={() => setShowSchedulingPanel(false)}
                   >
                     Hide
@@ -2019,16 +2019,16 @@ export const SignalBoxVisualization = ({
               </div>
 
               {schedulingLoading ? (
-                <div className="flex items-center justify-center py-4">
+                <div className="flex items-center justify-center py-6">
                   <motion.div 
-                    className="w-6 h-6 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full"
+                    className="w-8 h-8 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full"
                     animate={{ rotate: 360 }}
                     transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
                   />
-                  <span className="ml-2 text-[10px] text-muted-foreground">Optimizing schedules...</span>
+                  <span className="ml-3 text-sm text-muted-foreground">Optimizing schedules...</span>
                 </div>
               ) : schedulingRecommendations.length > 0 ? (
-                <div className="space-y-2 max-h-48 overflow-auto">
+                <div className="space-y-3">
                   {schedulingRecommendations.map(rec => {
                     const typeColors: Record<string, string> = {
                       express: 'border-train-express',
@@ -2043,54 +2043,54 @@ export const SignalBoxVisualization = ({
                         animate={{ x: 0, opacity: 1 }}
                         exit={{ x: 20, opacity: 0 }}
                         className={cn(
-                          'p-2 rounded border-l-2 bg-zinc-800/50',
+                          'p-3 rounded-lg border-l-3 bg-zinc-800/50',
                           typeColors[rec.trainType]
                         )}
                       >
-                        <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start justify-between gap-3">
                           <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                              <span className="font-mono font-bold text-[10px] text-foreground">
+                            <div className="flex items-center gap-3 mb-2">
+                              <span className="font-mono font-bold text-sm text-foreground">
                                 {rec.trainNumber}
                               </span>
                               <span className={cn(
-                                'text-[7px] uppercase font-bold px-1 py-0.5 rounded',
+                                'text-xs uppercase font-bold px-2 py-1 rounded',
                                 rec.impactLevel === 'high' && 'bg-red-500/20 text-red-400',
                                 rec.impactLevel === 'medium' && 'bg-amber-500/20 text-amber-400',
                                 rec.impactLevel === 'low' && 'bg-green-500/20 text-green-400'
                               )}>
                                 {rec.impactLevel} priority
                               </span>
-                              <span className="text-[8px] text-emerald-400 font-semibold">
+                              <span className="text-xs text-emerald-400 font-bold">
                                 ↓{rec.congestionReduction}% congestion
                               </span>
                             </div>
-                            <div className="flex items-center gap-2 text-[9px] mb-1">
+                            <div className="flex items-center gap-3 text-sm mb-2">
                               <span className="text-muted-foreground">Current:</span>
                               <span className="font-mono text-red-400 line-through">{rec.currentSchedule}</span>
                               <span className="text-muted-foreground">→</span>
                               <span className="font-mono text-emerald-400 font-bold">{rec.recommendedSchedule}</span>
-                              <span className="text-amber-400">(+{rec.delayMinutes} min)</span>
+                              <span className="text-amber-400 font-medium">(+{rec.delayMinutes} min)</span>
                             </div>
-                            <div className="text-[8px] text-muted-foreground mb-1">
+                            <div className="text-xs text-muted-foreground mb-2">
                               {rec.reason}
                             </div>
-                            <div className="flex gap-1 flex-wrap">
+                            <div className="flex gap-2 flex-wrap">
                               {rec.affectedSections.map((section, idx) => (
                                 <span 
                                   key={idx}
-                                  className="text-[7px] px-1 py-0.5 rounded bg-zinc-700/50 text-zinc-400"
+                                  className="text-xs px-2 py-1 rounded bg-zinc-700/50 text-zinc-400"
                                 >
                                   {section}
                                 </span>
                               ))}
                             </div>
                           </div>
-                          <div className="flex flex-col gap-1">
+                          <div className="flex flex-col gap-2">
                             <Button
                               variant="outline"
                               size="sm"
-                              className="h-6 text-[8px] px-2 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
+                              className="h-8 text-xs px-3 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20"
                               onClick={() => applySchedulingRecommendation(rec)}
                             >
                               ✓ Apply
@@ -2098,7 +2098,7 @@ export const SignalBoxVisualization = ({
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-6 text-[8px] px-2 text-muted-foreground hover:text-foreground"
+                              className="h-8 text-xs px-3 text-muted-foreground hover:text-foreground"
                               onClick={() => dismissSchedulingRecommendation(rec.trainId)}
                             >
                               ✕ Dismiss
@@ -2110,8 +2110,8 @@ export const SignalBoxVisualization = ({
                   })}
                 </div>
               ) : (
-                <div className="text-center py-4">
-                  <p className="text-[9px] text-muted-foreground mb-2">
+                <div className="text-center py-6">
+                  <p className="text-sm text-muted-foreground mb-3">
                     {congestionForecast 
                       ? 'No schedule changes needed - current schedules are optimal'
                       : 'Generate a congestion forecast first to get scheduling recommendations'}
@@ -2120,7 +2120,7 @@ export const SignalBoxVisualization = ({
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-6 text-[9px] px-3 border-cyan-500/30 text-cyan-400"
+                      className="h-8 text-sm px-4 border-cyan-500/30 text-cyan-400"
                       onClick={() => {
                         fetchCongestionForecast();
                         setShowSchedulingPanel(false);
@@ -2135,15 +2135,15 @@ export const SignalBoxVisualization = ({
 
               {/* Summary stats */}
               {schedulingRecommendations.length > 0 && (
-                <div className="mt-2 pt-2 border-t border-zinc-700/50 flex items-center justify-between text-[8px]">
-                  <div className="flex items-center gap-3">
+                <div className="mt-3 pt-3 border-t border-zinc-700/50 flex items-center justify-between text-sm">
+                  <div className="flex items-center gap-4">
                     <span className="text-muted-foreground">
-                      Total delay: <span className="text-amber-400 font-mono">
+                      Total delay: <span className="text-amber-400 font-mono font-bold">
                         {schedulingRecommendations.reduce((sum, r) => sum + r.delayMinutes, 0)} min
                       </span>
                     </span>
                     <span className="text-muted-foreground">
-                      Avg congestion reduction: <span className="text-emerald-400 font-mono">
+                      Avg congestion reduction: <span className="text-emerald-400 font-mono font-bold">
                         {Math.round(schedulingRecommendations.reduce((sum, r) => sum + r.congestionReduction, 0) / schedulingRecommendations.length)}%
                       </span>
                     </span>
@@ -2151,7 +2151,7 @@ export const SignalBoxVisualization = ({
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-5 text-[8px] px-2 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/20"
+                    className="h-8 text-xs px-3 border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/20"
                     onClick={() => {
                       schedulingRecommendations.forEach(rec => applySchedulingRecommendation(rec));
                     }}
@@ -2166,19 +2166,19 @@ export const SignalBoxVisualization = ({
       </AnimatePresence>
 
       {/* Header */}
-      <div className="px-3 py-2 border-b border-border/30 bg-zinc-800/50 flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-border/30 bg-zinc-800/50 flex items-center justify-between">
         <div>
-          <h3 className="text-xs font-semibold text-foreground">Block Section Diagram</h3>
-          <p className="text-[10px] text-muted-foreground">Kanpur - Allahabad Section</p>
+          <h3 className="text-sm font-bold text-foreground">Block Section Diagram</h3>
+          <p className="text-xs text-muted-foreground">Kanpur - Allahabad Section</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {/* Emergency Stop Button */}
           <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
             <Button
               variant="destructive"
               size="sm"
               className={cn(
-                'h-7 text-[10px] px-3 font-bold shadow-lg',
+                'h-8 text-xs px-4 font-bold shadow-lg',
                 !emergencyStopActive && 'bg-red-600 hover:bg-red-700 animate-pulse'
               )}
               onClick={() => setShowEmergencyConfirm(true)}
@@ -2193,7 +2193,7 @@ export const SignalBoxVisualization = ({
             variant={showForecastPanel ? 'secondary' : 'outline'}
             size="sm"
             className={cn(
-              'h-7 text-[10px] px-3',
+              'h-8 text-xs px-4',
               showForecastPanel 
                 ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/50' 
                 : 'border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10'
@@ -2214,7 +2214,7 @@ export const SignalBoxVisualization = ({
             variant={showSchedulingPanel ? 'secondary' : 'outline'}
             size="sm"
             className={cn(
-              'h-7 text-[10px] px-3',
+              'h-8 text-xs px-4',
               showSchedulingPanel 
                 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' 
                 : 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10'
@@ -2229,7 +2229,7 @@ export const SignalBoxVisualization = ({
           >
             {schedulingLoading ? '⏳' : '🕐'} Schedule
             {schedulingRecommendations.length > 0 && (
-              <span className="ml-1 px-1 py-0.5 rounded bg-emerald-500/30 text-[8px]">
+              <span className="ml-1 px-1.5 py-0.5 rounded bg-emerald-500/30 text-xs">
                 {schedulingRecommendations.length}
               </span>
             )}
@@ -2272,24 +2272,24 @@ export const SignalBoxVisualization = ({
           </AlertDialog>
           
           {activeRoutes > 0 && (
-            <span className="text-[9px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
+            <span className="text-xs px-3 py-1 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 font-medium">
               {activeRoutes} route{activeRoutes > 1 ? 's' : ''} locked
             </span>
           )}
           {overrideCount > 0 && !emergencyStopActive && (
-            <span className="text-[9px] px-2 py-0.5 rounded-full bg-warning/20 text-warning border border-warning/30">
+            <span className="text-xs px-3 py-1 rounded-full bg-warning/20 text-warning border border-warning/30 font-medium">
               {overrideCount} signal override{overrideCount > 1 ? 's' : ''}
             </span>
           )}
           {pointOverrideCount > 0 && (
-            <span className="text-[9px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30">
+            <span className="text-xs px-3 py-1 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-medium">
               {pointOverrideCount} point{pointOverrideCount > 1 ? 's' : ''} reversed
             </span>
           )}
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 text-[10px] px-2"
+            className="h-8 text-xs px-3"
             onClick={resetAllSignals}
             disabled={overrideCount === 0 || emergencyStopActive}
           >
@@ -2298,7 +2298,7 @@ export const SignalBoxVisualization = ({
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 text-[10px] px-2"
+            className="h-8 text-xs px-3"
             onClick={resetAllPoints}
             disabled={pointOverrideCount === 0}
           >
@@ -2307,7 +2307,7 @@ export const SignalBoxVisualization = ({
           <Button
             variant={showOccupancyHistory ? 'secondary' : 'ghost'}
             size="sm"
-            className="h-6 text-[10px] px-2"
+            className="h-8 text-xs px-3"
             onClick={() => setShowOccupancyHistory(!showOccupancyHistory)}
           >
             📋 History {occupancyHistory.length > 0 && `(${occupancyHistory.length})`}
