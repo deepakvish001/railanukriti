@@ -126,7 +126,7 @@ const Dashboard = () => {
             <h2 className="text-sm font-medium text-muted-foreground mb-3">Signal Box & Track Visualization</h2>
             <Card className="bg-card/50 border-border/50 overflow-hidden">
               <CardContent className="p-0">
-                <div className="h-[500px]">
+                <div className="min-h-[600px]">
                   <SignalBoxVisualization
                     sections={sections}
                     trains={trains}
