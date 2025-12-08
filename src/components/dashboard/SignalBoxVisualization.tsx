@@ -212,7 +212,7 @@ const BlockIndicator = ({
   return (
     <div className="flex flex-col items-center relative">
       {hasSignal && signalId && onSignalChange && (
-        <div className="mb-1">
+        <div className="mb-2">
           <Signal 
             id={signalId}
             status={signalStatus} 
@@ -225,10 +225,10 @@ const BlockIndicator = ({
       <div className="relative">
         <motion.div 
           className={cn(
-            'w-6 h-8 rounded-sm border-2 flex items-center justify-center text-[8px] font-mono font-bold transition-all',
+            'w-10 h-12 rounded-md border-2 flex items-center justify-center text-xs font-mono font-bold transition-all shadow-lg',
             occupied 
-              ? 'bg-red-500/20 border-red-500 text-red-400' 
-              : 'bg-zinc-800 border-zinc-600 text-zinc-400'
+              ? 'bg-red-500/20 border-red-500 text-red-400 shadow-red-500/20' 
+              : 'bg-zinc-800 border-zinc-500 text-zinc-300'
           )}
           animate={occupied ? { borderColor: ['#ef4444', '#f87171', '#ef4444'] } : {}}
           transition={{ duration: 1, repeat: Infinity }}
@@ -240,9 +240,9 @@ const BlockIndicator = ({
         <AnimatePresence>
           {hasTrain && train && (
             <motion.div
-              className="absolute -top-8 left-0 right-0 flex justify-center"
+              className="absolute -top-12 left-0 right-0 flex justify-center"
               style={{ 
-                x: `${(trainProgress - 0.5) * 30}px` // Animate position within block
+                x: `${(trainProgress - 0.5) * 40}px`
               }}
             >
               {/* Trail effect */}
@@ -267,27 +267,45 @@ const BlockIndicator = ({
 // Track line segment
 const TrackLine = ({ length = 'normal', status = 'clear' }: { length?: 'short' | 'normal' | 'long'; status?: 'clear' | 'occupied' }) => {
   const widths = {
-    short: 'w-4',
-    normal: 'w-8',
-    long: 'w-12',
+    short: 'w-6',
+    normal: 'w-12',
+    long: 'w-16',
   };
   
   return (
-    <div className={cn(
-      'h-1 rounded-full',
-      widths[length],
-      status === 'occupied' ? 'bg-red-500' : 'bg-zinc-500'
-    )} />
+    <div className="relative">
+      {/* Track bed */}
+      <div className={cn(
+        'h-2 rounded-full relative overflow-hidden',
+        widths[length],
+        status === 'occupied' ? 'bg-red-500' : 'bg-zinc-600'
+      )}>
+        {/* Animated track glow for occupied */}
+        {status === 'occupied' && (
+          <motion.div 
+            className="absolute inset-0 bg-gradient-to-r from-transparent via-red-400/50 to-transparent"
+            animate={{ x: ['-100%', '100%'] }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+          />
+        )}
+      </div>
+      {/* Rail ties */}
+      <div className={cn('flex justify-between absolute -top-0.5', widths[length])}>
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="w-0.5 h-3 bg-zinc-700" />
+        ))}
+      </div>
+    </div>
   );
 };
 
 // Platform marker
 const Platform = ({ number, active }: { number: number; active?: boolean }) => (
   <div className={cn(
-    'px-2 py-1 rounded text-[9px] font-bold border',
+    'px-4 py-2 rounded-lg text-sm font-bold border-2 shadow-lg transition-all',
     active 
-      ? 'bg-primary/20 border-primary text-primary' 
-      : 'bg-zinc-800 border-zinc-600 text-zinc-400'
+      ? 'bg-primary/20 border-primary text-primary shadow-primary/20' 
+      : 'bg-zinc-800 border-zinc-500 text-zinc-300'
   )}>
     Platform {number}
   </div>
@@ -296,10 +314,13 @@ const Platform = ({ number, active }: { number: number; active?: boolean }) => (
 // Station marker
 const StationMarker = ({ name, side }: { name: string; side: 'left' | 'right' }) => (
   <div className={cn(
-    'px-2 py-1 rounded text-[10px] font-semibold bg-emerald-500/20 border border-emerald-500/50 text-emerald-400',
+    'px-4 py-2 rounded-lg text-sm font-bold bg-emerald-500/20 border-2 border-emerald-500/50 text-emerald-400 shadow-lg shadow-emerald-500/10',
     side === 'left' ? 'mr-auto' : 'ml-auto'
   )}>
-    {name}
+    <div className="flex items-center gap-2">
+      <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+      {name}
+    </div>
   </div>
 );
 
@@ -461,7 +482,7 @@ const AnimatedTrainMarker = ({
   const speedInfo = getSpeedColor(train.speed);
 
   return (
-    <div className="flex flex-col items-center gap-0.5">
+    <div className="flex flex-col items-center gap-1">
       <motion.button
         onClick={onClick}
         onDoubleClick={onDoubleClick}
@@ -469,10 +490,10 @@ const AnimatedTrainMarker = ({
         animate={{ 
           scale: 1, 
           opacity: 1,
-          x: animatedProgress * 100 // Animate within block
+          x: animatedProgress * 100
         }}
         exit={{ scale: 0.8, opacity: 0 }}
-        whileHover={{ scale: 1.15 }}
+        whileHover={{ scale: 1.2 }}
         transition={{ 
           type: "spring", 
           stiffness: 300, 
@@ -480,10 +501,10 @@ const AnimatedTrainMarker = ({
           x: { duration: 2, ease: "linear" }
         }}
         className={cn(
-          'relative w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold cursor-pointer z-10',
+          'relative w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold cursor-pointer z-10 shadow-xl',
           typeColors[train.type],
-          'text-white shadow-lg',
-          isSelected && 'ring-2 ring-white ring-offset-2 ring-offset-background'
+          'text-white',
+          isSelected && 'ring-3 ring-white ring-offset-2 ring-offset-background'
         )}
         title={`${train.number} - ${train.speed} km/h - Double-click to set route`}
       >
@@ -492,18 +513,18 @@ const AnimatedTrainMarker = ({
         {train.status === 'on-time' && train.speed > 0 && (
           <motion.div
             className="absolute inset-0 rounded-full bg-white/30"
-            animate={{ scale: [1, 1.5, 1], opacity: [0.5, 0, 0.5] }}
-            transition={{ duration: 1.5, repeat: Infinity }}
+            animate={{ scale: [1, 1.6, 1], opacity: [0.5, 0, 0.5] }}
+            transition={{ duration: 1.2, repeat: Infinity }}
           />
         )}
         {/* Direction arrow - only show when moving */}
         {train.speed > 0 && (
           <motion.div 
-            className="absolute -right-1 top-1/2 -translate-y-1/2"
-            animate={{ x: [0, 3, 0] }}
+            className="absolute -right-2 top-1/2 -translate-y-1/2"
+            animate={{ x: [0, 4, 0] }}
             transition={{ duration: Math.max(0.3, 1 - train.speed / 120), repeat: Infinity }}
           >
-            <svg width="6" height="6" viewBox="0 0 6 6" fill="currentColor">
+            <svg width="8" height="8" viewBox="0 0 6 6" fill="currentColor">
               <path d="M0 0L6 3L0 6V0Z" />
             </svg>
           </motion.div>
@@ -511,32 +532,41 @@ const AnimatedTrainMarker = ({
         {/* Stopped indicator */}
         {train.speed === 0 && (
           <motion.div 
-            className="absolute inset-0 rounded-full border-2 border-red-500"
+            className="absolute inset-0 rounded-full border-3 border-red-500"
             animate={{ opacity: [1, 0.5, 1] }}
             transition={{ duration: 0.5, repeat: Infinity }}
           />
         )}
       </motion.button>
       
+      {/* Train number label */}
+      <motion.div
+        initial={{ opacity: 0, y: -5 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="text-[10px] font-mono font-bold text-foreground bg-zinc-900/90 px-1.5 py-0.5 rounded border border-zinc-700"
+      >
+        {train.number}
+      </motion.div>
+      
       {/* Speed indicator badge */}
       <motion.div
         initial={{ opacity: 0, y: -5 }}
         animate={{ opacity: 1, y: 0 }}
         className={cn(
-          'flex items-center gap-0.5 px-1 py-0.5 rounded text-[7px] font-mono font-bold',
-          'bg-zinc-900/80 border',
-          train.speed === 0 && 'border-red-500/50',
-          train.speed > 0 && train.speed < 30 && 'border-amber-500/50',
-          train.speed >= 30 && train.speed < 80 && 'border-yellow-500/50',
-          train.speed >= 80 && 'border-green-500/50'
+          'flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-mono font-bold',
+          'bg-zinc-900/90 border-2',
+          train.speed === 0 && 'border-red-500/70',
+          train.speed > 0 && train.speed < 30 && 'border-amber-500/70',
+          train.speed >= 30 && train.speed < 80 && 'border-yellow-500/70',
+          train.speed >= 80 && 'border-green-500/70'
         )}
       >
         <motion.div 
-          className={cn('w-1.5 h-1.5 rounded-full', speedInfo.bg)}
-          animate={train.speed > 0 ? { scale: [1, 1.2, 1] } : { opacity: [1, 0.5, 1] }}
+          className={cn('w-2 h-2 rounded-full', speedInfo.bg)}
+          animate={train.speed > 0 ? { scale: [1, 1.3, 1] } : { opacity: [1, 0.4, 1] }}
           transition={{ duration: train.speed > 0 ? 0.5 : 0.3, repeat: Infinity }}
         />
-        <span className={speedInfo.text}>{train.speed}</span>
+        <span className={speedInfo.text}>{train.speed} km/h</span>
       </motion.div>
     </div>
   );
@@ -2695,40 +2725,55 @@ export const SignalBoxVisualization = ({
       </AnimatePresence>
 
       {/* Control hint */}
-      <div className="px-3 py-1.5 bg-primary/5 border-b border-border/30 flex items-center justify-between">
-        <p className="text-[9px] text-primary/80">
-          💡 Click trains to set routes • Locked signals/points cannot be changed
+      <div className="px-4 py-2 bg-primary/5 border-b border-border/30 flex items-center justify-between">
+        <p className="text-xs text-primary/80">
+          💡 Click trains to select • Double-click to set routes • Locked signals/points cannot be changed
         </p>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
             <motion.div 
-              className="w-2 h-2 rounded-full bg-green-500"
+              className="w-2.5 h-2.5 rounded-full bg-green-500"
               animate={{ scale: [1, 1.3, 1] }}
               transition={{ duration: 1, repeat: Infinity }}
             />
-            <span className="text-[9px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground font-medium">
               {trains.filter(t => t.status === 'on-time' || t.status === 'delayed').length} trains moving
             </span>
+          </div>
+          <div className="text-xs text-muted-foreground">
+            Last update: {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </div>
         </div>
       </div>
 
       {/* Main visualization */}
-      <div className="flex-1 p-3 overflow-auto min-h-[300px]">
-        <div className="min-w-[600px]">
+      <div className="flex-1 p-4 overflow-auto min-h-[350px]">
+        <div className="min-w-[800px]">
           {/* Station markers */}
-          <div className="flex justify-between mb-4 px-2">
+          <div className="flex justify-between mb-6 px-4">
             <StationMarker name="KANPUR JN" side="left" />
+            <div className="flex-1 flex items-center justify-center">
+              <div className="px-4 py-2 rounded-lg bg-zinc-800/50 border border-zinc-700">
+                <span className="text-sm font-semibold text-foreground">Live Track Status</span>
+              </div>
+            </div>
             <StationMarker name="ALLAHABAD JN" side="right" />
           </div>
 
           {/* Main Line (UP) */}
-          <div className="relative mb-6">
-            <div className="flex items-center justify-between px-2 mb-1">
-              <span className="text-[9px] text-muted-foreground font-mono">UP LINE →</span>
+          <div className="relative mb-8">
+            <div className="flex items-center justify-between px-4 mb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-sm font-bold text-foreground">UP LINE</span>
+                <span className="text-xs text-muted-foreground">→ Allahabad Direction</span>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {sections.filter(s => s.status === 'occupied').length} sections occupied
+              </div>
             </div>
-            <div className="flex items-center gap-1 bg-zinc-800/30 rounded p-2">
-              <div className="w-4 h-0.5 bg-zinc-600" />
+            <div className="flex items-center gap-2 bg-gradient-to-r from-zinc-800/50 via-zinc-800/30 to-zinc-800/50 rounded-xl p-4 border border-zinc-700/50 shadow-lg">
+              <div className="w-6 h-1 bg-zinc-500 rounded-full" />
               {sections.slice(0, 4).map((section, idx) => {
                 const train = getTrainAtSection(section.id);
                 const signalId = `UP-S${section.id}`;
@@ -2806,17 +2851,21 @@ export const SignalBoxVisualization = ({
                   </div>
                 );
               })}
-              <div className="w-4 h-0.5 bg-zinc-600" />
+              <div className="w-6 h-1 bg-zinc-500 rounded-full" />
             </div>
           </div>
 
           {/* Main Line (DN) */}
-          <div className="relative mb-4">
-            <div className="flex items-center justify-between px-2 mb-1">
-              <span className="text-[9px] text-muted-foreground font-mono">← DN LINE</span>
+          <div className="relative mb-6">
+            <div className="flex items-center justify-between px-4 mb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 rounded-full bg-amber-500 animate-pulse" />
+                <span className="text-sm font-bold text-foreground">DN LINE</span>
+                <span className="text-xs text-muted-foreground">← Kanpur Direction</span>
+              </div>
             </div>
-            <div className="flex items-center gap-1 bg-zinc-800/30 rounded p-2">
-              <div className="w-4 h-0.5 bg-zinc-600" />
+            <div className="flex items-center gap-2 bg-gradient-to-r from-zinc-800/50 via-zinc-800/30 to-zinc-800/50 rounded-xl p-4 border border-zinc-700/50 shadow-lg">
+              <div className="w-6 h-1 bg-zinc-500 rounded-full" />
               {[...Array(3)].map((_, idx) => {
                 const blockNum = idx + 9;
                 const signalId = `DN-S${blockNum}`;
@@ -2836,7 +2885,7 @@ export const SignalBoxVisualization = ({
                 );
               })}
               {/* Point switches for DN line */}
-              <div className="flex flex-col items-center mx-1">
+              <div className="flex flex-col items-center mx-2">
                 <PointSwitch 
                   id="PT-3" 
                   position={pointPositions['PT-3']} 
@@ -2862,7 +2911,7 @@ export const SignalBoxVisualization = ({
                   </div>
                 );
               })}
-              <div className="flex flex-col items-center mx-1">
+              <div className="flex flex-col items-center mx-2">
                 <PointSwitch 
                   id="PT-4" 
                   position={pointPositions['PT-4']} 
@@ -2885,63 +2934,84 @@ export const SignalBoxVisualization = ({
                   </div>
                 );
               })}
-              <div className="w-4 h-0.5 bg-zinc-600" />
+              <div className="w-6 h-1 bg-zinc-500 rounded-full" />
             </div>
           </div>
 
           {/* Legend */}
-          <div className="flex flex-wrap items-center justify-center gap-4 pt-3 border-t border-border/30">
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-green-500" />
-              <span className="text-[9px] text-muted-foreground">Clear</span>
+          <div className="flex flex-wrap items-center justify-center gap-6 pt-4 mt-4 border-t border-border/30 bg-zinc-800/20 rounded-lg p-4">
+            {/* Signal Status */}
+            <div className="flex items-center gap-4">
+              <span className="text-xs font-semibold text-muted-foreground">Signals:</span>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-green-500 shadow-lg shadow-green-500/30" />
+                <span className="text-xs text-muted-foreground">Clear</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-yellow-500 shadow-lg shadow-yellow-500/30" />
+                <span className="text-xs text-muted-foreground">Caution</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-red-500 shadow-lg shadow-red-500/30" />
+                <span className="text-xs text-muted-foreground">Danger</span>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-yellow-500" />
-              <span className="text-[9px] text-muted-foreground">Caution</span>
+            
+            <div className="w-px h-6 bg-border/50" />
+            
+            {/* Points */}
+            <div className="flex items-center gap-4">
+              <span className="text-xs font-semibold text-muted-foreground">Points:</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 border border-green-500/30 font-bold">N</span>
+                <span className="text-xs text-muted-foreground">Normal</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs px-2 py-1 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold">R</span>
+                <span className="text-xs text-muted-foreground">Reverse</span>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded-full bg-red-500" />
-              <span className="text-[9px] text-muted-foreground">Danger</span>
+            
+            <div className="w-px h-6 bg-border/50" />
+            
+            {/* Train Types */}
+            <div className="flex items-center gap-4">
+              <span className="text-xs font-semibold text-muted-foreground">Trains:</span>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded-full bg-train-express shadow-lg" />
+                <span className="text-xs text-muted-foreground">Express</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded-full bg-train-freight shadow-lg" />
+                <span className="text-xs text-muted-foreground">Freight</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded-full bg-train-local shadow-lg" />
+                <span className="text-xs text-muted-foreground">Local</span>
+              </div>
             </div>
-            <div className="w-px h-3 bg-border" />
-            <div className="flex items-center gap-1.5">
-              <span className="text-[8px] px-1 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30 font-bold">N</span>
-              <span className="text-[9px] text-muted-foreground">Normal</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[8px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold">R</span>
-              <span className="text-[9px] text-muted-foreground">Reverse</span>
-            </div>
-            <div className="w-px h-3 bg-border" />
-            <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-full bg-train-express" />
-              <span className="text-[9px] text-muted-foreground">Express</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-full bg-train-freight" />
-              <span className="text-[9px] text-muted-foreground">Freight</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-3 h-3 rounded-full bg-train-local" />
-              <span className="text-[9px] text-muted-foreground">Local</span>
-            </div>
-            <div className="w-px h-3 bg-border" />
-            {/* Speed indicators legend */}
-            <div className="flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-green-500" />
-              <span className="text-[9px] text-muted-foreground">≥80 km/h</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-yellow-500" />
-              <span className="text-[9px] text-muted-foreground">30-79</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-              <span className="text-[9px] text-muted-foreground">1-29</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-red-500" />
-              <span className="text-[9px] text-muted-foreground">Stopped</span>
+            
+            <div className="w-px h-6 bg-border/50" />
+            
+            {/* Speed indicators */}
+            <div className="flex items-center gap-4">
+              <span className="text-xs font-semibold text-muted-foreground">Speed:</span>
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
+                <span className="text-xs text-muted-foreground">≥80 km/h</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-yellow-500" />
+                <span className="text-xs text-muted-foreground">30-79</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                <span className="text-xs text-muted-foreground">1-29</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                <span className="text-xs text-muted-foreground">Stopped</span>
+              </div>
             </div>
           </div>
         </div>
