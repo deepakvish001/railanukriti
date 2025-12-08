@@ -3,7 +3,7 @@ import { TrendingUp, Clock, Gauge, Target, Train, AlertTriangle } from 'lucide-r
 import { SectionMetrics } from '@/types/railway';
 
 interface MetricsPanelProps {
-  metrics: SectionMetrics;
+  metrics: SectionMetrics | null;
 }
 
 interface MetricCardProps {
@@ -58,8 +58,22 @@ const MetricCard = ({ label, value, unit, icon, trend, trendValue, status = 'suc
 };
 
 export const MetricsPanel = ({ metrics }: MetricsPanelProps) => {
+  if (!metrics) {
+    return (
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="bg-card border border-border rounded-lg p-4 animate-pulse">
+            <div className="h-8 w-8 bg-muted rounded-md mb-3" />
+            <div className="h-3 w-20 bg-muted rounded mb-2" />
+            <div className="h-6 w-16 bg-muted rounded" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <div className="grid grid-cols-6 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
       <MetricCard
         label="Section Throughput"
         value={metrics.throughput}
