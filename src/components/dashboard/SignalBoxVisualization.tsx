@@ -714,37 +714,6 @@ const AnimatedTrainMarker = ({
       >
         {train.type[0].toUpperCase()}
         
-        {/* Smooth continuous glow for moving trains */}
-        {isMoving && (
-          <motion.div
-            className={cn('absolute inset-0 rounded-full', typeColors[train.type])}
-            animate={{ 
-              scale: [1, 1.4, 1],
-              opacity: [0.6, 0, 0.6]
-            }}
-            transition={{ 
-              duration: 0.8 + (1 - train.speed / 120) * 0.5,
-              repeat: Infinity,
-              ease: "easeInOut"
-            }}
-          />
-        )}
-        
-        {/* Wheel rotation effect */}
-        {isMoving && (
-          <motion.div 
-            className="absolute bottom-0 left-1/2 -translate-x-1/2 w-full flex justify-between px-1"
-            animate={{ rotate: direction === 'right' ? 360 : -360 }}
-            transition={{ 
-              duration: wheelRotationDuration, 
-              repeat: Infinity, 
-              ease: "linear" 
-            }}
-          >
-            <div className="w-1.5 h-1.5 rounded-full bg-white/50" />
-            <div className="w-1.5 h-1.5 rounded-full bg-white/50" />
-          </motion.div>
-        )}
         
         {/* Direction arrow with speed-based animation */}
         {train.speed > 0 && (
