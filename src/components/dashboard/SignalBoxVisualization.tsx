@@ -1624,7 +1624,7 @@ export const SignalBoxVisualization = ({
 
   return (
     <div className={cn(
-      'h-full flex flex-col bg-zinc-900/50 rounded-lg overflow-hidden',
+      'h-full flex flex-col bg-zinc-900/50 rounded-lg overflow-hidden min-h-0',
       emergencyStopActive && 'ring-2 ring-red-500 ring-offset-2 ring-offset-background'
     )}>
       {/* Emergency Stop Banner */}
@@ -1664,7 +1664,7 @@ export const SignalBoxVisualization = ({
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             className={cn(
-              'border-b-2 px-3 py-2',
+              'border-b-2 px-3 py-2 max-h-[120px] overflow-auto',
               unacknowledgedCount > 0 
                 ? 'bg-amber-500/10 border-amber-500' 
                 : 'bg-zinc-800/30 border-zinc-700'
@@ -1793,9 +1793,9 @@ export const SignalBoxVisualization = ({
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="border-b border-border/30 overflow-hidden"
+            className="border-b border-border/30 overflow-hidden max-h-[220px]"
           >
-            <div className="px-3 py-2 bg-gradient-to-r from-cyan-500/5 to-primary/5">
+            <div className="px-3 py-2 bg-gradient-to-r from-cyan-500/5 to-primary/5 overflow-auto max-h-[220px]">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-semibold text-cyan-400">📊 Congestion Forecast</span>
@@ -1987,9 +1987,9 @@ export const SignalBoxVisualization = ({
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="border-b border-border/30 overflow-hidden"
+            className="border-b border-border/30 overflow-hidden max-h-[200px]"
           >
-            <div className="px-3 py-2 bg-gradient-to-r from-emerald-500/5 to-primary/5">
+            <div className="px-3 py-2 bg-gradient-to-r from-emerald-500/5 to-primary/5 overflow-auto max-h-[200px]">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-semibold text-emerald-400">🕐 Scheduling Recommendations</span>
@@ -2351,9 +2351,9 @@ export const SignalBoxVisualization = ({
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="border-b border-border/30 overflow-hidden"
+            className="border-b border-border/30 overflow-hidden max-h-[180px]"
           >
-            <div className="px-3 py-2 bg-zinc-800/30">
+            <div className="px-3 py-2 bg-zinc-800/30 overflow-auto max-h-[180px]">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-semibold text-foreground">Track Occupancy</span>
@@ -2696,7 +2696,7 @@ export const SignalBoxVisualization = ({
       </div>
 
       {/* Main visualization */}
-      <div className="flex-1 p-3 overflow-auto">
+      <div className="flex-1 p-3 overflow-auto min-h-[300px]">
         <div className="min-w-[600px]">
           {/* Station markers */}
           <div className="flex justify-between mb-4 px-2">
