@@ -79,12 +79,12 @@ const Index = () => {
       <div className="min-h-screen bg-background flex flex-col">
         <Header />
         
-        <main className="flex-1 p-4 lg:p-6 space-y-4 lg:space-y-6 overflow-hidden">
+        <main className="flex-1 p-4 lg:p-6 space-y-4 lg:space-y-6 overflow-auto">
           {/* Metrics Row */}
           {metrics && <MetricsPanel metrics={metrics} />}
 
           {/* Main Content */}
-          <div className="grid grid-cols-12 gap-4 lg:gap-6 h-[calc(100vh-320px)]">
+          <div className="grid grid-cols-12 gap-4 lg:gap-6 min-h-[600px]">
             {/* Left Panel - Train List */}
             <div className="col-span-12 lg:col-span-3 xl:col-span-2">
               <TrainList

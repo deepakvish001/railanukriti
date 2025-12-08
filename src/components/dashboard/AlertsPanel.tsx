@@ -164,7 +164,7 @@ export const AlertsPanel = ({ className }: AlertsPanelProps) => {
       </div>
 
       {/* Alerts List */}
-      <div className="flex-1 overflow-y-auto max-h-[300px]">
+      <div className="flex-1 overflow-y-auto">
         <AnimatePresence>
           {filteredAlerts.length === 0 ? (
             <div className="p-8 text-center">
