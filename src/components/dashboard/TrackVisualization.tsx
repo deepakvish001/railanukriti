@@ -1,13 +1,68 @@
 import { motion } from 'framer-motion';
 import { Train, TrackSection } from '@/types/railway';
 import { cn } from '@/lib/utils';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface TrackVisualizationProps {
   sections: TrackSection[];
   trains: Train[];
   selectedTrain: string | null;
   onTrainSelect: (id: string) => void;
+  loading?: boolean;
 }
+
+const TrackVisualizationSkeleton = () => (
+  <motion.div
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    className="bg-card border border-border rounded-lg p-6 card-glow"
+  >
+    <div className="flex items-center justify-between mb-6">
+      <div>
+        <Skeleton className="h-4 w-32 mb-1" />
+        <Skeleton className="h-3 w-48" />
+      </div>
+      <div className="flex items-center gap-4">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <Skeleton className="w-3 h-3 rounded-full" />
+            <Skeleton className="h-3 w-12" />
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <div className="relative grid-pattern rounded-lg p-8 bg-muted/30">
+      <div className="flex justify-between px-4 mb-8">
+        <Skeleton className="h-3 w-20" />
+        <Skeleton className="h-3 w-24" />
+      </div>
+
+      <div className="flex gap-1 mb-16">
+        {[...Array(8)].map((_, idx) => (
+          <div key={idx} className="flex-1 flex flex-col items-center">
+            <Skeleton className="h-2 w-full rounded-full" />
+            <Skeleton className="h-2 w-8 mt-2" />
+          </div>
+        ))}
+      </div>
+
+      <div className="flex justify-between mt-4">
+        <Skeleton className="h-3 w-8" />
+        <Skeleton className="h-3 w-8" />
+      </div>
+    </div>
+
+    <div className="flex items-center justify-center gap-6 mt-4">
+      {[...Array(4)].map((_, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <Skeleton className="w-4 h-4 rounded-full" />
+          <Skeleton className="h-3 w-12" />
+        </div>
+      ))}
+    </div>
+  </motion.div>
+);
 
 const TrainMarker = ({ 
   train, 
@@ -71,7 +126,11 @@ const TrainMarker = ({
   );
 };
 
-export const TrackVisualization = ({ sections, trains, selectedTrain, onTrainSelect }: TrackVisualizationProps) => {
+export const TrackVisualization = ({ sections, trains, selectedTrain, onTrainSelect, loading = false }: TrackVisualizationProps) => {
+  if (loading || sections.length === 0) {
+    return <TrackVisualizationSkeleton />;
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0 }}

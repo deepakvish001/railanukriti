@@ -3,12 +3,55 @@ import { Train } from '@/types/railway';
 import { cn } from '@/lib/utils';
 import { Clock, MapPin, Gauge, ArrowRight } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 
 interface TrainListProps {
   trains: Train[];
   selectedTrain: string | null;
   onTrainSelect: (id: string) => void;
+  loading?: boolean;
 }
+
+const TrainCardSkeleton = ({ index }: { index: number }) => (
+  <motion.div
+    initial={{ opacity: 0, x: -20 }}
+    animate={{ opacity: 1, x: 0 }}
+    transition={{ delay: index * 0.05 }}
+    className="p-4 rounded-lg border border-border bg-card"
+  >
+    <div className="flex items-start justify-between mb-3">
+      <div className="flex items-center gap-2">
+        <Skeleton className="w-2 h-2 rounded-full" />
+        <Skeleton className="h-4 w-16" />
+      </div>
+      <Skeleton className="h-5 w-14" />
+    </div>
+    <Skeleton className="h-4 w-32 mb-2" />
+    <div className="flex items-center gap-1 mb-3">
+      <Skeleton className="h-3 w-20" />
+      <Skeleton className="h-3 w-3" />
+      <Skeleton className="h-3 w-20" />
+    </div>
+    <div className="grid grid-cols-3 gap-2">
+      <div className="flex flex-col gap-1">
+        <Skeleton className="h-3 w-10" />
+        <Skeleton className="h-4 w-12" />
+      </div>
+      <div className="flex flex-col gap-1">
+        <Skeleton className="h-3 w-10" />
+        <Skeleton className="h-4 w-12" />
+      </div>
+      <div className="flex flex-col gap-1">
+        <Skeleton className="h-3 w-10" />
+        <Skeleton className="h-4 w-12" />
+      </div>
+    </div>
+    <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
+      <Skeleton className="h-3 w-14" />
+      <Skeleton className="h-3 w-10" />
+    </div>
+  </motion.div>
+);
 
 const priorityConfig = {
   critical: { label: 'CRITICAL', className: 'bg-destructive/20 text-destructive border-destructive/30' },
@@ -114,12 +157,14 @@ const TrainCard = ({
   );
 };
 
-export const TrainList = ({ trains, selectedTrain, onTrainSelect }: TrainListProps) => {
+export const TrainList = ({ trains, selectedTrain, onTrainSelect, loading = false }: TrainListProps) => {
   // Sort by priority
   const sortedTrains = [...trains].sort((a, b) => {
     const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
     return priorityOrder[a.priority] - priorityOrder[b.priority];
   });
+
+  const isLoading = loading || trains.length === 0;
 
   return (
     <motion.div
@@ -130,20 +175,28 @@ export const TrainList = ({ trains, selectedTrain, onTrainSelect }: TrainListPro
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-sm font-semibold text-foreground">Active Trains</h2>
-          <p className="text-xs text-muted-foreground">{trains.length} trains in section</p>
+          <p className="text-xs text-muted-foreground">
+            {isLoading ? 'Loading...' : `${trains.length} trains in section`}
+          </p>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-        {sortedTrains.map((train, index) => (
-          <TrainCard
-            key={train.id}
-            train={train}
-            isSelected={selectedTrain === train.id}
-            onClick={() => onTrainSelect(train.id)}
-            index={index}
-          />
-        ))}
+        {isLoading ? (
+          [...Array(4)].map((_, index) => (
+            <TrainCardSkeleton key={index} index={index} />
+          ))
+        ) : (
+          sortedTrains.map((train, index) => (
+            <TrainCard
+              key={train.id}
+              train={train}
+              isSelected={selectedTrain === train.id}
+              onClick={() => onTrainSelect(train.id)}
+              index={index}
+            />
+          ))
+        )}
       </div>
     </motion.div>
   );
