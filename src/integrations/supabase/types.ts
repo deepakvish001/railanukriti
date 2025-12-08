@@ -64,6 +64,79 @@ export type Database = {
           },
         ]
       }
+      conflicts: {
+        Row: {
+          ai_suggestion: string | null
+          created_at: string
+          description: string
+          detected_at: string
+          id: string
+          resolved_at: string | null
+          resolved_by: string | null
+          section_id: number | null
+          severity: string
+          status: string
+          train_a_id: string | null
+          train_b_id: string | null
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          ai_suggestion?: string | null
+          created_at?: string
+          description: string
+          detected_at?: string
+          id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          section_id?: number | null
+          severity: string
+          status?: string
+          train_a_id?: string | null
+          train_b_id?: string | null
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          ai_suggestion?: string | null
+          created_at?: string
+          description?: string
+          detected_at?: string
+          id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          section_id?: number | null
+          severity?: string
+          status?: string
+          train_a_id?: string | null
+          train_b_id?: string | null
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conflicts_section_id_fkey"
+            columns: ["section_id"]
+            isOneToOne: false
+            referencedRelation: "track_sections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conflicts_train_a_id_fkey"
+            columns: ["train_a_id"]
+            isOneToOne: false
+            referencedRelation: "trains"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conflicts_train_b_id_fkey"
+            columns: ["train_b_id"]
+            isOneToOne: false
+            referencedRelation: "trains"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           assigned_section: string | null
