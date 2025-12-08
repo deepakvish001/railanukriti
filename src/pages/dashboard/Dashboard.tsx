@@ -143,8 +143,8 @@ const Dashboard = () => {
             <h2 className="text-sm font-medium text-muted-foreground mb-3">Train Management</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Train List */}
-              <Card className="bg-card/50 border-border/50">
-                <CardHeader className="py-3 px-4 border-b border-border/30">
+              <Card className="bg-card/50 border-border/50 h-[420px] flex flex-col">
+                <CardHeader className="py-3 px-4 border-b border-border/30 shrink-0">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
                     <TrainIcon className="h-4 w-4 text-primary" />
                     Active Trains
@@ -153,20 +153,18 @@ const Dashboard = () => {
                     </span>
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="p-0">
-                  <div className="max-h-[350px] overflow-auto">
-                    <TrainList 
-                      trains={trains} 
-                      selectedTrain={selectedTrainId}
-                      onTrainSelect={setSelectedTrainId}
-                    />
-                  </div>
+                <CardContent className="p-0 flex-1 overflow-auto">
+                  <TrainList 
+                    trains={trains} 
+                    selectedTrain={selectedTrainId}
+                    onTrainSelect={setSelectedTrainId}
+                  />
                 </CardContent>
               </Card>
 
               {/* Train Details */}
-              <Card className="bg-card/50 border-border/50">
-                <CardHeader className="py-3 px-4 border-b border-border/30">
+              <Card className="bg-card/50 border-border/50 h-[420px] flex flex-col">
+                <CardHeader className="py-3 px-4 border-b border-border/30 shrink-0">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
                     Train Details
                     {selectedTrain && (
@@ -176,14 +174,14 @@ const Dashboard = () => {
                     )}
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="p-4">
+                <CardContent className="p-4 flex-1 overflow-auto">
                   {selectedTrain ? (
                     <TrainDetails
                       train={selectedTrain}
                       onClose={() => setSelectedTrainId(null)}
                     />
                   ) : (
-                    <div className="h-[300px] flex flex-col items-center justify-center text-center">
+                    <div className="h-full flex flex-col items-center justify-center text-center">
                       <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-muted/80 to-muted/40 flex items-center justify-center mb-4 border border-border/30">
                         <MousePointerClick className="w-6 h-6 text-muted-foreground" />
                       </div>
