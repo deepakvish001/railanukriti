@@ -6,12 +6,17 @@ import { TrackVisualization } from '@/components/dashboard/TrackVisualization';
 import { TrainList } from '@/components/dashboard/TrainList';
 import { AIRecommendations } from '@/components/dashboard/AIRecommendations';
 import { TrainDetails } from '@/components/dashboard/TrainDetails';
+import { ScenarioSimulation } from '@/components/dashboard/ScenarioSimulation';
+import { AlertsPanel } from '@/components/dashboard/AlertsPanel';
 import { useTrains, useTrackSections, useAIRecommendations, useSectionMetrics } from '@/hooks/useRailwayData';
 import { Helmet } from 'react-helmet-async';
-import { Loader2 } from 'lucide-react';
+import { Loader2, FlaskConical, Bell } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 const Index = () => {
   const [selectedTrainId, setSelectedTrainId] = useState<string | null>(null);
+  const [showSimulation, setShowSimulation] = useState(false);
   
   const { trains, loading: trainsLoading, setTrains } = useTrains();
   const { sections, loading: sectionsLoading } = useTrackSections();
@@ -24,7 +29,7 @@ const Index = () => {
 
   const isLoading = trainsLoading || sectionsLoading || recommendationsLoading || metricsLoading;
 
-  // Simulate real-time speed updates (in production, this would come from actual sensors)
+  // Simulate real-time speed updates
   useEffect(() => {
     if (trains.length === 0) return;
 
@@ -41,7 +46,6 @@ const Index = () => {
         };
       }));
 
-      // Slightly update metrics for realistic feel
       if (metrics) {
         setMetrics(prev => prev ? {
           ...prev,
@@ -75,14 +79,14 @@ const Index = () => {
       <div className="min-h-screen bg-background flex flex-col">
         <Header />
         
-        <main className="flex-1 p-6 space-y-6 overflow-hidden">
+        <main className="flex-1 p-4 lg:p-6 space-y-4 lg:space-y-6 overflow-hidden">
           {/* Metrics Row */}
           {metrics && <MetricsPanel metrics={metrics} />}
 
           {/* Main Content */}
-          <div className="grid grid-cols-12 gap-6 h-[calc(100vh-320px)]">
-            {/* Train List */}
-            <div className="col-span-3">
+          <div className="grid grid-cols-12 gap-4 lg:gap-6 h-[calc(100vh-320px)]">
+            {/* Left Panel - Train List */}
+            <div className="col-span-12 lg:col-span-3 xl:col-span-2">
               <TrainList
                 trains={trains}
                 selectedTrain={selectedTrainId}
@@ -90,21 +94,49 @@ const Index = () => {
               />
             </div>
 
-            {/* Center Panel - Track Visualization & AI Recommendations */}
-            <div className="col-span-6 flex flex-col gap-6">
+            {/* Center Panel - Track Visualization & Tabs */}
+            <div className="col-span-12 lg:col-span-6 xl:col-span-7 flex flex-col gap-4 lg:gap-6">
               <TrackVisualization
                 sections={sections}
                 trains={trains}
                 selectedTrain={selectedTrainId}
                 onTrainSelect={setSelectedTrainId}
               />
-              <div className="flex-1 min-h-0">
-                <AIRecommendations recommendations={recommendations} />
-              </div>
+              
+              {/* Tabbed Content */}
+              <Tabs defaultValue="recommendations" className="flex-1 min-h-0 flex flex-col">
+                <div className="flex items-center justify-between">
+                  <TabsList className="bg-muted h-9">
+                    <TabsTrigger value="recommendations" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                      AI Recommendations
+                    </TabsTrigger>
+                    <TabsTrigger value="alerts" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                      <Bell className="w-3 h-3 mr-1" />
+                      Alerts
+                    </TabsTrigger>
+                    <TabsTrigger value="simulation" className="text-xs data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                      <FlaskConical className="w-3 h-3 mr-1" />
+                      Simulation
+                    </TabsTrigger>
+                  </TabsList>
+                </div>
+                
+                <TabsContent value="recommendations" className="flex-1 mt-3 min-h-0">
+                  <AIRecommendations recommendations={recommendations} />
+                </TabsContent>
+                
+                <TabsContent value="alerts" className="flex-1 mt-3 min-h-0">
+                  <AlertsPanel className="h-full" />
+                </TabsContent>
+                
+                <TabsContent value="simulation" className="flex-1 mt-3 min-h-0">
+                  <ScenarioSimulation trains={trains} />
+                </TabsContent>
+              </Tabs>
             </div>
 
-            {/* Right Panel - Train Details or Placeholder */}
-            <div className="col-span-3">
+            {/* Right Panel - Train Details */}
+            <div className="col-span-12 lg:col-span-3 xl:col-span-3">
               {selectedTrain ? (
                 <TrainDetails
                   train={selectedTrain}
@@ -144,14 +176,14 @@ const Index = () => {
         </main>
 
         {/* Footer Status Bar */}
-        <footer className="border-t border-border bg-card/50 px-6 py-2">
+        <footer className="border-t border-border bg-card/50 px-4 lg:px-6 py-2">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
             <div className="flex items-center gap-4">
               <span>Last sync: Just now</span>
-              <span>•</span>
-              <span>Network: Connected</span>
-              <span>•</span>
-              <span>TMS Integration: Active</span>
+              <span className="hidden sm:inline">•</span>
+              <span className="hidden sm:inline">Network: Connected</span>
+              <span className="hidden md:inline">•</span>
+              <span className="hidden md:inline">TMS Integration: Active</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
