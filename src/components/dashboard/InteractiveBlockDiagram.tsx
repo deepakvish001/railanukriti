@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,10 +13,13 @@ import {
   Plus, Minus, Train, CircleDot, ArrowLeftRight, Gauge, 
   TrendingUp, TrendingDown, Zap, Clock, AlertTriangle, 
   RotateCcw, Play, Pause, Eye, EyeOff, Settings2,
-  GitBranch, Repeat, ArrowUpDown
+  GitBranch, Repeat, ArrowUpDown, Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { useRouteStations, useRouteBlockSections } from '@/hooks/useFreightData';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 // Types for infrastructure
 interface Station {
@@ -76,39 +79,69 @@ interface KPIMetrics {
   conflictRisk: number;
 }
 
-// Initial mock data for the KTV route
-const getInitialInfraState = (): InfraState => ({
-  stations: [
-    { id: 'jbp', code: 'JBP', name: 'Jabalpur', type: 'junction', position: 0, platforms: 6, loops: [] },
-    { id: 'mni', code: 'MNI', name: 'Madan Mahal', type: 'station', position: 8, platforms: 2, loops: [] },
-    { id: 'nrsh', code: 'NRSH', name: 'Narsinghpur', type: 'station', position: 45, platforms: 3, loops: [{ id: 'nrsh-l1', name: 'Loop 1', lengthM: 750, maxSpeed: 30, direction: 'both' }] },
-    { id: 'gdw', code: 'GDW', name: 'Gadarwara', type: 'station', position: 85, platforms: 2, loops: [] },
-    { id: 'ppr', code: 'PPR', name: 'Pipariya', type: 'junction', position: 115, platforms: 3, loops: [{ id: 'ppr-l1', name: 'Loop 1', lengthM: 750, maxSpeed: 30, direction: 'both' }] },
-    { id: 'itr', code: 'ITR', name: 'Itarsi', type: 'junction', position: 155, platforms: 7, loops: [] },
-  ],
-  sections: [
-    { 
-      id: 'jbp-mni', fromStation: 'jbp', toStation: 'mni', distanceKm: 8, signallingType: 'automatic', 
-      mainLines: 2, maxSpeed: 110, signals: [], crossovers: []
-    },
-    { 
-      id: 'mni-nrsh', fromStation: 'mni', toStation: 'nrsh', distanceKm: 37, signallingType: 'automatic', 
-      mainLines: 2, maxSpeed: 100, signals: [], crossovers: []
-    },
-    { 
-      id: 'nrsh-gdw', fromStation: 'nrsh', toStation: 'gdw', distanceKm: 40, signallingType: 'absolute', 
-      mainLines: 1, maxSpeed: 90, signals: [], crossovers: []
-    },
-    { 
-      id: 'gdw-ppr', fromStation: 'gdw', toStation: 'ppr', distanceKm: 30, signallingType: 'absolute', 
-      mainLines: 1, maxSpeed: 85, signals: [], crossovers: []
-    },
-    { 
-      id: 'ppr-itr', fromStation: 'ppr', toStation: 'itr', distanceKm: 40, signallingType: 'automatic', 
-      mainLines: 2, maxSpeed: 110, signals: [], crossovers: []
-    },
-  ],
-});
+// Transform database data to InfraState
+const transformDbDataToInfraState = (
+  dbStations: any[],
+  dbSections: any[],
+  dbStationLines: any[]
+): InfraState => {
+  // Group station lines by station code for loop detection
+  const stationLoopsMap = new Map<string, LoopLine[]>();
+  dbStationLines.forEach(line => {
+    if (line.line_category === 'L' || line.line_type === 'LOOP') {
+      const loops = stationLoopsMap.get(line.station_code) || [];
+      loops.push({
+        id: `${line.station_code}-loop-${line.id}`,
+        name: line.line_name || `Loop ${line.line_number}`,
+        lengthM: line.line_length_m || 750,
+        maxSpeed: line.max_speed || 30,
+        direction: line.direction?.toLowerCase() === 'up' ? 'up' : 
+                   line.direction?.toLowerCase() === 'dn' ? 'down' : 'both'
+      });
+      stationLoopsMap.set(line.station_code, loops);
+    }
+  });
+
+  // Transform stations
+  const stations: Station[] = dbStations.map(s => ({
+    id: s.station_code.toLowerCase(),
+    code: s.station_code,
+    name: s.station_name,
+    type: s.is_junction ? 'junction' : 'station',
+    position: s.cumulative_distance_km || s.seq_no * 8,
+    platforms: s.no_of_tracks || 2,
+    loops: stationLoopsMap.get(s.station_code) || []
+  }));
+
+  // Create unique sections by grouping UP/DN pairs
+  const sectionMap = new Map<string, BlockSection>();
+  dbSections.forEach(section => {
+    // Create a normalized key (use alphabetically first station first)
+    const fromCode = section.from_station_code;
+    const toCode = section.to_station_code;
+    const normalizedKey = [fromCode, toCode].sort().join('-');
+    
+    if (!sectionMap.has(normalizedKey)) {
+      sectionMap.set(normalizedKey, {
+        id: normalizedKey.toLowerCase(),
+        fromStation: fromCode.toLowerCase(),
+        toStation: toCode.toLowerCase(),
+        distanceKm: Number(section.distance_km) || 10,
+        signallingType: section.signal_type === 'AT' ? 'automatic' : 
+                        section.signal_type === 'SAT' ? 'semi-automatic' : 'absolute',
+        mainLines: section.no_of_lines || 1,
+        maxSpeed: section.max_speed || 100,
+        signals: [],
+        crossovers: []
+      });
+    }
+  });
+
+  return {
+    stations,
+    sections: Array.from(sectionMap.values())
+  };
+};
 
 // Calculate KPIs based on infrastructure
 const calculateKPIs = (infra: InfraState): KPIMetrics => {
@@ -179,7 +212,26 @@ interface BlockDiagramProps {
 }
 
 export function InteractiveBlockDiagram({ onInfraChange }: BlockDiagramProps) {
-  const [infra, setInfra] = useState<InfraState>(getInitialInfraState);
+  // Fetch real data from database
+  const { stations: dbStations, loading: stationsLoading } = useRouteStations();
+  const { sections: dbSections, loading: sectionsLoading } = useRouteBlockSections();
+  
+  // Fetch station lines for loop detection
+  const { data: dbStationLines, isLoading: stationLinesLoading } = useQuery({
+    queryKey: ['station-lines'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('station_lines')
+        .select('*')
+        .order('station_code')
+        .order('seq_number');
+      if (error) throw error;
+      return data || [];
+    }
+  });
+
+  const [infra, setInfra] = useState<InfraState>({ stations: [], sections: [] });
+  const [isInitialized, setIsInitialized] = useState(false);
   const [baselineKPIs, setBaselineKPIs] = useState<KPIMetrics | null>(null);
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
   const [selectedStation, setSelectedStation] = useState<string | null>(null);
@@ -187,6 +239,20 @@ export function InteractiveBlockDiagram({ onInfraChange }: BlockDiagramProps) {
   const [showLoops, setShowLoops] = useState(true);
   const [showCrossovers, setShowCrossovers] = useState(true);
   const [isSimulating, setIsSimulating] = useState(false);
+  
+  // Initialize infra from database data
+  useEffect(() => {
+    if (!stationsLoading && !sectionsLoading && !stationLinesLoading && 
+        dbStations.length > 0 && dbSections.length > 0 && !isInitialized) {
+      const transformedInfra = transformDbDataToInfraState(
+        dbStations, 
+        dbSections, 
+        dbStationLines || []
+      );
+      setInfra(transformedInfra);
+      setIsInitialized(true);
+    }
+  }, [dbStations, dbSections, dbStationLines, stationsLoading, sectionsLoading, stationLinesLoading, isInitialized]);
   
   // Add dialogs
   const [addLoopDialog, setAddLoopDialog] = useState(false);
@@ -227,14 +293,28 @@ export function InteractiveBlockDiagram({ onInfraChange }: BlockDiagramProps) {
     toast.success('Baseline set! Changes will be compared against current state.');
   };
   
-  // Reset to initial state
+  // Reset to initial state - refetch from database
   const resetInfra = () => {
-    const initial = getInitialInfraState();
-    setInfra(initial);
-    setBaselineKPIs(null);
-    notifyChange(initial);
-    toast.info('Infrastructure reset to initial state');
+    if (dbStations.length > 0 && dbSections.length > 0) {
+      const initial = transformDbDataToInfraState(dbStations, dbSections, dbStationLines || []);
+      setInfra(initial);
+      setBaselineKPIs(null);
+      notifyChange(initial);
+      toast.info('Infrastructure reset to database state');
+    }
   };
+
+  // Show loading state
+  if (stationsLoading || sectionsLoading || stationLinesLoading) {
+    return (
+      <Card className="border-border bg-card">
+        <CardContent className="flex items-center justify-center h-[500px]">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <span className="ml-3 text-muted-foreground">Loading infrastructure data...</span>
+        </CardContent>
+      </Card>
+    );
+  }
   
   // Add loop to station
   const handleAddLoop = () => {
