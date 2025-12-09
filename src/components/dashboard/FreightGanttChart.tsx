@@ -404,6 +404,17 @@ export function FreightGanttChart() {
     return ticks;
   }, [timeRange, zoomLevel]);
 
+  // Determine which trains to display - MUST be before any early returns to avoid hook order issues
+  const displayTrains = useMemo(() => {
+    if (compareMode) {
+      return getCompareTrains;
+    }
+    if (selectedTrain) {
+      return trainPaths.filter(tp => tp.load_id === selectedTrain);
+    }
+    return trainPaths;
+  }, [compareMode, getCompareTrains, selectedTrain, trainPaths]);
+
   if (isLoading) {
     return (
       <Card>
@@ -423,17 +434,6 @@ export function FreightGanttChart() {
       </Card>
     );
   }
-
-  // Determine which trains to display
-  const displayTrains = useMemo(() => {
-    if (compareMode) {
-      return getCompareTrains;
-    }
-    if (selectedTrain) {
-      return trainPaths.filter(tp => tp.load_id === selectedTrain);
-    }
-    return trainPaths;
-  }, [compareMode, getCompareTrains, selectedTrain, trainPaths]);
 
   return (
     <Card>
