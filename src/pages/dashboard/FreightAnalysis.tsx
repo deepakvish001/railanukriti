@@ -11,6 +11,7 @@ import { StoppageAnalysis } from '@/components/dashboard/StoppageAnalysis';
 import { FreightPathComparison } from '@/components/dashboard/FreightPathComparison';
 import { InteractiveBlockDiagram } from '@/components/dashboard/InteractiveBlockDiagram';
 import { InfrastructureImpactSimulator } from '@/components/dashboard/InfrastructureImpactSimulator';
+import { RealTimeBlockDiagram } from '@/components/dashboard/RealTimeBlockDiagram';
 
 const FreightAnalysis = () => {
   return (
@@ -24,8 +25,9 @@ const FreightAnalysis = () => {
           <RouteVisualization />
           <DisruptionManager />
           
-          <Tabs defaultValue="simulator">
+          <Tabs defaultValue="block-diagram">
             <TabsList>
+              <TabsTrigger value="block-diagram">Block Diagram</TabsTrigger>
               <TabsTrigger value="simulator">Infrastructure Simulator</TabsTrigger>
               <TabsTrigger value="gantt">Time-Distance Chart</TabsTrigger>
               <TabsTrigger value="comparison">Path Comparison</TabsTrigger>
@@ -33,6 +35,10 @@ const FreightAnalysis = () => {
               <TabsTrigger value="throughput">Throughput Dashboard</TabsTrigger>
               <TabsTrigger value="import">Data Import</TabsTrigger>
             </TabsList>
+            
+            <TabsContent value="block-diagram">
+              <RealTimeBlockDiagram />
+            </TabsContent>
             
             <TabsContent value="simulator">
               <InfrastructureImpactSimulator />
