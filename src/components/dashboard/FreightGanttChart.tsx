@@ -405,15 +405,14 @@ export function FreightGanttChart() {
   }, [timeRange, zoomLevel]);
 
   // Determine which trains to display - MUST be before any early returns to avoid hook order issues
+  // Always show all trains, but highlight the selected one
   const displayTrains = useMemo(() => {
     if (compareMode) {
       return getCompareTrains;
     }
-    if (selectedTrain) {
-      return trainPaths.filter(tp => tp.load_id === selectedTrain);
-    }
+    // Always return all trains - selection only highlights, doesn't filter
     return trainPaths;
-  }, [compareMode, getCompareTrains, selectedTrain, trainPaths]);
+  }, [compareMode, getCompareTrains, trainPaths]);
 
   if (isLoading) {
     return (
@@ -715,6 +714,9 @@ export function FreightGanttChart() {
                         const x2 = timeToX(movement.arrival);
                         const y2 = stationToY(movement.station_seq);
 
+                        const isSelected = selectedTrain === train.load_id;
+                        const isOtherSelected = selectedTrain && !isSelected;
+
                         return (
                           <Tooltip key={`line-${train.load_id}-${idx}`}>
                             <TooltipTrigger asChild>
@@ -724,10 +726,10 @@ export function FreightGanttChart() {
                                 x2={x2}
                                 y2={y2}
                                 stroke={train.color}
-                                strokeWidth={compareMode ? 4 : (selectedTrain === train.load_id ? 3 : 2)}
-                                strokeOpacity={0.9}
+                                strokeWidth={compareMode ? 4 : (isSelected ? 4 : 2)}
+                                strokeOpacity={isOtherSelected ? 0.3 : 0.9}
                                 className="cursor-pointer hover:stroke-[5px] transition-all"
-                                onClick={() => !compareMode && setSelectedTrain(train.load_id)}
+                                onClick={() => !compareMode && setSelectedTrain(isSelected ? null : train.load_id)}
                               />
                             </TooltipTrigger>
                             <TooltipContent>
@@ -752,8 +754,11 @@ export function FreightGanttChart() {
                           c => c.freightLoadId === train.load_id && c.stationCode === movement.station_code
                         );
 
+                        const isSelected = selectedTrain === train.load_id;
+                        const isOtherSelected = selectedTrain && !isSelected;
+
                         return (
-                          <g key={`stop-${train.load_id}-${idx}`}>
+                          <g key={`stop-${train.load_id}-${idx}`} opacity={isOtherSelected ? 0.3 : 1}>
                             {/* Conflict highlight ring */}
                             {hasConflict && (
                               <circle
@@ -772,12 +777,12 @@ export function FreightGanttChart() {
                                 <circle
                                   cx={x}
                                   cy={y}
-                                  r={hasConflict ? 6 : (compareMode ? 6 : (movement.is_stoppage ? 5 : movement.halt_minutes > 10 ? 4 : 3))}
+                                  r={hasConflict ? 6 : (compareMode ? 6 : (isSelected ? 6 : (movement.is_stoppage ? 5 : movement.halt_minutes > 10 ? 4 : 3)))}
                                   fill={hasConflict ? '#ef4444' : (movement.is_stoppage ? '#ef4444' : movement.halt_minutes > 10 ? '#f59e0b' : train.color)}
-                                  stroke={hasConflict ? '#fef2f2' : (compareMode ? train.color : "white")}
-                                  strokeWidth={hasConflict ? 2 : (compareMode ? 2 : 1)}
+                                  stroke={hasConflict ? '#fef2f2' : (compareMode ? train.color : (isSelected ? train.color : "white"))}
+                                  strokeWidth={hasConflict ? 2 : (isSelected ? 3 : (compareMode ? 2 : 1))}
                                   className="cursor-pointer"
-                                  onClick={() => !compareMode && setSelectedTrain(train.load_id)}
+                                  onClick={() => !compareMode && setSelectedTrain(isSelected ? null : train.load_id)}
                                 />
                               </TooltipTrigger>
                               <TooltipContent>
