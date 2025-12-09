@@ -297,7 +297,112 @@ export function FreightGanttChart() {
     return set;
   }, [conflicts]);
 
-  // Get comparison train data
+  // Disruption impact analysis - find which trains are affected by each disruption
+  interface DisruptionImpact {
+    disruption: Disruption;
+    affectedTrains: {
+      loadId: string;
+      color: string;
+      stationsAffected: string[];
+      estimatedDelayMinutes: number;
+    }[];
+    totalTrainsAffected: number;
+    severity: 'critical' | 'high' | 'medium' | 'low';
+  }
+
+  const disruptionImpacts = useMemo((): DisruptionImpact[] => {
+    if (!showDisruptions || disruptions.length === 0 || trainPaths.length === 0) {
+      return [];
+    }
+
+    return disruptions.map(disruption => {
+      const affectedTrains: DisruptionImpact['affectedTrains'] = [];
+      
+      // Get affected station codes from disruption
+      const affectedStationCodes = new Set<string>();
+      
+      if (disruption.station_code) {
+        affectedStationCodes.add(disruption.station_code);
+      } else if (disruption.block_section_code) {
+        // Parse block section code to get station codes
+        const parts = disruption.block_section_code.split('-');
+        parts.forEach(code => {
+          if (code && stationSeqMap.has(code)) {
+            affectedStationCodes.add(code);
+          }
+        });
+      }
+
+      // Check each train's path for overlap with disruption
+      trainPaths.forEach(train => {
+        const stationsAffected: string[] = [];
+        
+        train.movements.forEach(movement => {
+          if (affectedStationCodes.has(movement.station_code)) {
+            stationsAffected.push(movement.station_code);
+          }
+        });
+
+        if (stationsAffected.length > 0) {
+          // Estimate delay based on disruption type and severity
+          let baseDelay = 0;
+          switch (disruption.disruption_type) {
+            case 'block': baseDelay = 60; break;
+            case 'accident': baseDelay = 90; break;
+            case 'signal_failure': baseDelay = 30; break;
+            case 'speed_restriction': baseDelay = 15; break;
+            case 'maintenance': baseDelay = 20; break;
+            default: baseDelay = 15;
+          }
+          
+          const severityMultiplier: Record<string, number> = {
+            critical: 2.0,
+            high: 1.5,
+            medium: 1.0,
+            low: 0.5,
+          };
+          
+          const estimatedDelayMinutes = Math.round(
+            baseDelay * (severityMultiplier[disruption.severity] || 1) * stationsAffected.length
+          );
+
+          affectedTrains.push({
+            loadId: train.load_id,
+            color: train.color,
+            stationsAffected,
+            estimatedDelayMinutes,
+          });
+        }
+      });
+
+      return {
+        disruption,
+        affectedTrains,
+        totalTrainsAffected: affectedTrains.length,
+        severity: disruption.severity as DisruptionImpact['severity'],
+      };
+    });
+  }, [showDisruptions, disruptions, trainPaths, stationSeqMap]);
+
+  // Create lookup for trains affected by disruptions
+  const trainsAffectedByDisruption = useMemo(() => {
+    const map = new Map<string, { disruption: Disruption; estimatedDelay: number }[]>();
+    
+    disruptionImpacts.forEach(impact => {
+      impact.affectedTrains.forEach(train => {
+        if (!map.has(train.loadId)) {
+          map.set(train.loadId, []);
+        }
+        map.get(train.loadId)!.push({
+          disruption: impact.disruption,
+          estimatedDelay: train.estimatedDelayMinutes,
+        });
+      });
+    });
+    
+    return map;
+  }, [disruptionImpacts]);
+
   const getCompareTrains = useMemo(() => {
     if (!compareMode) return [];
     return trainPaths.filter(tp => 
@@ -641,6 +746,69 @@ export function FreightGanttChart() {
               </div>
             </div>
           )}
+
+          {/* Disruption Impact Summary Panel */}
+          {showDisruptions && disruptionImpacts.length > 0 && disruptionImpacts.some(i => i.totalTrainsAffected > 0) && (
+            <div className="p-3 bg-destructive/10 rounded-lg border border-destructive/30">
+              <div className="flex items-center gap-2 mb-3">
+                <AlertTriangle className="h-4 w-4 text-destructive" />
+                <span className="font-medium text-destructive">Disruption Impact Analysis</span>
+                <Badge variant="destructive" className="text-xs">
+                  {disruptionImpacts.reduce((sum, i) => sum + i.totalTrainsAffected, 0)} trains affected
+                </Badge>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {disruptionImpacts.filter(i => i.totalTrainsAffected > 0).map((impact) => {
+                  const severityColors: Record<string, string> = {
+                    critical: 'border-red-500 bg-red-500/10',
+                    high: 'border-orange-500 bg-orange-500/10',
+                    medium: 'border-amber-500 bg-amber-500/10',
+                    low: 'border-green-500 bg-green-500/10',
+                  };
+                  const totalDelay = impact.affectedTrains.reduce((sum, t) => sum + t.estimatedDelayMinutes, 0);
+                  
+                  return (
+                    <div 
+                      key={impact.disruption.id}
+                      className={`p-2 rounded border ${severityColors[impact.severity] || 'border-border'}`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium text-xs truncate">
+                          {impact.disruption.block_section_code || impact.disruption.station_code}
+                        </span>
+                        <Badge variant="outline" className="text-[10px]">
+                          {impact.disruption.severity.toUpperCase()}
+                        </Badge>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground mb-1">
+                        {impact.disruption.disruption_type.replace('_', ' ')}
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-1">
+                          <Train className="h-3 w-3" />
+                          <span>{impact.totalTrainsAffected} trains</span>
+                        </div>
+                        <span className="text-amber-500 font-medium">~{totalDelay} min delay</span>
+                      </div>
+                      <div className="flex gap-1 mt-1 flex-wrap">
+                        {impact.affectedTrains.slice(0, 5).map((t) => (
+                          <div 
+                            key={t.loadId}
+                            className="w-2 h-2 rounded-full" 
+                            style={{ backgroundColor: t.color }}
+                            title={t.loadId}
+                          />
+                        ))}
+                        {impact.affectedTrains.length > 5 && (
+                          <span className="text-[9px] text-muted-foreground">+{impact.affectedTrains.length - 5}</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -777,62 +945,97 @@ export function FreightGanttChart() {
                           className="animate-pulse"
                         />
                         
-                        {/* Disruption label */}
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <g className="cursor-pointer">
-                              <rect
-                                x={marginLeft + 5}
-                                y={yPos + 2}
-                                width={140}
-                                height={18}
-                                rx={4}
-                                fill={color}
-                                fillOpacity={0.9}
-                              />
-                              <text
-                                x={marginLeft + 10}
-                                y={yPos + 14}
-                                className="fill-white text-[10px] font-bold"
-                              >
-                                <tspan>⚠ {disruption.disruption_type.toUpperCase()}</tspan>
-                              </text>
-                              <text
-                                x={marginLeft + 100}
-                                y={yPos + 14}
-                                className="fill-white text-[9px]"
-                              >
-                                {disruption.block_section_code || disruption.station_code}
-                              </text>
-                            </g>
-                          </TooltipTrigger>
-                          <TooltipContent side="right" className="bg-destructive text-destructive-foreground border-destructive">
-                            <div className="space-y-1">
-                              <p className="font-bold flex items-center gap-1">
-                                <AlertTriangle className="h-4 w-4" />
-                                {disruption.disruption_type.replace('_', ' ').toUpperCase()}
-                              </p>
-                              <p className="text-sm">
-                                Location: {disruption.block_section_code || disruption.station_code}
-                              </p>
-                              <p className="text-sm">Severity: {disruption.severity.toUpperCase()}</p>
-                              {disruption.description && (
-                                <p className="text-sm opacity-80">{disruption.description}</p>
-                              )}
-                              <p className="text-xs opacity-70">
-                                Since: {format(new Date(disruption.start_time), 'dd MMM HH:mm')}
-                              </p>
-                              {disruption.max_speed_allowed && (
-                                <p className="text-sm font-medium">
-                                  Max Speed: {disruption.max_speed_allowed} km/h
-                                </p>
-                              )}
-                              {disruption.affected_direction && (
-                                <p className="text-sm">Direction: {disruption.affected_direction}</p>
-                              )}
-                            </div>
-                          </TooltipContent>
-                        </Tooltip>
+                        {/* Disruption label with affected trains count */}
+                        {(() => {
+                          const impact = disruptionImpacts.find(i => i.disruption.id === disruption.id);
+                          const affectedCount = impact?.totalTrainsAffected || 0;
+                          const totalEstimatedDelay = impact?.affectedTrains.reduce((sum, t) => sum + t.estimatedDelayMinutes, 0) || 0;
+                          
+                          return (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <g className="cursor-pointer">
+                                  <rect
+                                    x={marginLeft + 5}
+                                    y={yPos + 2}
+                                    width={180}
+                                    height={18}
+                                    rx={4}
+                                    fill={color}
+                                    fillOpacity={0.9}
+                                  />
+                                  <text
+                                    x={marginLeft + 10}
+                                    y={yPos + 14}
+                                    className="fill-white text-[10px] font-bold"
+                                  >
+                                    ⚠ {disruption.disruption_type.replace('_', ' ').toUpperCase()}
+                                  </text>
+                                  <text
+                                    x={marginLeft + 120}
+                                    y={yPos + 14}
+                                    className="fill-white text-[9px]"
+                                  >
+                                    {affectedCount > 0 ? `${affectedCount} trains ↓` : 'No trains'}
+                                  </text>
+                                </g>
+                              </TooltipTrigger>
+                              <TooltipContent side="right" className="max-w-xs bg-background border-destructive">
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2 text-destructive font-bold">
+                                    <AlertTriangle className="h-4 w-4" />
+                                    {disruption.disruption_type.replace('_', ' ').toUpperCase()}
+                                  </div>
+                                  <div className="text-sm space-y-1">
+                                    <p><span className="text-muted-foreground">Location:</span> {disruption.block_section_code || disruption.station_code}</p>
+                                    <p><span className="text-muted-foreground">Severity:</span> <span className="font-medium" style={{ color }}>{disruption.severity.toUpperCase()}</span></p>
+                                    {disruption.description && (
+                                      <p className="text-muted-foreground italic">{disruption.description}</p>
+                                    )}
+                                    <p className="text-xs text-muted-foreground">
+                                      Since: {format(new Date(disruption.start_time), 'dd MMM HH:mm')}
+                                    </p>
+                                    {disruption.max_speed_allowed && (
+                                      <p><span className="text-muted-foreground">Max Speed:</span> {disruption.max_speed_allowed} km/h</p>
+                                    )}
+                                  </div>
+                                  
+                                  {/* Affected trains section */}
+                                  {affectedCount > 0 && (
+                                    <div className="pt-2 border-t border-border">
+                                      <p className="font-medium text-sm flex items-center gap-1 mb-2">
+                                        <Train className="h-3 w-3" />
+                                        {affectedCount} Trains Affected
+                                      </p>
+                                      <p className="text-xs text-amber-500 mb-2">
+                                        Est. Total Delay: ~{totalEstimatedDelay} min
+                                      </p>
+                                      <div className="max-h-24 overflow-y-auto space-y-1">
+                                        {impact?.affectedTrains.slice(0, 6).map(t => (
+                                          <div key={t.loadId} className="flex items-center justify-between text-xs">
+                                            <div className="flex items-center gap-1">
+                                              <div 
+                                                className="w-2 h-2 rounded-full" 
+                                                style={{ backgroundColor: t.color }}
+                                              />
+                                              <span className="truncate max-w-[100px]">{t.loadId}</span>
+                                            </div>
+                                            <span className="text-amber-500">+{t.estimatedDelayMinutes}m</span>
+                                          </div>
+                                        ))}
+                                        {(impact?.affectedTrains.length || 0) > 6 && (
+                                          <p className="text-xs text-muted-foreground">
+                                            +{(impact?.affectedTrains.length || 0) - 6} more trains...
+                                          </p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        })()}
                       </g>
                     );
                   })}
@@ -857,6 +1060,9 @@ export function FreightGanttChart() {
 
                         const isSelected = selectedTrain === train.load_id;
                         const isOtherSelected = selectedTrain && !isSelected;
+                        const disruptionInfo = trainsAffectedByDisruption.get(train.load_id);
+                        const isAffectedByDisruption = showDisruptions && disruptionInfo && disruptionInfo.length > 0;
+                        const totalDisruptionDelay = disruptionInfo?.reduce((sum, d) => sum + d.estimatedDelay, 0) || 0;
 
                         return (
                           <Tooltip key={`line-${train.load_id}-${idx}`}>
@@ -866,9 +1072,10 @@ export function FreightGanttChart() {
                                 y1={y1}
                                 x2={x2}
                                 y2={y2}
-                                stroke={train.color}
-                                strokeWidth={compareMode ? 4 : (isSelected ? 4 : 2)}
+                                stroke={isAffectedByDisruption ? '#f97316' : train.color}
+                                strokeWidth={compareMode ? 4 : (isSelected ? 4 : (isAffectedByDisruption ? 3 : 2))}
                                 strokeOpacity={isOtherSelected ? 0.3 : 0.9}
+                                strokeDasharray={isAffectedByDisruption ? '6,3' : undefined}
                                 className="cursor-pointer hover:stroke-[5px] transition-all"
                                 onClick={() => !compareMode && setSelectedTrain(isSelected ? null : train.load_id)}
                               />
@@ -878,6 +1085,15 @@ export function FreightGanttChart() {
                                 <p className="font-semibold" style={{ color: train.color }}>{train.load_id}</p>
                                 <p>{prev.station_code} → {movement.station_code}</p>
                                 <p>Speed: {movement.speed} km/h</p>
+                                {isAffectedByDisruption && (
+                                  <div className="mt-1 pt-1 border-t border-border">
+                                    <p className="text-amber-500 font-medium flex items-center gap-1">
+                                      <AlertTriangle className="h-3 w-3" />
+                                      Affected by {disruptionInfo.length} disruption(s)
+                                    </p>
+                                    <p className="text-amber-400 text-xs">Est. delay: +{totalDisruptionDelay} min</p>
+                                  </div>
+                                )}
                               </div>
                             </TooltipContent>
                           </Tooltip>
