@@ -117,7 +117,3 @@ Contributions are welcome! Please feel free to submit issues and pull requests.
 ## 📄 License
 
 This project is proprietary software developed for Indian Railways.
-
----
-
-**Built with ❤️ using [Lovable](https://lovable.dev)**
