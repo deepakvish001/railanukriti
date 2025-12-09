@@ -85,32 +85,30 @@ export function DistanceTimeChart() {
   const svgRef = useRef<SVGSVGElement>(null);
   const queryClient = useQueryClient();
 
-  // Fetch freight movements
+  // Fetch ALL freight movements without limit
   const { data: freightMovements, isLoading: freightLoading, refetch: refetchFreight } = useQuery({
-    queryKey: ['freight-movements-chart'],
+    queryKey: ['freight-movements-chart-all'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('freight_movements')
         .select('load_id, station_code, arrival_time, departure_time, speed, is_stoppage')
         .not('arrival_time', 'is', null)
         .order('load_id')
-        .order('arrival_time', { ascending: true })
-        .limit(5000);
+        .order('arrival_time', { ascending: true });
       if (error) throw error;
       return data as FreightMovement[];
     },
   });
 
-  // Fetch passenger schedules
+  // Fetch ALL passenger schedules
   const { data: passengerSchedule, isLoading: passengerLoading, refetch: refetchPassenger } = useQuery({
-    queryKey: ['passenger-schedule-chart'],
+    queryKey: ['passenger-schedule-chart-all'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('passenger_schedule')
         .select('train_number, train_id, station_code, arrival_seconds, departure_seconds, route_seq_no, direction, is_halt')
         .order('train_id')
-        .order('route_seq_no', { ascending: true })
-        .limit(10000);
+        .order('route_seq_no', { ascending: true });
       if (error) throw error;
       return data as PassengerSchedule[];
     },
@@ -179,7 +177,33 @@ export function DistanceTimeChart() {
     return Math.max(...processedStations.map(s => s.cumulative_distance_km), 180);
   }, [processedStations]);
 
-  const baseDate = useMemo(() => startOfDay(new Date()), []);
+  // Calculate actual data time range from freight movements
+  const dataTimeRange = useMemo(() => {
+    if (!freightMovements || freightMovements.length === 0) {
+      return { start: startOfDay(new Date()), end: addHours(startOfDay(new Date()), 24) };
+    }
+    
+    let minTime = Infinity;
+    let maxTime = -Infinity;
+    
+    freightMovements.forEach(m => {
+      const arrTime = parseISO(m.arrival_time).getTime();
+      if (arrTime < minTime) minTime = arrTime;
+      if (arrTime > maxTime) maxTime = arrTime;
+      if (m.departure_time) {
+        const depTime = parseISO(m.departure_time).getTime();
+        if (depTime > maxTime) maxTime = depTime;
+      }
+    });
+    
+    // Add some padding
+    const start = new Date(minTime - 30 * 60 * 1000); // 30 min before
+    const end = new Date(maxTime + 30 * 60 * 1000); // 30 min after
+    
+    return { start, end };
+  }, [freightMovements]);
+  
+  const baseDate = useMemo(() => startOfDay(dataTimeRange.start), [dataTimeRange]);
 
   // Process freight movements into paths
   const freightPaths = useMemo((): TrainPath[] => {
@@ -286,12 +310,14 @@ export function DistanceTimeChart() {
     return [...passengerPaths, ...freightPaths];
   }, [freightPaths, passengerPaths]);
 
-  // Time range - 12 hours (matching reference)
-  const timeRange = useMemo(() => ({
-    start: baseDate,
-    end: addHours(baseDate, 12),
-    hours: 12,
-  }), [baseDate]);
+  // Time range - based on actual data with at least 24 hours
+  const timeRange = useMemo(() => {
+    const start = dataTimeRange.start;
+    const end = dataTimeRange.end;
+    const diffMs = end.getTime() - start.getTime();
+    const hours = Math.max(24, Math.ceil(diffMs / (1000 * 60 * 60)));
+    return { start, end: addHours(start, hours), hours };
+  }, [dataTimeRange]);
 
   // Chart dimensions
   const MARGIN = { top: 60, right: 80, bottom: 70, left: 150 };
@@ -338,15 +364,15 @@ export function DistanceTimeChart() {
     return d;
   }, [xScale, yScale]);
 
-  // Hour labels for X-axis
+  // Hour labels for X-axis based on actual time range
   const hourLabels = useMemo(() => {
     const labels = [];
-    for (let i = 0; i <= 12; i++) {
+    for (let i = 0; i <= timeRange.hours; i++) {
       const time = addHours(timeRange.start, i);
       labels.push({
         time,
         x: xScale(time),
-        label: `${i}:00`,
+        label: format(time, 'HH:mm'),
       });
     }
     return labels;
@@ -395,8 +421,17 @@ export function DistanceTimeChart() {
       <CardContent className="p-0">
         {/* Header with controls */}
         <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 bg-gray-50">
-          <div className="text-sm text-gray-600">
-            Live Marey diagram · {firstStation?.station_code || 'KTV'} → {lastStation?.station_code || 'PSA'}
+          <div className="flex items-center gap-4 text-sm text-gray-600">
+            <span>Live Marey diagram · {firstStation?.station_code || 'KTV'} → {lastStation?.station_code || 'PSA'}</span>
+            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs font-medium">
+              {passengerPaths.length} Passenger
+            </span>
+            <span className="px-2 py-0.5 bg-gray-200 text-gray-700 rounded text-xs font-medium">
+              {freightPaths.length} Freight
+            </span>
+            <span className="text-xs text-gray-500">
+              {format(timeRange.start, 'MMM d, HH:mm')} - {format(timeRange.end, 'MMM d, HH:mm')}
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <Button 
