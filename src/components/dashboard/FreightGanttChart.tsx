@@ -7,11 +7,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Clock, Train, ZoomIn, ZoomOut, GitCompare, Timer, TrendingUp, AlertTriangle } from 'lucide-react';
+import { Clock, Train, ZoomIn, ZoomOut, GitCompare, Timer, TrendingUp, AlertTriangle, Users } from 'lucide-react';
 import { useRouteStations } from '@/hooks/useFreightData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
-import { format, parseISO, differenceInMinutes, addHours, startOfDay } from 'date-fns';
+import { format, parseISO, differenceInMinutes, addHours, startOfDay, addSeconds } from 'date-fns';
 
 interface MovementData {
   id: string;
@@ -23,6 +23,18 @@ interface MovementData {
   is_stoppage: boolean;
   halt_minutes: number | null;
   freight_train_id: string | null;
+}
+
+interface PassengerScheduleData {
+  id: string;
+  train_number: string;
+  train_id: string;
+  station_code: string;
+  arrival_seconds: number | null;
+  departure_seconds: number | null;
+  route_seq_no: number;
+  direction: string | null;
+  is_halt: boolean | null;
 }
 
 interface TrainPath {
@@ -39,6 +51,20 @@ interface TrainPath {
   }[];
 }
 
+interface PassengerPath {
+  train_number: string;
+  train_id: string;
+  direction: string;
+  color: string;
+  stops: {
+    station_code: string;
+    station_seq: number;
+    arrival: Date | null;
+    departure: Date | null;
+    is_halt: boolean;
+  }[];
+}
+
 const TRAIN_COLORS = [
   '#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6',
   '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1',
@@ -46,6 +72,7 @@ const TRAIN_COLORS = [
 ];
 
 const COMPARE_COLORS = ['#22d3ee', '#f472b6']; // Cyan and Pink for comparison
+const PASSENGER_COLOR = '#a78bfa'; // Purple for passenger trains
 
 export function FreightGanttChart() {
   const { stations } = useRouteStations();
@@ -55,6 +82,7 @@ export function FreightGanttChart() {
   const [compareMode, setCompareMode] = useState(false);
   const [compareTrain1, setCompareTrain1] = useState<string | null>(null);
   const [compareTrain2, setCompareTrain2] = useState<string | null>(null);
+  const [showPassengerTrains, setShowPassengerTrains] = useState(false);
 
   // Fetch movements data
   const { data: movements, isLoading } = useQuery({
@@ -70,6 +98,23 @@ export function FreightGanttChart() {
       if (error) throw error;
       return data as MovementData[];
     },
+  });
+
+  // Fetch passenger schedule data
+  const { data: passengerSchedule } = useQuery({
+    queryKey: ['passenger-schedule-gantt'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('passenger_schedule')
+        .select('id, train_number, train_id, station_code, arrival_seconds, departure_seconds, route_seq_no, direction, is_halt')
+        .order('train_id', { ascending: true })
+        .order('route_seq_no', { ascending: true })
+        .limit(5000);
+      
+      if (error) throw error;
+      return data as PassengerScheduleData[];
+    },
+    enabled: showPassengerTrains, // Only fetch when toggle is on
   });
 
   // Create station sequence map
@@ -122,6 +167,57 @@ export function FreightGanttChart() {
 
     return Array.from(pathMap.values());
   }, [movements, stationSeqMap]);
+
+  // Process passenger schedule into paths
+  const passengerPaths = useMemo(() => {
+    if (!passengerSchedule || passengerSchedule.length === 0 || !showPassengerTrains) return [];
+    
+    // Use the base date from freight movements for alignment
+    const baseDate = movements && movements.length > 0 && movements[0].arrival_time
+      ? startOfDay(parseISO(movements[0].arrival_time))
+      : startOfDay(new Date());
+
+    const pathMap = new Map<string, PassengerPath>();
+    
+    passengerSchedule.forEach((s) => {
+      const key = s.train_id;
+      if (!pathMap.has(key)) {
+        pathMap.set(key, {
+          train_number: s.train_number,
+          train_id: s.train_id,
+          direction: s.direction || 'UP',
+          color: PASSENGER_COLOR,
+          stops: [],
+        });
+      }
+
+      const stationSeq = stationSeqMap.get(s.station_code);
+      if (stationSeq === undefined) return;
+
+      // Convert seconds from midnight to Date objects
+      const arrivalDate = s.arrival_seconds !== null 
+        ? addSeconds(baseDate, s.arrival_seconds)
+        : null;
+      const departureDate = s.departure_seconds !== null
+        ? addSeconds(baseDate, s.departure_seconds)
+        : null;
+
+      pathMap.get(key)!.stops.push({
+        station_code: s.station_code,
+        station_seq: stationSeq,
+        arrival: arrivalDate,
+        departure: departureDate,
+        is_halt: s.is_halt || false,
+      });
+    });
+
+    // Sort stops by route sequence
+    pathMap.forEach(path => {
+      path.stops.sort((a, b) => a.station_seq - b.station_seq);
+    });
+
+    return Array.from(pathMap.values());
+  }, [passengerSchedule, stationSeqMap, showPassengerTrains, movements]);
 
   // Get comparison train data
   const getCompareTrains = useMemo(() => {
@@ -274,6 +370,24 @@ export function FreightGanttChart() {
               <Badge variant="secondary">{trainPaths.length} trains</Badge>
             </CardTitle>
             <div className="flex items-center gap-4">
+              {/* Passenger Trains Toggle */}
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="passenger-overlay"
+                  checked={showPassengerTrains}
+                  onCheckedChange={setShowPassengerTrains}
+                />
+                <Label htmlFor="passenger-overlay" className="text-sm flex items-center gap-1">
+                  <Users className="h-4 w-4" />
+                  Passengers
+                </Label>
+                {showPassengerTrains && passengerPaths.length > 0 && (
+                  <Badge variant="outline" className="text-xs" style={{ borderColor: PASSENGER_COLOR, color: PASSENGER_COLOR }}>
+                    {passengerPaths.length}
+                  </Badge>
+                )}
+              </div>
+
               {/* Compare Mode Toggle */}
               <div className="flex items-center gap-2">
                 <Switch
@@ -587,7 +701,91 @@ export function FreightGanttChart() {
                   ))}
               </g>
 
-              {/* Axis labels */}
+              {/* Passenger train paths overlay */}
+              {showPassengerTrains && passengerPaths.length > 0 && (
+                <g className="passenger-paths">
+                  {passengerPaths.map((pTrain) => (
+                    <g key={pTrain.train_id}>
+                      {/* Draw dashed lines between stops */}
+                      {pTrain.stops.map((stop, idx) => {
+                        if (idx === 0) return null;
+                        const prev = pTrain.stops[idx - 1];
+                        
+                        if (!prev.departure || !stop.arrival) return null;
+                        
+                        const x1 = timeToX(prev.departure);
+                        const y1 = stationToY(prev.station_seq);
+                        const x2 = timeToX(stop.arrival);
+                        const y2 = stationToY(stop.station_seq);
+
+                        return (
+                          <Tooltip key={`pline-${pTrain.train_id}-${idx}`}>
+                            <TooltipTrigger asChild>
+                              <line
+                                x1={x1}
+                                y1={y1}
+                                x2={x2}
+                                y2={y2}
+                                stroke={PASSENGER_COLOR}
+                                strokeWidth={2}
+                                strokeOpacity={0.6}
+                                strokeDasharray="6,4"
+                                className="pointer-events-auto"
+                              />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <div className="text-sm">
+                                <p className="font-semibold" style={{ color: PASSENGER_COLOR }}>
+                                  <Users className="h-3 w-3 inline mr-1" />
+                                  {pTrain.train_number}
+                                </p>
+                                <p>{prev.station_code} → {stop.station_code}</p>
+                                <p className="text-muted-foreground">Passenger Train ({pTrain.direction})</p>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      })}
+
+                      {/* Draw small diamonds at passenger stops */}
+                      {pTrain.stops.map((stop, idx) => {
+                        if (!stop.arrival) return null;
+                        
+                        const x = timeToX(stop.arrival);
+                        const y = stationToY(stop.station_seq);
+
+                        return (
+                          <Tooltip key={`pstop-${pTrain.train_id}-${idx}`}>
+                            <TooltipTrigger asChild>
+                              <polygon
+                                points={`${x},${y - 4} ${x + 4},${y} ${x},${y + 4} ${x - 4},${y}`}
+                                fill={stop.is_halt ? PASSENGER_COLOR : 'transparent'}
+                                stroke={PASSENGER_COLOR}
+                                strokeWidth={1.5}
+                                opacity={0.8}
+                              />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <div className="text-sm">
+                                <p className="font-semibold" style={{ color: PASSENGER_COLOR }}>
+                                  {pTrain.train_number}
+                                </p>
+                                <p>Station: {stop.station_code}</p>
+                                <p>Arrival: {stop.arrival ? format(stop.arrival, 'HH:mm') : '-'}</p>
+                                <p>Departure: {stop.departure ? format(stop.departure, 'HH:mm') : '-'}</p>
+                                {stop.is_halt && (
+                                  <p className="text-purple-400">Commercial Halt</p>
+                                )}
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      })}
+                    </g>
+                  ))}
+                </g>
+              )}
+
               <text
                 x={chartWidth / 2}
                 y={chartHeight - 10}
@@ -641,6 +839,21 @@ export function FreightGanttChart() {
             <div className="w-4 h-4 rounded-full bg-red-500" />
             <span>Stoppage (&gt;30 min)</span>
           </div>
+          {showPassengerTrains && (
+            <>
+              <div className="border-l border-border/50 h-4 mx-2" />
+              <div className="flex items-center gap-1.5">
+                <div className="w-6 h-0.5 border-t-2 border-dashed" style={{ borderColor: PASSENGER_COLOR }} />
+                <span style={{ color: PASSENGER_COLOR }}>Passenger Train</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <svg width="12" height="12" viewBox="0 0 12 12">
+                  <polygon points="6,2 10,6 6,10 2,6" fill={PASSENGER_COLOR} />
+                </svg>
+                <span className="text-muted-foreground">Passenger Halt</span>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Selected train details - only show when not in compare mode */}
