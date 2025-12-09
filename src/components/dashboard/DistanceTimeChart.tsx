@@ -4,7 +4,11 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { ZoomIn, ZoomOut, RotateCcw, Download, Loader2, Train, MapPin, Clock, ArrowRight, Package, Users, X, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { ZoomIn, ZoomOut, RotateCcw, Download, Loader2, Train, MapPin, Clock, ArrowRight, Package, Users, X, AlertTriangle, CheckCircle, Plus } from 'lucide-react';
 import { useRouteStations } from '@/hooks/useFreightData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -109,6 +113,16 @@ export function DistanceTimeChart() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const svgRef = useRef<SVGSVGElement>(null);
   const queryClient = useQueryClient();
+
+  // New disruption creation state
+  const [createDisruptionStation, setCreateDisruptionStation] = useState<{ code: string; name: string } | null>(null);
+  const [isCreatingDisruption, setIsCreatingDisruption] = useState(false);
+  const [newDisruption, setNewDisruption] = useState({
+    disruption_type: 'block',
+    severity: 'high',
+    description: '',
+    affected_direction: 'BOTH',
+  });
 
   // Update current time every second for live marker
   useEffect(() => {
@@ -566,6 +580,53 @@ export function DistanceTimeChart() {
     }
   };
 
+  // Handle creating a new disruption
+  const handleCreateDisruption = async () => {
+    if (!createDisruptionStation) return;
+    
+    // Validate description length
+    if (newDisruption.description.length > 500) {
+      toast.error('Description too long', { description: 'Maximum 500 characters allowed' });
+      return;
+    }
+    
+    setIsCreatingDisruption(true);
+    try {
+      const { error } = await supabase
+        .from('disruptions')
+        .insert({
+          station_code: createDisruptionStation.code,
+          disruption_type: newDisruption.disruption_type,
+          severity: newDisruption.severity,
+          description: newDisruption.description.trim() || `${newDisruption.disruption_type} at ${createDisruptionStation.name}`,
+          affected_direction: newDisruption.affected_direction,
+          is_active: true,
+          start_time: new Date().toISOString(),
+        });
+
+      if (error) throw error;
+      
+      toast.success('Disruption created', {
+        description: `${newDisruption.disruption_type} at ${createDisruptionStation.name}`
+      });
+      
+      setCreateDisruptionStation(null);
+      setNewDisruption({
+        disruption_type: 'block',
+        severity: 'high',
+        description: '',
+        affected_direction: 'BOTH',
+      });
+      queryClient.invalidateQueries({ queryKey: ['disruptions-chart'] });
+    } catch (error: any) {
+      toast.error('Failed to create disruption', {
+        description: error.message
+      });
+    } finally {
+      setIsCreatingDisruption(false);
+    }
+  };
+
   const activeDisruptions = disruptions?.filter(d => d.is_active) ?? [];
 
   if (freightLoading || passengerLoading || stationsLoading) {
@@ -801,6 +862,7 @@ export function DistanceTimeChart() {
             {processedStations.map((station) => {
               const y = yScale(station.cumulative_distance_km);
               const stationName = stationNameMap.get(station.station_code) || station.station_code;
+              const hasActiveDisruption = activeDisruptions.some(d => d.station_code === station.station_code);
               
               return (
                 <g key={station.station_code}>
@@ -810,21 +872,58 @@ export function DistanceTimeChart() {
                     y1={y}
                     x2={chartWidth - MARGIN.right}
                     y2={y}
-                    stroke={COLORS.gridLine}
-                    strokeWidth={0.5}
+                    stroke={hasActiveDisruption ? COLORS.affected : COLORS.gridLine}
+                    strokeWidth={hasActiveDisruption ? 1.5 : 0.5}
+                    strokeDasharray={hasActiveDisruption ? "4,2" : "0"}
                   />
-                  {/* Station name on left */}
-                  <text
-                    x={MARGIN.left - 10}
-                    y={y}
-                    textAnchor="end"
-                    dominantBaseline="middle"
-                    fill={COLORS.text}
-                    fontSize="10"
-                    fontFamily="system-ui, -apple-system, sans-serif"
+                  {/* Clickable station label area */}
+                  <g
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => setCreateDisruptionStation({ code: station.station_code, name: stationName })}
                   >
-                    {stationName}
-                  </text>
+                    {/* Background for hover effect */}
+                    <rect
+                      x={5}
+                      y={y - 10}
+                      width={MARGIN.left - 20}
+                      height={20}
+                      fill="transparent"
+                      rx={3}
+                    />
+                    {/* Station name on left */}
+                    <text
+                      x={MARGIN.left - 25}
+                      y={y}
+                      textAnchor="end"
+                      dominantBaseline="middle"
+                      fill={hasActiveDisruption ? COLORS.affected : COLORS.text}
+                      fontSize="10"
+                      fontWeight={hasActiveDisruption ? "600" : "400"}
+                      fontFamily="system-ui, -apple-system, sans-serif"
+                    >
+                      {stationName}
+                    </text>
+                    {/* Add disruption icon */}
+                    <circle
+                      cx={MARGIN.left - 15}
+                      cy={y}
+                      r={6}
+                      fill={hasActiveDisruption ? COLORS.affected : '#E5E7EB'}
+                      stroke={hasActiveDisruption ? COLORS.affected : '#9CA3AF'}
+                      strokeWidth={1}
+                    />
+                    <text
+                      x={MARGIN.left - 15}
+                      y={y + 1}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fill={hasActiveDisruption ? 'white' : '#6B7280'}
+                      fontSize="10"
+                      fontWeight="bold"
+                    >
+                      +
+                    </text>
+                  </g>
                   {/* Distance on right */}
                   <text
                     x={chartWidth - MARGIN.right + 10}
@@ -1090,10 +1189,10 @@ export function DistanceTimeChart() {
               <div className="w-8 h-0.5 rounded" style={{ backgroundColor: COLORS.affected }} />
               <span className="text-gray-600">Affected by disruption</span>
             </div>
-            {/* Prioritization decision */}
+            {/* Add disruption hint */}
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full border-2" style={{ borderColor: COLORS.prioritization }} />
-              <span className="text-gray-600">Prioritization decision</span>
+              <div className="w-3 h-3 rounded-full bg-gray-200 border border-gray-400 flex items-center justify-center text-[8px] font-bold text-gray-500">+</div>
+              <span className="text-gray-600">Click station to add disruption</span>
             </div>
           </div>
         </div>
@@ -1350,6 +1449,151 @@ export function DistanceTimeChart() {
                 <CheckCircle className="w-4 h-4 mr-2" />
               )}
               Resolve Disruption
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Disruption Dialog */}
+      <Dialog open={!!createDisruptionStation} onOpenChange={() => setCreateDisruptionStation(null)}>
+        <DialogContent className="max-w-md bg-white border-gray-200">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="w-5 h-5 text-orange-500" />
+              <span>Add Disruption</span>
+            </DialogTitle>
+          </DialogHeader>
+
+          {createDisruptionStation && (
+            <div className="space-y-4">
+              {/* Location */}
+              <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-center gap-2 text-sm">
+                  <MapPin className="w-4 h-4 text-blue-500" />
+                  <span className="font-medium">Station:</span>
+                  <span className="text-blue-800 font-semibold">{createDisruptionStation.name}</span>
+                  <Badge variant="outline" className="ml-auto font-mono text-xs">
+                    {createDisruptionStation.code}
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Disruption Type */}
+              <div className="space-y-2">
+                <Label htmlFor="disruption-type">Disruption Type</Label>
+                <Select
+                  value={newDisruption.disruption_type}
+                  onValueChange={(value) => setNewDisruption(prev => ({ ...prev, disruption_type: value }))}
+                >
+                  <SelectTrigger id="disruption-type">
+                    <SelectValue placeholder="Select type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="block">Block (Complete stoppage)</SelectItem>
+                    <SelectItem value="signal_failure">Signal Failure</SelectItem>
+                    <SelectItem value="track_fault">Track Fault</SelectItem>
+                    <SelectItem value="congestion">Congestion</SelectItem>
+                    <SelectItem value="speed_restriction">Speed Restriction</SelectItem>
+                    <SelectItem value="accident">Accident</SelectItem>
+                    <SelectItem value="weather">Weather Related</SelectItem>
+                    <SelectItem value="maintenance">Planned Maintenance</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Severity */}
+              <div className="space-y-2">
+                <Label htmlFor="severity">Severity</Label>
+                <Select
+                  value={newDisruption.severity}
+                  onValueChange={(value) => setNewDisruption(prev => ({ ...prev, severity: value }))}
+                >
+                  <SelectTrigger id="severity">
+                    <SelectValue placeholder="Select severity" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="critical">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-red-500" />
+                        Critical - Complete block
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="high">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-orange-500" />
+                        High - Major delays expected
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="medium">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-amber-500" />
+                        Medium - Moderate impact
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="low">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-yellow-500" />
+                        Low - Minor delays
+                      </span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Direction */}
+              <div className="space-y-2">
+                <Label htmlFor="direction">Affected Direction</Label>
+                <Select
+                  value={newDisruption.affected_direction}
+                  onValueChange={(value) => setNewDisruption(prev => ({ ...prev, affected_direction: value }))}
+                >
+                  <SelectTrigger id="direction">
+                    <SelectValue placeholder="Select direction" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="BOTH">Both Directions</SelectItem>
+                    <SelectItem value="UP">Up Direction Only</SelectItem>
+                    <SelectItem value="DN">Down Direction Only</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Description */}
+              <div className="space-y-2">
+                <Label htmlFor="description">Description (optional)</Label>
+                <Textarea
+                  id="description"
+                  placeholder="Enter details about the disruption..."
+                  value={newDisruption.description}
+                  onChange={(e) => setNewDisruption(prev => ({ ...prev, description: e.target.value.slice(0, 500) }))}
+                  className="resize-none"
+                  rows={3}
+                  maxLength={500}
+                />
+                <p className="text-xs text-gray-500 text-right">{newDisruption.description.length}/500</p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="flex gap-2 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setCreateDisruptionStation(null)}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateDisruption}
+              disabled={isCreatingDisruption}
+              className="flex-1 bg-orange-600 hover:bg-orange-700 text-white"
+            >
+              {isCreatingDisruption ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : (
+                <AlertTriangle className="w-4 h-4 mr-2" />
+              )}
+              Create Disruption
             </Button>
           </DialogFooter>
         </DialogContent>
