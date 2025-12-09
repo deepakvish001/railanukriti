@@ -11,25 +11,16 @@ import { SoundProvider } from "@/hooks/useNotificationSound";
 import { SplashScreen } from "@/components/SplashScreen";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Auth from "./pages/Auth";
-import Map from "./pages/Map";
 import NotFound from "./pages/NotFound";
 
 // Dashboard pages
 import Dashboard from "./pages/dashboard/Dashboard";
-import Recommendations from "./pages/dashboard/Recommendations";
-import Predictions from "./pages/dashboard/Predictions";
-import Conflicts from "./pages/dashboard/Conflicts";
-import Alerts from "./pages/dashboard/Alerts";
-import Schedule from "./pages/dashboard/Schedule";
-import Simulation from "./pages/dashboard/Simulation";
+import FreightAnalysis from "./pages/dashboard/FreightAnalysis";
+import AIPredictions from "./pages/dashboard/AIPredictions";
 import KPIs from "./pages/dashboard/KPIs";
-import Charts from "./pages/dashboard/Charts";
-import Analytics from "./pages/dashboard/Analytics";
 import Audit from "./pages/dashboard/Audit";
 import Export from "./pages/dashboard/Export";
 import DataImport from "./pages/dashboard/DataImport";
-import Infrastructure from "./pages/dashboard/Infrastructure";
-import FreightAnalysis from "./pages/dashboard/FreightAnalysis";
 
 const queryClient = new QueryClient();
 
@@ -37,7 +28,6 @@ const App = () => {
   const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
-    // Show splash screen for 2.5 seconds
     const timer = setTimeout(() => {
       setShowSplash(false);
     }, 2500);
@@ -61,23 +51,12 @@ const App = () => {
                 <Routes>
                   {/* Dashboard Routes */}
                   <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-                  <Route path="/recommendations" element={<ProtectedRoute><Recommendations /></ProtectedRoute>} />
-                  <Route path="/predictions" element={<ProtectedRoute><Predictions /></ProtectedRoute>} />
-                  <Route path="/conflicts" element={<ProtectedRoute><Conflicts /></ProtectedRoute>} />
-                  <Route path="/alerts" element={<ProtectedRoute><Alerts /></ProtectedRoute>} />
-                  <Route path="/schedule" element={<ProtectedRoute><Schedule /></ProtectedRoute>} />
-                  <Route path="/simulation" element={<ProtectedRoute><Simulation /></ProtectedRoute>} />
+                  <Route path="/freight-analysis" element={<ProtectedRoute><FreightAnalysis /></ProtectedRoute>} />
+                  <Route path="/ai-predictions" element={<ProtectedRoute><AIPredictions /></ProtectedRoute>} />
                   <Route path="/kpis" element={<ProtectedRoute><KPIs /></ProtectedRoute>} />
-                  <Route path="/charts" element={<ProtectedRoute><Charts /></ProtectedRoute>} />
-                  <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
                   <Route path="/audit" element={<ProtectedRoute><Audit /></ProtectedRoute>} />
                   <Route path="/export" element={<ProtectedRoute><Export /></ProtectedRoute>} />
                   <Route path="/data-import" element={<ProtectedRoute><DataImport /></ProtectedRoute>} />
-                  <Route path="/infrastructure" element={<ProtectedRoute><Infrastructure /></ProtectedRoute>} />
-                  <Route path="/freight-analysis" element={<ProtectedRoute><FreightAnalysis /></ProtectedRoute>} />
-                  
-                  {/* Map Route */}
-                  <Route path="/map" element={<ProtectedRoute><Map /></ProtectedRoute>} />
                   
                   {/* Auth Route */}
                   <Route path="/auth" element={<Auth />} />
