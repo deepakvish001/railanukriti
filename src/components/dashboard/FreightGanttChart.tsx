@@ -132,6 +132,8 @@ export function FreightGanttChart() {
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(new Set());
   const [aiSuggestions, setAISuggestions] = useState<ReschedulingSuggestion[]>([]);
   const [aiAnalysis, setAIAnalysis] = useState<{ overview: string; priorities: string[] } | null>(null);
+  const [showProposedPaths, setShowProposedPaths] = useState(true);
+  const [hoveredSuggestion, setHoveredSuggestion] = useState<string | null>(null);
 
   // Fetch movements data
   const { data: movements, isLoading } = useQuery({
@@ -745,6 +747,87 @@ export function FreightGanttChart() {
     setDismissedSuggestions(prev => new Set([...prev, suggestion.id]));
   };
 
+  // Calculate proposed paths for suggestions
+  interface ProposedPath {
+    suggestionId: string;
+    trainId: string;
+    color: string;
+    movements: {
+      station_code: string;
+      station_seq: number;
+      arrival: Date;
+      departure: Date;
+    }[];
+    delayMinutes: number;
+    type: string;
+  }
+
+  const proposedPaths = useMemo((): ProposedPath[] => {
+    if (!showProposedPaths) return [];
+    
+    const paths: ProposedPath[] = [];
+    const visibleSuggestions = allSuggestions.filter(s => 
+      !appliedSuggestions.has(s.id) && !dismissedSuggestions.has(s.id)
+    );
+    
+    visibleSuggestions.forEach(suggestion => {
+      const train = trainPaths.find(tp => tp.load_id === suggestion.trainId);
+      if (!train) return;
+      
+      const delayMinutes = suggestion.suggestedAction.delayMinutes || 0;
+      const speedReduction = suggestion.suggestedAction.speedReduction;
+      const holdStation = suggestion.suggestedAction.holdStation;
+      
+      if (delayMinutes === 0 && !speedReduction && !holdStation) return;
+      
+      // Create proposed path with modified timings
+      const proposedMovements = train.movements
+        .filter(m => m.arrival && m.departure)
+        .map((m, idx) => {
+          let adjustedArrival = new Date(m.arrival!);
+          let adjustedDeparture = new Date(m.departure!);
+          
+          // Apply delay
+          if (delayMinutes > 0) {
+            adjustedArrival = new Date(adjustedArrival.getTime() + delayMinutes * 60000);
+            adjustedDeparture = new Date(adjustedDeparture.getTime() + delayMinutes * 60000);
+          }
+          
+          // For hold at station, add extra time at that station
+          if (holdStation && m.station_code === holdStation) {
+            adjustedDeparture = new Date(adjustedDeparture.getTime() + 30 * 60000); // Add 30 min hold
+          }
+          
+          // For speed reduction, increase travel time (simplified)
+          if (speedReduction && idx > 0) {
+            const extraTime = 5 * 60000; // Add 5 min per segment as approximation
+            adjustedArrival = new Date(adjustedArrival.getTime() + extraTime);
+            adjustedDeparture = new Date(adjustedDeparture.getTime() + extraTime);
+          }
+          
+          return {
+            station_code: m.station_code,
+            station_seq: m.station_seq,
+            arrival: adjustedArrival,
+            departure: adjustedDeparture,
+          };
+        });
+      
+      if (proposedMovements.length > 0) {
+        paths.push({
+          suggestionId: suggestion.id,
+          trainId: suggestion.trainId,
+          color: suggestion.isAI ? '#a855f7' : '#22c55e', // Purple for AI, green for rule-based
+          movements: proposedMovements,
+          delayMinutes,
+          type: suggestion.type,
+        });
+      }
+    });
+    
+    return paths;
+  }, [showProposedPaths, allSuggestions, trainPaths, appliedSuggestions, dismissedSuggestions]);
+
   const getCompareTrains = useMemo(() => {
     if (!compareMode) return [];
     return trainPaths.filter(tp => 
@@ -1178,6 +1261,18 @@ export function FreightGanttChart() {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* Toggle for showing proposed paths on chart */}
+                  <div className="flex items-center gap-1.5">
+                    <Switch
+                      id="show-proposed-paths"
+                      checked={showProposedPaths}
+                      onCheckedChange={setShowProposedPaths}
+                      className="h-4 w-8"
+                    />
+                    <Label htmlFor="show-proposed-paths" className="text-[10px] text-muted-foreground">
+                      Paths
+                    </Label>
+                  </div>
                   <Button
                     variant="outline"
                     size="sm"
@@ -1203,6 +1298,22 @@ export function FreightGanttChart() {
               
               {showSuggestions && (
                 <div className="mt-3 space-y-3">
+                  {/* Legend for proposed paths */}
+                  {showProposedPaths && proposedPaths.length > 0 && (
+                    <div className="flex items-center gap-4 text-xs text-muted-foreground p-2 bg-muted/30 rounded">
+                      <span className="font-medium">Chart shows:</span>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-6 h-0.5 border-t-2 border-dashed border-purple-500" />
+                        <span>AI Proposed</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-6 h-0.5 border-t-2 border-dashed border-green-500" />
+                        <span>Rule-based Proposed</span>
+                      </div>
+                      <span className="text-muted-foreground/50">({proposedPaths.length} paths)</span>
+                    </div>
+                  )}
+
                   {/* AI Analysis Overview */}
                   {aiAnalysis && (
                     <div className="p-3 rounded-lg bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/30">
@@ -1248,7 +1359,9 @@ export function FreightGanttChart() {
                       return (
                         <div 
                           key={suggestion.id}
-                          className={`p-3 rounded-lg border ${suggestion.isAI ? 'border-purple-500/50 bg-purple-500/5' : priorityColors[suggestion.priority] || 'border-border'}`}
+                          className={`p-3 rounded-lg border transition-all duration-200 ${suggestion.isAI ? 'border-purple-500/50 bg-purple-500/5' : priorityColors[suggestion.priority] || 'border-border'} ${hoveredSuggestion === suggestion.id ? 'ring-2 ring-primary/50 scale-[1.01]' : ''}`}
+                          onMouseEnter={() => setHoveredSuggestion(suggestion.id)}
+                          onMouseLeave={() => setHoveredSuggestion(null)}
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 min-w-0">
@@ -1585,6 +1698,115 @@ export function FreightGanttChart() {
                 </g>
               )}
 
+              {/* Proposed rescheduled paths (dotted lines showing suggestions) */}
+              {showProposedPaths && proposedPaths.length > 0 && (
+                <g className="proposed-paths">
+                  {proposedPaths.map((path) => {
+                    const isHovered = hoveredSuggestion === path.suggestionId;
+                    
+                    return (
+                      <g key={`proposed-${path.suggestionId}`} className={isHovered ? 'animate-pulse' : ''}>
+                        {/* Draw proposed path lines */}
+                        {path.movements.map((movement, idx) => {
+                          if (idx === 0) return null;
+                          const prev = path.movements[idx - 1];
+                          
+                          const x1 = timeToX(prev.departure);
+                          const y1 = stationToY(prev.station_seq);
+                          const x2 = timeToX(movement.arrival);
+                          const y2 = stationToY(movement.station_seq);
+
+                          return (
+                            <Tooltip key={`proposed-line-${path.suggestionId}-${idx}`}>
+                              <TooltipTrigger asChild>
+                                <line
+                                  x1={x1}
+                                  y1={y1}
+                                  x2={x2}
+                                  y2={y2}
+                                  stroke={path.color}
+                                  strokeWidth={isHovered ? 4 : 2.5}
+                                  strokeOpacity={isHovered ? 0.9 : 0.6}
+                                  strokeDasharray="8,4"
+                                  className="pointer-events-auto"
+                                />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <div className="text-sm">
+                                  <p className="font-semibold flex items-center gap-1" style={{ color: path.color }}>
+                                    <Sparkles className="h-3 w-3" />
+                                    Proposed: {path.trainId}
+                                  </p>
+                                  <p>{prev.station_code} → {movement.station_code}</p>
+                                  <p className="text-muted-foreground">
+                                    {path.type.replace(/_/g, ' ')}
+                                    {path.delayMinutes > 0 && ` (+${path.delayMinutes}min delay)`}
+                                  </p>
+                                  <p className="text-green-400 text-xs mt-1">
+                                    Click suggestion to apply
+                                  </p>
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          );
+                        })}
+
+                        {/* Draw proposed stop indicators */}
+                        {path.movements.map((movement, idx) => {
+                          const x = timeToX(movement.arrival);
+                          const y = stationToY(movement.station_seq);
+
+                          return (
+                            <circle
+                              key={`proposed-stop-${path.suggestionId}-${idx}`}
+                              cx={x}
+                              cy={y}
+                              r={isHovered ? 5 : 3}
+                              fill={path.color}
+                              fillOpacity={isHovered ? 0.9 : 0.5}
+                              stroke="white"
+                              strokeWidth={1}
+                              strokeDasharray="2,2"
+                            />
+                          );
+                        })}
+
+                        {/* Arrow indicator at the end of proposed path */}
+                        {path.movements.length > 1 && (() => {
+                          const lastMovement = path.movements[path.movements.length - 1];
+                          const x = timeToX(lastMovement.arrival);
+                          const y = stationToY(lastMovement.station_seq);
+                          
+                          return (
+                            <g>
+                              <circle
+                                cx={x}
+                                cy={y}
+                                r={isHovered ? 8 : 6}
+                                fill={path.color}
+                                fillOpacity={0.3}
+                                stroke={path.color}
+                                strokeWidth={2}
+                                strokeDasharray="3,3"
+                              />
+                              <text
+                                x={x}
+                                y={y - 12}
+                                textAnchor="middle"
+                                className="fill-current text-[9px] font-medium"
+                                style={{ fill: path.color }}
+                              >
+                                +{path.delayMinutes || '?'}m
+                              </text>
+                            </g>
+                          );
+                        })()}
+                      </g>
+                    );
+                  })}
+                </g>
+              )}
+
               {/* Train paths */}
               <g className="train-paths">
                 {displayTrains.map((train) => (
@@ -1873,6 +2095,19 @@ export function FreightGanttChart() {
                   <span className="text-red-500">Conflict</span>
                 </div>
               )}
+            </>
+          )}
+          {showProposedPaths && proposedPaths.length > 0 && (
+            <>
+              <div className="border-l border-border/50 h-4 mx-2" />
+              <div className="flex items-center gap-1.5">
+                <div className="w-6 h-0.5 border-t-2 border-dashed border-purple-500" />
+                <span className="text-purple-400">AI Proposed Path</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-6 h-0.5 border-t-2 border-dashed border-green-500" />
+                <span className="text-green-400">Proposed Path</span>
+              </div>
             </>
           )}
         </div>
