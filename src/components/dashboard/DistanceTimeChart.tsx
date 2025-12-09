@@ -63,16 +63,14 @@ interface TrainPath {
   }[];
 }
 
-// Theme-aware colors
+// Theme-aware colors - Simple: Red = Passenger, Green = Freight
 const THEME_COLORS = {
-  passengerDN: 'hsl(0, 84%, 60%)',
-  passengerUP: 'hsl(221, 83%, 53%)',
-  freightDN: 'hsl(142, 76%, 36%)',
-  freightUP: 'hsl(280, 70%, 50%)',
+  passenger: 'hsl(0, 84%, 55%)',      // Red for all passenger trains
+  freight: 'hsl(142, 76%, 40%)',       // Green for all freight trains
   halt: 'hsl(215, 16%, 47%)',
   stationMarker: 'hsl(38, 92%, 50%)',
   disruption: 'hsl(0, 84%, 60%)',
-  rerouted: 'hsl(38, 92%, 50%)',
+  disrupted: 'hsl(38, 92%, 50%)',      // Amber for disrupted trains
 };
 
 export function DistanceTimeChart() {
@@ -230,7 +228,7 @@ export function DistanceTimeChart() {
           id: m.load_id,
           type: 'freight',
           direction: 'DN',
-          color: THEME_COLORS.freightDN,
+          color: THEME_COLORS.freight,  // Green for freight
           isAffected: false,
           movements: [],
         });
@@ -262,8 +260,7 @@ export function DistanceTimeChart() {
         const first = path.movements[0];
         const last = path.movements[path.movements.length - 1];
         path.direction = first.distance_km < last.distance_km ? 'DN' : 'UP';
-        path.color = path.isAffected ? THEME_COLORS.rerouted : 
-          (path.direction === 'DN' ? THEME_COLORS.freightDN : THEME_COLORS.freightUP);
+        path.color = path.isAffected ? THEME_COLORS.disrupted : THEME_COLORS.freight;  // Green for freight
       }
     });
 
@@ -288,7 +285,7 @@ export function DistanceTimeChart() {
           id: s.train_number,
           type: 'passenger',
           direction: dir,
-          color: dir === 'DN' ? THEME_COLORS.passengerDN : THEME_COLORS.passengerUP,
+          color: THEME_COLORS.passenger,  // Red for passenger
           isAffected: false,
           movements: [],
         });
@@ -323,9 +320,9 @@ export function DistanceTimeChart() {
         return b.seq_no - a.seq_no;
       });
 
-      // Update color if affected
+      // Update color if affected by disruption
       if (path.isAffected) {
-        path.color = THEME_COLORS.rerouted;
+        path.color = THEME_COLORS.disrupted;  // Amber for disrupted
       }
     });
 
@@ -556,15 +553,15 @@ export function DistanceTimeChart() {
             <div className="flex items-center gap-2">
               <Switch id="passenger" checked={showPassenger} onCheckedChange={setShowPassenger} />
               <Label htmlFor="passenger" className="text-sm flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: THEME_COLORS.passengerDN }} />
-                Passenger
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: THEME_COLORS.passenger }} />
+                Passenger (Red)
               </Label>
             </div>
             <div className="flex items-center gap-2">
               <Switch id="freight" checked={showFreight} onCheckedChange={setShowFreight} />
               <Label htmlFor="freight" className="text-sm flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: THEME_COLORS.freightDN }} />
-                Freight
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: THEME_COLORS.freight }} />
+                Freight (Green)
               </Label>
             </div>
             <div className="h-6 w-px bg-border" />
@@ -944,24 +941,16 @@ export function DistanceTimeChart() {
         <div className="p-4 border-t border-border bg-muted/20">
           <div className="flex flex-wrap items-center justify-center gap-8 text-sm">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-0.5 rounded" style={{ backgroundColor: THEME_COLORS.passengerDN }} />
-              <span className="text-muted-foreground">DN Passenger</span>
+              <div className="w-10 h-0.5 rounded" style={{ backgroundColor: THEME_COLORS.passenger }} />
+              <span className="text-muted-foreground">Passenger (Red)</span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-0.5 rounded" style={{ backgroundColor: THEME_COLORS.passengerUP }} />
-              <span className="text-muted-foreground">UP Passenger</span>
+              <div className="w-10 h-0.5 border-t-2 border-dashed" style={{ borderColor: THEME_COLORS.freight }} />
+              <span className="text-muted-foreground">Freight (Green)</span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-0.5 border-t-2 border-dashed" style={{ borderColor: THEME_COLORS.freightDN }} />
-              <span className="text-muted-foreground">DN Freight</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-0.5 border-t-2 border-dashed" style={{ borderColor: THEME_COLORS.freightUP }} />
-              <span className="text-muted-foreground">UP Freight</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-0.5 border-t-2 border-dashed" style={{ borderColor: THEME_COLORS.rerouted }} />
-              <span className="text-muted-foreground">Affected/Rerouted</span>
+              <div className="w-10 h-0.5 border-t-2 border-dashed" style={{ borderColor: THEME_COLORS.disrupted }} />
+              <span className="text-muted-foreground">Disrupted (Amber)</span>
             </div>
             <div className="flex items-center gap-3">
               <div className="w-4 h-4 rounded-full bg-destructive flex items-center justify-center">
