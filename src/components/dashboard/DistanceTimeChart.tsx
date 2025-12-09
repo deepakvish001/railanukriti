@@ -103,8 +103,17 @@ export function DistanceTimeChart() {
   const [hoveredTrain, setHoveredTrain] = useState<string | null>(null);
   const [selectedTrain, setSelectedTrain] = useState<SelectedTrainInfo | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
   const svgRef = useRef<SVGSVGElement>(null);
   const queryClient = useQueryClient();
+
+  // Update current time every second for live marker
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Fetch ALL freight movements without limit
   const { data: freightMovements, isLoading: freightLoading, refetch: refetchFreight } = useQuery({
@@ -729,6 +738,65 @@ export function DistanceTimeChart() {
                 </g>
               );
             })}
+
+            {/* Live Current Time Marker */}
+            {currentTime >= timeRange.start && currentTime <= timeRange.end && (
+              <g>
+                {/* Glowing vertical line */}
+                <line
+                  x1={xScale(currentTime)}
+                  y1={MARGIN.top}
+                  x2={xScale(currentTime)}
+                  y2={chartHeight - MARGIN.bottom}
+                  stroke="#EF4444"
+                  strokeWidth={3}
+                  opacity={0.3}
+                />
+                <line
+                  x1={xScale(currentTime)}
+                  y1={MARGIN.top}
+                  x2={xScale(currentTime)}
+                  y2={chartHeight - MARGIN.bottom}
+                  stroke="#EF4444"
+                  strokeWidth={2}
+                  strokeDasharray="8,4"
+                />
+                {/* Time label at top */}
+                <rect
+                  x={xScale(currentTime) - 30}
+                  y={MARGIN.top - 22}
+                  width={60}
+                  height={18}
+                  rx={4}
+                  fill="#EF4444"
+                />
+                <text
+                  x={xScale(currentTime)}
+                  y={MARGIN.top - 10}
+                  textAnchor="middle"
+                  fill="white"
+                  fontSize="10"
+                  fontWeight="600"
+                  fontFamily="system-ui, -apple-system, sans-serif"
+                >
+                  {format(currentTime, 'HH:mm:ss')}
+                </text>
+                {/* "NOW" indicator */}
+                <circle
+                  cx={xScale(currentTime)}
+                  cy={MARGIN.top - 28}
+                  r={4}
+                  fill="#EF4444"
+                >
+                  <animate
+                    attributeName="opacity"
+                    values="1;0.5;1"
+                    dur="1.5s"
+                    repeatCount="indefinite"
+                  />
+                </circle>
+              </g>
+            )}
           </svg>
           <ScrollBar orientation="horizontal" />
         </ScrollArea>
