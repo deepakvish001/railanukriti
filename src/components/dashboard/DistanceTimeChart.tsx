@@ -26,6 +26,7 @@ interface TrainPath {
   movements: {
     station_code: string;
     distance_km: number;
+    seq_no: number;
     arrival: Date;
     departure: Date | null;
     speed: number;
@@ -63,13 +64,20 @@ export function DistanceTimeChart() {
     },
   });
 
-  // Create station distance map
+  // Create station distance and sequence map
   const stationDistanceMap = useMemo(() => {
     const map = new Map<string, number>();
     stations.forEach(s => {
-      // Use cumulative_distance_km, default to 0 for first station
       const distance = s.cumulative_distance_km ?? 0;
       map.set(s.station_code, distance);
+    });
+    return map;
+  }, [stations]);
+
+  const stationSeqMap = useMemo(() => {
+    const map = new Map<string, number>();
+    stations.forEach(s => {
+      map.set(s.station_code, s.seq_no);
     });
     return map;
   }, [stations]);
@@ -86,13 +94,19 @@ export function DistanceTimeChart() {
     return last.cumulative_distance_km ?? 180;
   }, [orderedStations]);
 
-  // Process movements into train paths
+  // Process movements into train paths - sorted by route sequence
   const trainPaths = useMemo(() => {
     if (!movements || movements.length === 0) return [];
 
     const pathMap = new Map<string, TrainPath>();
     
     movements.forEach((m) => {
+      const distance = stationDistanceMap.get(m.station_code);
+      const seq = stationSeqMap.get(m.station_code);
+      
+      // Skip if station not in our route
+      if (distance === undefined || seq === undefined) return;
+
       if (!pathMap.has(m.load_id)) {
         pathMap.set(m.load_id, {
           load_id: m.load_id,
@@ -101,12 +115,10 @@ export function DistanceTimeChart() {
         });
       }
 
-      const distance = stationDistanceMap.get(m.station_code);
-      if (distance === undefined) return;
-
       pathMap.get(m.load_id)!.movements.push({
         station_code: m.station_code,
         distance_km: distance,
+        seq_no: seq,
         arrival: parseISO(m.arrival_time),
         departure: m.departure_time ? parseISO(m.departure_time) : null,
         speed: m.speed || 0,
@@ -114,13 +126,14 @@ export function DistanceTimeChart() {
       });
     });
 
-    // Sort movements within each train by arrival time
+    // Sort movements within each train by route sequence (station order)
     pathMap.forEach(path => {
-      path.movements.sort((a, b) => a.arrival.getTime() - b.arrival.getTime());
+      path.movements.sort((a, b) => a.seq_no - b.seq_no);
     });
 
-    return Array.from(pathMap.values());
-  }, [movements, stationDistanceMap]);
+    // Filter trains with at least 2 movements to show proper path
+    return Array.from(pathMap.values()).filter(p => p.movements.length >= 2);
+  }, [movements, stationDistanceMap, stationSeqMap]);
 
   // Time range calculations
   const timeRange = useMemo(() => {
