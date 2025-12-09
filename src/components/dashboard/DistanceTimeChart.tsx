@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { ZoomIn, ZoomOut, RefreshCw, Loader2, Download, Train, ArrowUpDown } from 'lucide-react';
+import { ZoomIn, ZoomOut, RefreshCw, Loader2, Download, Train, ArrowUpDown, AlertTriangle } from 'lucide-react';
 import { useRouteStations } from '@/hooks/useFreightData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
@@ -31,11 +31,26 @@ interface PassengerSchedule {
   is_halt: boolean | null;
 }
 
+interface Disruption {
+  id: string;
+  station_code: string | null;
+  block_section_code: string | null;
+  disruption_type: string;
+  severity: string;
+  start_time: string;
+  end_time: string | null;
+  is_active: boolean;
+  affected_direction: string | null;
+  description: string | null;
+}
+
 interface TrainPath {
   id: string;
   type: 'freight' | 'passenger';
   direction: 'UP' | 'DN';
   color: string;
+  isAffected: boolean;
+  affectedAt?: string; // Station where disruption affects
   movements: {
     station_code: string;
     distance_km: number;
@@ -43,17 +58,20 @@ interface TrainPath {
     arrival: Date;
     departure: Date | null;
     is_halt: boolean;
+    isDisrupted?: boolean;
   }[];
 }
 
-// Theme-aware colors using CSS variables mapped to HSL
+// Theme-aware colors
 const THEME_COLORS = {
-  passengerDN: 'hsl(0, 84%, 60%)',      // Red - Downline Passenger
-  passengerUP: 'hsl(221, 83%, 53%)',    // Blue - Upline Passenger  
-  freightDN: 'hsl(142, 76%, 36%)',      // Green - Downline Freight
-  freightUP: 'hsl(280, 70%, 50%)',      // Purple - Upline Freight
-  halt: 'hsl(215, 16%, 47%)',           // Muted - Waiting/dwell
-  stationMarker: 'hsl(38, 92%, 50%)',   // Accent - Station markers
+  passengerDN: 'hsl(0, 84%, 60%)',
+  passengerUP: 'hsl(221, 83%, 53%)',
+  freightDN: 'hsl(142, 76%, 36%)',
+  freightUP: 'hsl(280, 70%, 50%)',
+  halt: 'hsl(215, 16%, 47%)',
+  stationMarker: 'hsl(38, 92%, 50%)',
+  disruption: 'hsl(0, 84%, 60%)',
+  rerouted: 'hsl(38, 92%, 50%)',
 };
 
 export function DistanceTimeChart() {
@@ -63,6 +81,7 @@ export function DistanceTimeChart() {
   const [showPassenger, setShowPassenger] = useState(true);
   const [showUpline, setShowUpline] = useState(true);
   const [showDownline, setShowDownline] = useState(true);
+  const [showDisruptions, setShowDisruptions] = useState(true);
   const [hoveredTrain, setHoveredTrain] = useState<string | null>(null);
   const [selectedTrain, setSelectedTrain] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -98,6 +117,19 @@ export function DistanceTimeChart() {
     },
   });
 
+  // Fetch active disruptions
+  const { data: disruptions, refetch: refetchDisruptions } = useQuery({
+    queryKey: ['disruptions-chart'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('disruptions')
+        .select('*')
+        .eq('is_active', true);
+      if (error) throw error;
+      return data as Disruption[];
+    },
+  });
+
   // Station maps
   const stationDistanceMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -111,7 +143,16 @@ export function DistanceTimeChart() {
     return map;
   }, [stations]);
 
-  // Ordered stations for Y-axis (PSA at top, KTV at bottom)
+  // Disrupted stations set
+  const disruptedStations = useMemo(() => {
+    const set = new Set<string>();
+    disruptions?.forEach(d => {
+      if (d.station_code) set.add(d.station_code);
+    });
+    return set;
+  }, [disruptions]);
+
+  // Ordered stations for Y-axis
   const orderedStations = useMemo(() => {
     return [...stations].sort((a, b) => b.seq_no - a.seq_no);
   }, [stations]);
@@ -121,10 +162,9 @@ export function DistanceTimeChart() {
     return Math.max(...stations.map(s => s.cumulative_distance_km ?? 0));
   }, [orderedStations, stations]);
 
-  // Base date for passenger schedules
   const baseDate = useMemo(() => startOfDay(new Date()), []);
 
-  // Process freight movements into paths
+  // Process freight movements into paths with disruption awareness
   const freightPaths = useMemo((): TrainPath[] => {
     if (!freightMovements || freightMovements.length === 0) return [];
 
@@ -141,10 +181,13 @@ export function DistanceTimeChart() {
           type: 'freight',
           direction: 'DN',
           color: THEME_COLORS.freightDN,
+          isAffected: false,
           movements: [],
         });
       }
 
+      const isDisrupted = disruptedStations.has(m.station_code);
+      
       pathMap.get(m.load_id)!.movements.push({
         station_code: m.station_code,
         distance_km: distance,
@@ -152,10 +195,16 @@ export function DistanceTimeChart() {
         arrival: parseISO(m.arrival_time),
         departure: m.departure_time ? parseISO(m.departure_time) : null,
         is_halt: m.is_stoppage,
+        isDisrupted,
       });
+
+      if (isDisrupted) {
+        const path = pathMap.get(m.load_id)!;
+        path.isAffected = true;
+        if (!path.affectedAt) path.affectedAt = m.station_code;
+      }
     });
 
-    // Sort and determine direction
     pathMap.forEach(path => {
       path.movements.sort((a, b) => a.arrival.getTime() - b.arrival.getTime());
       
@@ -163,14 +212,15 @@ export function DistanceTimeChart() {
         const first = path.movements[0];
         const last = path.movements[path.movements.length - 1];
         path.direction = first.distance_km < last.distance_km ? 'DN' : 'UP';
-        path.color = path.direction === 'DN' ? THEME_COLORS.freightDN : THEME_COLORS.freightUP;
+        path.color = path.isAffected ? THEME_COLORS.rerouted : 
+          (path.direction === 'DN' ? THEME_COLORS.freightDN : THEME_COLORS.freightUP);
       }
     });
 
     return Array.from(pathMap.values()).filter(p => p.movements.length >= 2);
-  }, [freightMovements, stationDistanceMap, stationSeqMap]);
+  }, [freightMovements, stationDistanceMap, stationSeqMap, disruptedStations]);
 
-  // Process passenger schedules into paths
+  // Process passenger schedules into paths with disruption awareness
   const passengerPaths = useMemo((): TrainPath[] => {
     if (!passengerSchedule || passengerSchedule.length === 0) return [];
 
@@ -189,12 +239,14 @@ export function DistanceTimeChart() {
           type: 'passenger',
           direction: dir,
           color: dir === 'DN' ? THEME_COLORS.passengerDN : THEME_COLORS.passengerUP,
+          isAffected: false,
           movements: [],
         });
       }
 
       const arrivalDate = s.arrival_seconds !== null ? addSeconds(baseDate, s.arrival_seconds) : null;
       const departureDate = s.departure_seconds !== null ? addSeconds(baseDate, s.departure_seconds) : null;
+      const isDisrupted = disruptedStations.has(s.station_code);
 
       if (arrivalDate) {
         pathMap.get(key)!.movements.push({
@@ -204,20 +256,31 @@ export function DistanceTimeChart() {
           arrival: arrivalDate,
           departure: departureDate,
           is_halt: s.is_halt || false,
+          isDisrupted,
         });
+
+        if (isDisrupted) {
+          const path = pathMap.get(key)!;
+          path.isAffected = true;
+          if (!path.affectedAt) path.affectedAt = s.station_code;
+        }
       }
     });
 
-    // Sort by route sequence
     pathMap.forEach(path => {
       path.movements.sort((a, b) => {
         if (path.direction === 'DN') return a.seq_no - b.seq_no;
         return b.seq_no - a.seq_no;
       });
+
+      // Update color if affected
+      if (path.isAffected) {
+        path.color = THEME_COLORS.rerouted;
+      }
     });
 
     return Array.from(pathMap.values()).filter(p => p.movements.length >= 2);
-  }, [passengerSchedule, stationDistanceMap, stationSeqMap, baseDate]);
+  }, [passengerSchedule, stationDistanceMap, stationSeqMap, baseDate, disruptedStations]);
 
   // Combine all paths
   const allPaths = useMemo(() => {
@@ -232,7 +295,7 @@ export function DistanceTimeChart() {
     });
   }, [freightPaths, passengerPaths, showFreight, showPassenger, showUpline, showDownline]);
 
-  // Time range (0:00 to 24:00)
+  // Time range
   const timeRange = useMemo(() => ({
     start: baseDate,
     end: addHours(baseDate, 24),
@@ -248,7 +311,6 @@ export function DistanceTimeChart() {
   const innerWidth = chartWidth - MARGIN.left - MARGIN.right;
   const innerHeight = chartHeight - MARGIN.top - MARGIN.bottom;
 
-  // Scale functions
   const xScale = useCallback((time: Date) => {
     const elapsed = time.getTime() - timeRange.start.getTime();
     const totalRange = timeRange.end.getTime() - timeRange.start.getTime();
@@ -259,11 +321,13 @@ export function DistanceTimeChart() {
     return MARGIN.top + ((maxDistance - distance) / maxDistance) * innerHeight;
   }, [maxDistance, innerHeight, MARGIN.top]);
 
-  // Generate smooth path
+  // Generate path with rerouting visualization
   const generatePath = useCallback((path: TrainPath) => {
     if (path.movements.length === 0) return '';
     
     let d = '';
+    let foundDisruption = false;
+    
     path.movements.forEach((m, i) => {
       const x1 = xScale(m.arrival);
       const y = yScale(m.distance_km);
@@ -271,11 +335,31 @@ export function DistanceTimeChart() {
       if (i === 0) {
         d += `M ${x1} ${y}`;
       } else {
-        d += ` L ${x1} ${y}`;
+        // If previous point was disrupted, add a curve to show rerouting
+        if (foundDisruption && !m.isDisrupted) {
+          // Coming back from disruption - show smooth curve
+          const prevM = path.movements[i - 1];
+          const prevX = prevM.departure ? xScale(prevM.departure) : xScale(prevM.arrival);
+          const prevY = yScale(prevM.distance_km);
+          const controlX = (prevX + x1) / 2;
+          d += ` Q ${controlX} ${prevY + 20} ${x1} ${y}`;
+        } else {
+          d += ` L ${x1} ${y}`;
+        }
       }
       
-      // Add horizontal line for dwell time
-      if (m.departure && m.departure.getTime() > m.arrival.getTime()) {
+      if (m.isDisrupted) {
+        foundDisruption = true;
+        // Add horizontal wait line at disrupted station
+        if (m.departure && m.departure.getTime() > m.arrival.getTime()) {
+          const x2 = xScale(m.departure);
+          d += ` L ${x2} ${y}`;
+        } else {
+          // If no departure, show extended wait (disruption hold)
+          const waitX = x1 + 30; // Show waiting at station
+          d += ` L ${waitX} ${y}`;
+        }
+      } else if (m.departure && m.departure.getTime() > m.arrival.getTime()) {
         const x2 = xScale(m.departure);
         d += ` L ${x2} ${y}`;
       }
@@ -298,7 +382,6 @@ export function DistanceTimeChart() {
     return labels;
   }, [timeRange, xScale]);
 
-  // Export SVG
   const exportSVG = () => {
     if (!svgRef.current) return;
     const svgData = new XMLSerializer().serializeToString(svgRef.current);
@@ -314,6 +397,7 @@ export function DistanceTimeChart() {
   const refetch = () => {
     refetchFreight();
     refetchPassenger();
+    refetchDisruptions();
   };
 
   // Stats
@@ -323,7 +407,10 @@ export function DistanceTimeChart() {
     freight: allPaths.filter(p => p.type === 'freight').length,
     upline: allPaths.filter(p => p.direction === 'UP').length,
     downline: allPaths.filter(p => p.direction === 'DN').length,
+    affected: allPaths.filter(p => p.isAffected).length,
   }), [allPaths]);
+
+  const activeDisruptions = disruptions?.filter(d => d.is_active) ?? [];
 
   if (freightLoading || passengerLoading || stationsLoading) {
     return (
@@ -370,6 +457,31 @@ export function DistanceTimeChart() {
               </Button>
             </div>
           </div>
+
+          {/* Active Disruptions Alert */}
+          {activeDisruptions.length > 0 && (
+            <div className="mt-3 p-3 bg-destructive/10 border border-destructive/30 rounded-lg">
+              <div className="flex items-center gap-2 text-destructive">
+                <AlertTriangle className="w-4 h-4" />
+                <span className="font-medium text-sm">
+                  {activeDisruptions.length} Active Disruption{activeDisruptions.length > 1 ? 's' : ''}
+                </span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {activeDisruptions.map(d => (
+                  <Badge key={d.id} variant="destructive" className="text-xs">
+                    {d.station_code || d.block_section_code} - {d.disruption_type}
+                    {d.severity === 'critical' && ' ⚠️'}
+                  </Badge>
+                ))}
+              </div>
+              {stats.affected > 0 && (
+                <p className="mt-2 text-xs text-destructive/80">
+                  {stats.affected} trains affected - paths shown in orange with rerouting
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Filters & Stats */}
@@ -398,17 +510,27 @@ export function DistanceTimeChart() {
               <Switch id="downline" checked={showDownline} onCheckedChange={setShowDownline} />
               <Label htmlFor="downline" className="text-sm">↓ Downline</Label>
             </div>
+            <div className="h-6 w-px bg-border" />
+            <div className="flex items-center gap-2">
+              <Switch id="disruptions" checked={showDisruptions} onCheckedChange={setShowDisruptions} />
+              <Label htmlFor="disruptions" className="text-sm flex items-center gap-2">
+                <AlertTriangle className="w-3 h-3 text-destructive" />
+                Disruptions
+              </Label>
+            </div>
           </div>
           
           <div className="flex items-center gap-3">
             <Badge variant="secondary" className="gap-1">
               <Train className="w-3 h-3" /> {stats.totalTrains} trains
             </Badge>
+            {stats.affected > 0 && (
+              <Badge variant="destructive" className="gap-1">
+                <AlertTriangle className="w-3 h-3" /> {stats.affected} affected
+              </Badge>
+            )}
             <Badge variant="outline" className="text-xs">
               P: {stats.passenger} | F: {stats.freight}
-            </Badge>
-            <Badge variant="outline" className="text-xs">
-              ↑{stats.upline} | ↓{stats.downline}
             </Badge>
           </div>
         </div>
@@ -422,7 +544,7 @@ export function DistanceTimeChart() {
             className="bg-background"
             style={{ fontFamily: "'Inter', system-ui, sans-serif" }}
           >
-            {/* Definitions for gradients and effects */}
+            {/* Definitions */}
             <defs>
               <linearGradient id="chartBg" x1="0%" y1="0%" x2="0%" y2="100%">
                 <stop offset="0%" stopColor="hsl(var(--muted))" stopOpacity="0.1" />
@@ -435,36 +557,94 @@ export function DistanceTimeChart() {
                   <feMergeNode in="SourceGraphic" />
                 </feMerge>
               </filter>
+              <pattern id="disruptionPattern" patternUnits="userSpaceOnUse" width="10" height="10">
+                <line x1="0" y1="10" x2="10" y2="0" stroke="hsl(0, 84%, 60%)" strokeWidth="1" opacity="0.3" />
+              </pattern>
             </defs>
 
             {/* Background */}
             <rect x={MARGIN.left} y={MARGIN.top} width={innerWidth} height={innerHeight} fill="url(#chartBg)" />
 
             {/* Title */}
-            <text
-              x={chartWidth / 2}
-              y={35}
-              textAnchor="middle"
-              fill="hsl(var(--foreground))"
-              fontSize="18"
-              fontWeight="600"
-            >
+            <text x={chartWidth / 2} y={35} textAnchor="middle" fill="hsl(var(--foreground))" fontSize="18" fontWeight="600">
               Kottavalasa (KTV) → Palasa (PSA) Section
             </text>
-            <text
-              x={chartWidth / 2}
-              y={55}
-              textAnchor="middle"
-              fill="hsl(var(--muted-foreground))"
-              fontSize="13"
-            >
+            <text x={chartWidth / 2} y={55} textAnchor="middle" fill="hsl(var(--muted-foreground))" fontSize="13">
               Time vs Distance Simulation · {format(new Date(), 'dd MMM yyyy')}
+              {activeDisruptions.length > 0 && ` · ${activeDisruptions.length} Disruption${activeDisruptions.length > 1 ? 's' : ''} Active`}
             </text>
 
+            {/* Disruption Zones */}
+            {showDisruptions && activeDisruptions.map((disruption) => {
+              const stationCode = disruption.station_code;
+              if (!stationCode) return null;
+              
+              const distance = stationDistanceMap.get(stationCode);
+              if (distance === undefined) return null;
+              
+              const y = yScale(distance);
+              const bandHeight = 20;
+
+              return (
+                <g key={disruption.id}>
+                  {/* Disruption zone band across full width */}
+                  <rect
+                    x={MARGIN.left}
+                    y={y - bandHeight / 2}
+                    width={innerWidth}
+                    height={bandHeight}
+                    fill="url(#disruptionPattern)"
+                    className="animate-pulse"
+                  />
+                  <rect
+                    x={MARGIN.left}
+                    y={y - bandHeight / 2}
+                    width={innerWidth}
+                    height={bandHeight}
+                    fill="hsl(0, 84%, 60%)"
+                    opacity="0.15"
+                  />
+                  {/* Disruption marker */}
+                  <circle
+                    cx={MARGIN.left - 12}
+                    cy={y}
+                    r={8}
+                    fill="hsl(0, 84%, 60%)"
+                    stroke="hsl(var(--background))"
+                    strokeWidth={2}
+                    className="animate-pulse"
+                  />
+                  <text
+                    x={MARGIN.left - 12}
+                    y={y}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fill="white"
+                    fontSize="10"
+                    fontWeight="bold"
+                  >
+                    !
+                  </text>
+                  {/* Disruption label */}
+                  <text
+                    x={MARGIN.left + 10}
+                    y={y - bandHeight / 2 - 5}
+                    fill="hsl(0, 84%, 60%)"
+                    fontSize="10"
+                    fontWeight="600"
+                  >
+                    ⚠ {disruption.disruption_type.toUpperCase()} - {stationCode}
+                  </text>
+                </g>
+              );
+            })}
+
             {/* Horizontal grid lines (stations) */}
-            {orderedStations.map((station, idx) => {
+            {orderedStations.map((station) => {
               const y = yScale(station.cumulative_distance_km ?? 0);
               const isJunction = station.is_junction;
+              const isDisrupted = disruptedStations.has(station.station_code);
+              
               return (
                 <g key={station.station_code}>
                   <line
@@ -472,32 +652,29 @@ export function DistanceTimeChart() {
                     y1={y}
                     x2={chartWidth - MARGIN.right}
                     y2={y}
-                    stroke="hsl(var(--border))"
-                    strokeWidth={isJunction ? 1.5 : 0.5}
-                    opacity={isJunction ? 0.8 : 0.4}
+                    stroke={isDisrupted ? "hsl(0, 84%, 60%)" : "hsl(var(--border))"}
+                    strokeWidth={isDisrupted ? 2 : (isJunction ? 1.5 : 0.5)}
+                    opacity={isDisrupted ? 0.8 : (isJunction ? 0.8 : 0.4)}
                   />
-                  {/* Station marker circle */}
                   <circle
                     cx={MARGIN.left - 12}
                     cy={y}
-                    r={isJunction ? 5 : 3}
-                    fill={isJunction ? THEME_COLORS.stationMarker : 'hsl(var(--muted-foreground))'}
+                    r={isDisrupted ? 6 : (isJunction ? 5 : 3)}
+                    fill={isDisrupted ? "hsl(0, 84%, 60%)" : (isJunction ? THEME_COLORS.stationMarker : 'hsl(var(--muted-foreground))')}
                     stroke="hsl(var(--background))"
                     strokeWidth={1}
                   />
-                  {/* Station name */}
                   <text
                     x={MARGIN.left - 22}
                     y={y}
                     textAnchor="end"
                     dominantBaseline="middle"
-                    fill="hsl(var(--foreground))"
+                    fill={isDisrupted ? "hsl(0, 84%, 60%)" : "hsl(var(--foreground))"}
                     fontSize={isJunction ? 12 : 10}
-                    fontWeight={isJunction ? 600 : 400}
+                    fontWeight={isDisrupted ? 700 : (isJunction ? 600 : 400)}
                   >
                     {station.station_name}
                   </text>
-                  {/* Station code */}
                   <text
                     x={chartWidth - MARGIN.right + 8}
                     y={y - 6}
@@ -508,7 +685,6 @@ export function DistanceTimeChart() {
                   >
                     {station.station_code}
                   </text>
-                  {/* Distance */}
                   <text
                     x={chartWidth - MARGIN.right + 8}
                     y={y + 6}
@@ -582,7 +758,7 @@ export function DistanceTimeChart() {
               TIME (24-hour format)
             </text>
 
-            {/* Train paths - render non-hovered first, then hovered on top */}
+            {/* Train paths - non-highlighted first */}
             {allPaths
               .filter(p => hoveredTrain !== `${p.type}-${p.id}` && selectedTrain !== `${p.type}-${p.id}`)
               .map((path) => (
@@ -600,102 +776,100 @@ export function DistanceTimeChart() {
                     strokeWidth={path.type === 'passenger' ? 2 : 1.5}
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    strokeDasharray={path.type === 'freight' ? "8,4" : "0"}
-                    opacity={0.7}
+                    strokeDasharray={path.type === 'freight' ? "8,4" : (path.isAffected ? "4,2" : "0")}
+                    opacity={path.isAffected ? 0.9 : 0.7}
                   />
                 </g>
               ))}
 
-            {/* Hovered/Selected paths on top */}
+            {/* Highlighted paths on top */}
             {allPaths
               .filter(p => hoveredTrain === `${p.type}-${p.id}` || selectedTrain === `${p.type}-${p.id}`)
-              .map((path) => {
-                const isSelected = selectedTrain === `${path.type}-${path.id}`;
-                return (
-                  <g 
-                    key={`highlighted-${path.type}-${path.id}`}
-                    onMouseEnter={() => setHoveredTrain(`${path.type}-${path.id}`)}
-                    onMouseLeave={() => setHoveredTrain(null)}
-                    onClick={() => setSelectedTrain(s => s === `${path.type}-${path.id}` ? null : `${path.type}-${path.id}`)}
-                    style={{ cursor: 'pointer' }}
-                    filter="url(#glow)"
-                  >
-                    {/* Glow effect */}
-                    <path
-                      d={generatePath(path)}
-                      fill="none"
-                      stroke={path.color}
-                      strokeWidth={path.type === 'passenger' ? 6 : 5}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeDasharray={path.type === 'freight' ? "8,4" : "0"}
-                      opacity={0.3}
-                    />
-                    {/* Main line */}
-                    <path
-                      d={generatePath(path)}
-                      fill="none"
-                      stroke={path.color}
-                      strokeWidth={path.type === 'passenger' ? 3 : 2.5}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeDasharray={path.type === 'freight' ? "8,4" : "0"}
-                      opacity={1}
-                    />
-                    
-                    {/* Station markers for highlighted train */}
-                    {path.movements.map((m, i) => (
-                      <g key={i}>
-                        <circle
-                          cx={xScale(m.arrival)}
-                          cy={yScale(m.distance_km)}
-                          r={m.is_halt ? 5 : 3}
-                          fill={m.is_halt ? THEME_COLORS.halt : path.color}
-                          stroke="hsl(var(--background))"
-                          strokeWidth={1.5}
-                        />
-                        {/* Dwell time marker */}
-                        {m.departure && m.departure.getTime() > m.arrival.getTime() && (
-                          <circle
-                            cx={xScale(m.departure)}
-                            cy={yScale(m.distance_km)}
-                            r={3}
-                            fill={path.color}
-                            stroke="hsl(var(--background))"
-                            strokeWidth={1}
-                          />
-                        )}
-                      </g>
-                    ))}
-
-                    {/* Train label */}
-                    {path.movements.length > 0 && (
-                      <g>
-                        <rect
-                          x={xScale(path.movements[0].arrival) - 30}
-                          y={yScale(path.movements[0].distance_km) - 20}
-                          width={60}
-                          height={16}
-                          rx={3}
-                          fill="hsl(var(--popover))"
-                          stroke={path.color}
-                          strokeWidth={1}
-                        />
+              .map((path) => (
+                <g 
+                  key={`highlighted-${path.type}-${path.id}`}
+                  onMouseEnter={() => setHoveredTrain(`${path.type}-${path.id}`)}
+                  onMouseLeave={() => setHoveredTrain(null)}
+                  onClick={() => setSelectedTrain(s => s === `${path.type}-${path.id}` ? null : `${path.type}-${path.id}`)}
+                  style={{ cursor: 'pointer' }}
+                  filter="url(#glow)"
+                >
+                  <path
+                    d={generatePath(path)}
+                    fill="none"
+                    stroke={path.color}
+                    strokeWidth={path.type === 'passenger' ? 6 : 5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeDasharray={path.type === 'freight' ? "8,4" : "0"}
+                    opacity={0.3}
+                  />
+                  <path
+                    d={generatePath(path)}
+                    fill="none"
+                    stroke={path.color}
+                    strokeWidth={path.type === 'passenger' ? 3 : 2.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeDasharray={path.type === 'freight' ? "8,4" : "0"}
+                    opacity={1}
+                  />
+                  
+                  {/* Station markers */}
+                  {path.movements.map((m, i) => (
+                    <g key={i}>
+                      <circle
+                        cx={xScale(m.arrival)}
+                        cy={yScale(m.distance_km)}
+                        r={m.isDisrupted ? 7 : (m.is_halt ? 5 : 3)}
+                        fill={m.isDisrupted ? "hsl(0, 84%, 60%)" : (m.is_halt ? THEME_COLORS.halt : path.color)}
+                        stroke="hsl(var(--background))"
+                        strokeWidth={1.5}
+                        className={m.isDisrupted ? "animate-pulse" : ""}
+                      />
+                      {m.isDisrupted && (
                         <text
-                          x={xScale(path.movements[0].arrival)}
-                          y={yScale(path.movements[0].distance_km) - 9}
+                          x={xScale(m.arrival)}
+                          y={yScale(m.distance_km)}
                           textAnchor="middle"
-                          fill={path.color}
-                          fontSize="10"
-                          fontWeight="600"
+                          dominantBaseline="middle"
+                          fill="white"
+                          fontSize="8"
+                          fontWeight="bold"
                         >
-                          {path.id.length > 8 ? path.id.slice(0, 8) + '…' : path.id}
+                          !
                         </text>
-                      </g>
-                    )}
-                  </g>
-                );
-              })}
+                      )}
+                    </g>
+                  ))}
+
+                  {/* Train label */}
+                  {path.movements.length > 0 && (
+                    <g>
+                      <rect
+                        x={xScale(path.movements[0].arrival) - 35}
+                        y={yScale(path.movements[0].distance_km) - 22}
+                        width={70}
+                        height={18}
+                        rx={3}
+                        fill="hsl(var(--popover))"
+                        stroke={path.color}
+                        strokeWidth={1.5}
+                      />
+                      <text
+                        x={xScale(path.movements[0].arrival)}
+                        y={yScale(path.movements[0].distance_km) - 10}
+                        textAnchor="middle"
+                        fill={path.color}
+                        fontSize="10"
+                        fontWeight="600"
+                      >
+                        {path.isAffected ? '⚠ ' : ''}{path.id.length > 8 ? path.id.slice(0, 8) + '…' : path.id}
+                      </text>
+                    </g>
+                  )}
+                </g>
+              ))}
           </svg>
           <ScrollBar orientation="horizontal" />
         </ScrollArea>
@@ -720,16 +894,18 @@ export function DistanceTimeChart() {
               <span className="text-muted-foreground">UP Freight</span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-4 h-4 rounded-full" style={{ backgroundColor: THEME_COLORS.halt }} />
-              <span className="text-muted-foreground">Halt/Stoppage</span>
+              <div className="w-10 h-0.5 border-t-2 border-dashed" style={{ borderColor: THEME_COLORS.rerouted }} />
+              <span className="text-muted-foreground">Affected/Rerouted</span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-4 h-4 rounded-full" style={{ backgroundColor: THEME_COLORS.stationMarker }} />
-              <span className="text-muted-foreground">Junction</span>
+              <div className="w-4 h-4 rounded-full bg-destructive flex items-center justify-center">
+                <span className="text-white text-xs font-bold">!</span>
+              </div>
+              <span className="text-muted-foreground">Disruption Zone</span>
             </div>
           </div>
           <p className="text-center text-xs text-muted-foreground mt-3">
-            Click on any train path to highlight · Hover for details · Use scroll to pan horizontally
+            Click on any train path to highlight · Affected trains shown in orange with curved rerouting paths
           </p>
         </div>
       </CardContent>
