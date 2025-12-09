@@ -290,6 +290,14 @@ export async function importFreightData(file: File): Promise<ImportResult> {
     const lines = text.split('\n');
     const headers = lines[0].split(',').map(h => h.trim());
     
+    // First, get existing freight trains to link movements
+    const { data: existingTrains } = await supabase
+      .from('freight_trains')
+      .select('id, load_id');
+    
+    const trainIdMap = new Map<string, string>();
+    existingTrains?.forEach(t => trainIdMap.set(t.load_id, t.id));
+    
     // Group movements by LoadId to create train records
     const trainMap = new Map<string, any>();
     const movements: any[] = [];
@@ -306,8 +314,8 @@ export async function importFreightData(file: File): Promise<ImportResult> {
 
       if (!row.LoadId) continue;
 
-      // Create or update train record
-      if (!trainMap.has(row.LoadId)) {
+      // Create or update train record (only if not already in DB)
+      if (!trainMap.has(row.LoadId) && !trainIdMap.has(row.LoadId)) {
         trainMap.set(row.LoadId, {
           load_id: row.LoadId,
           rake_id: row.RakeId || null,
@@ -359,37 +367,50 @@ export async function importFreightData(file: File): Promise<ImportResult> {
         arrival_time: arrivalTime?.toISOString() || null,
         departure_time: departTime?.toISOString() || null,
         halt_minutes: haltMinutes > 0 ? haltMinutes : null,
-        delay_minutes: 0, // Will be calculated based on expected vs actual times
+        delay_minutes: 0,
         is_stoppage: isStoppage,
         stoppage_reason: isStoppage ? 'Unscheduled halt' : null,
       });
     }
 
-    // Clear existing data
+    // Clear existing movements only
     await supabase.from('freight_movements').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    await supabase.from('freight_trains').delete().neq('id', '00000000-0000-0000-0000-000000000000');
 
-    // Insert trains
-    const trains = Array.from(trainMap.values());
-    const trainBatchSize = 100;
-    for (let i = 0; i < trains.length; i += trainBatchSize) {
-      const batch = trains.slice(i, i + trainBatchSize);
-      const { error } = await supabase.from('freight_trains').insert(batch);
-      if (error) {
-        result.errors.push(`Freight trains batch ${i / trainBatchSize + 1}: ${error.message}`);
-        result.recordsFailed += batch.length;
-      } else {
-        result.recordsImported += batch.length;
+    // Insert any new trains that don't exist
+    const newTrains = Array.from(trainMap.values());
+    if (newTrains.length > 0) {
+      const trainBatchSize = 100;
+      for (let i = 0; i < newTrains.length; i += trainBatchSize) {
+        const batch = newTrains.slice(i, i + trainBatchSize);
+        const { data: insertedTrains, error } = await supabase
+          .from('freight_trains')
+          .insert(batch)
+          .select('id, load_id');
+        
+        if (error) {
+          result.errors.push(`Freight trains batch ${i / trainBatchSize + 1}: ${error.message}`);
+          result.recordsFailed += batch.length;
+        } else {
+          // Add newly inserted trains to the map
+          insertedTrains?.forEach(t => trainIdMap.set(t.load_id, t.id));
+          result.recordsImported += batch.length;
+        }
       }
     }
 
-    // Insert movements
+    // Add freight_train_id to movements
+    const movementsWithTrainId = movements.map(m => ({
+      ...m,
+      freight_train_id: trainIdMap.get(m.load_id) || null,
+    }));
+
+    // Insert movements in batches
     const movementBatchSize = 500;
-    for (let i = 0; i < movements.length; i += movementBatchSize) {
-      const batch = movements.slice(i, i + movementBatchSize);
+    for (let i = 0; i < movementsWithTrainId.length; i += movementBatchSize) {
+      const batch = movementsWithTrainId.slice(i, i + movementBatchSize);
       const { error } = await supabase.from('freight_movements').insert(batch);
       if (error) {
-        result.errors.push(`Movements batch ${i / movementBatchSize + 1}: ${error.message}`);
+        result.errors.push(`Movements batch ${Math.floor(i / movementBatchSize) + 1}: ${error.message}`);
         result.recordsFailed += batch.length;
       } else {
         result.recordsImported += batch.length;
