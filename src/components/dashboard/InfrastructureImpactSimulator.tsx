@@ -26,6 +26,12 @@ import { useQuery } from '@tanstack/react-query';
 // Animated Train Type
 // ===========================================
 
+interface TrainTrailPoint {
+  positionKm: number;
+  timestamp: number;
+  status: 'moving' | 'stopped' | 'waiting';
+}
+
 interface AnimatedTrain {
   id: string;
   loadId: string;
@@ -37,7 +43,10 @@ interface AnimatedTrain {
   currentStationIdx: number;
   direction: 'up' | 'down';
   waitTimeRemaining: number;
+  trail: TrainTrailPoint[];
 }
+
+const MAX_TRAIL_LENGTH = 20; // Maximum number of trail points to keep
 
 // ===========================================
 // Types
@@ -899,6 +908,7 @@ export function InfrastructureImpactSimulator() {
         currentStationIdx: startStationIdx,
         direction: isUpDirection ? 'up' as const : 'down' as const,
         waitTimeRemaining: 0,
+        trail: [{ positionKm: startPos, timestamp: Date.now(), status: 'moving' as const }],
       };
     });
     
@@ -1015,6 +1025,21 @@ export function InfrastructureImpactSimulator() {
           const maxKm = infra.stations[infra.stations.length - 1]?.positionKm || 180;
           newPosition = Math.max(minKm, Math.min(maxKm, newPosition));
           
+          // Update trail - add current position to trail history
+          const now = Date.now();
+          const lastTrailPoint = train.trail[train.trail.length - 1];
+          let newTrail = train.trail;
+          
+          // Only add a new trail point if position changed significantly (0.5km) or status changed
+          if (!lastTrailPoint || 
+              Math.abs(newPosition - lastTrailPoint.positionKm) > 0.5 ||
+              newStatus !== lastTrailPoint.status) {
+            newTrail = [
+              ...train.trail,
+              { positionKm: newPosition, timestamp: now, status: newStatus }
+            ].slice(-MAX_TRAIL_LENGTH); // Keep only last N points
+          }
+          
           return {
             ...train,
             currentPositionKm: newPosition,
@@ -1023,6 +1048,7 @@ export function InfrastructureImpactSimulator() {
             waitTimeRemaining: newWaitTime,
             direction: newDirection,
             speed: currentSpeed,
+            trail: newTrail,
           };
         });
       });
@@ -1423,6 +1449,65 @@ export function InfrastructureImpactSimulator() {
                   );
                 })}
                 
+                {/* Train Trails */}
+                {isSimulating && animatedTrains.map((train) => {
+                  if (train.trail.length < 2) return null;
+                  
+                  const topOffset = train.direction === 'up' ? '35%' : '65%';
+                  
+                  return (
+                    <svg
+                      key={`trail-${train.id}`}
+                      className="absolute inset-0 pointer-events-none z-10"
+                      style={{ width: '100%', height: '100%' }}
+                    >
+                      <defs>
+                        <linearGradient id={`trail-gradient-${train.id}`} x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stopColor={train.color} stopOpacity="0" />
+                          <stop offset="100%" stopColor={train.color} stopOpacity="0.6" />
+                        </linearGradient>
+                      </defs>
+                      {train.trail.map((point, idx) => {
+                        if (idx === 0) return null;
+                        const prevPoint = train.trail[idx - 1];
+                        const x1 = (prevPoint.positionKm / totalDistance) * 100;
+                        const x2 = (point.positionKm / totalDistance) * 100;
+                        const opacity = (idx / train.trail.length) * 0.6; // Fade older points
+                        
+                        return (
+                          <line
+                            key={idx}
+                            x1={`${x1}%`}
+                            y1={topOffset}
+                            x2={`${x2}%`}
+                            y2={topOffset}
+                            stroke={train.color}
+                            strokeWidth={3}
+                            strokeOpacity={opacity}
+                            strokeLinecap="round"
+                          />
+                        );
+                      })}
+                      {/* Trail dots at key positions */}
+                      {train.trail.filter((_, idx) => idx % 3 === 0).map((point, idx) => {
+                        const x = (point.positionKm / totalDistance) * 100;
+                        const opacity = ((idx + 1) / (train.trail.length / 3)) * 0.5;
+                        
+                        return (
+                          <circle
+                            key={`dot-${idx}`}
+                            cx={`${x}%`}
+                            cy={topOffset}
+                            r={2}
+                            fill={train.color}
+                            fillOpacity={opacity}
+                          />
+                        );
+                      })}
+                    </svg>
+                  );
+                })}
+                
                 {/* Animated Trains */}
                 <AnimatePresence>
                   {isSimulating && animatedTrains.map((train) => {
@@ -1560,6 +1645,10 @@ export function InfrastructureImpactSimulator() {
                   <div className="flex items-center gap-1">
                     <div className="w-3 h-3 rounded-full bg-amber-500 ring-2 ring-amber-400/50" />
                     <span className="text-muted-foreground">Train Waiting</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-6 h-0.5 bg-gradient-to-r from-transparent via-blue-400/50 to-blue-400 rounded" />
+                    <span className="text-muted-foreground">Trail</span>
                   </div>
                 </>
               )}
