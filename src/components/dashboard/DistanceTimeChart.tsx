@@ -1,15 +1,16 @@
-import { useMemo, useState, useRef, useCallback } from 'react';
+import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { ZoomIn, ZoomOut, RefreshCw, Loader2, Download, Train, ArrowUpDown, AlertTriangle } from 'lucide-react';
+import { ZoomIn, ZoomOut, RefreshCw, Loader2, Download, Train, ArrowUpDown, AlertTriangle, Radio } from 'lucide-react';
 import { useRouteStations } from '@/hooks/useFreightData';
 import { supabase } from '@/integrations/supabase/client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format, parseISO, addHours, startOfDay, addSeconds } from 'date-fns';
+import { toast } from 'sonner';
 
 interface FreightMovement {
   load_id: string;
@@ -50,7 +51,7 @@ interface TrainPath {
   direction: 'UP' | 'DN';
   color: string;
   isAffected: boolean;
-  affectedAt?: string; // Station where disruption affects
+  affectedAt?: string;
   movements: {
     station_code: string;
     distance_km: number;
@@ -84,7 +85,10 @@ export function DistanceTimeChart() {
   const [showDisruptions, setShowDisruptions] = useState(true);
   const [hoveredTrain, setHoveredTrain] = useState<string | null>(null);
   const [selectedTrain, setSelectedTrain] = useState<string | null>(null);
+  const [isLive, setIsLive] = useState(true);
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const svgRef = useRef<SVGSVGElement>(null);
+  const queryClient = useQueryClient();
 
   // Fetch freight movements
   const { data: freightMovements, isLoading: freightLoading, refetch: refetchFreight } = useQuery({
@@ -129,6 +133,52 @@ export function DistanceTimeChart() {
       return data as Disruption[];
     },
   });
+
+  // Real-time subscription for disruptions
+  useEffect(() => {
+    if (!isLive) return;
+
+    const channel = supabase
+      .channel('disruptions-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'disruptions'
+        },
+        (payload) => {
+          console.log('Disruption change detected:', payload);
+          setLastUpdate(new Date());
+          
+          // Refetch disruptions data
+          queryClient.invalidateQueries({ queryKey: ['disruptions-chart'] });
+          
+          // Show toast notification
+          if (payload.eventType === 'INSERT') {
+            const newDisruption = payload.new as Disruption;
+            toast.error(`🚨 New Disruption: ${newDisruption.disruption_type} at ${newDisruption.station_code || newDisruption.block_section_code}`, {
+              duration: 5000,
+              description: `Severity: ${newDisruption.severity?.toUpperCase()}`,
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedDisruption = payload.new as Disruption;
+            if (!updatedDisruption.is_active) {
+              toast.success(`✅ Disruption resolved at ${updatedDisruption.station_code || updatedDisruption.block_section_code}`, {
+                duration: 4000,
+              });
+            }
+          } else if (payload.eventType === 'DELETE') {
+            toast.success('✅ Disruption removed', { duration: 3000 });
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isLive, queryClient]);
 
   // Station maps
   const stationDistanceMap = useMemo(() => {
@@ -434,8 +484,24 @@ export function DistanceTimeChart() {
                 <ArrowUpDown className="w-5 h-5 text-primary" />
               </div>
               <div>
-                <h3 className="font-semibold text-foreground">Distance-Time (Marey) Chart</h3>
-                <p className="text-sm text-muted-foreground">KTV → PSA Section · Real-time train movements</p>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-foreground">Distance-Time (Marey) Chart</h3>
+                  {/* Live indicator */}
+                  <button 
+                    onClick={() => setIsLive(!isLive)}
+                    className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${
+                      isLive 
+                        ? 'bg-success/20 text-success border border-success/30' 
+                        : 'bg-muted text-muted-foreground border border-border'
+                    }`}
+                  >
+                    <Radio className={`w-3 h-3 ${isLive ? 'animate-pulse' : ''}`} />
+                    {isLive ? 'LIVE' : 'PAUSED'}
+                  </button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  KTV → PSA Section · Last update: {format(lastUpdate, 'HH:mm:ss')}
+                </p>
               </div>
             </div>
             
