@@ -655,6 +655,17 @@ export function InfrastructureImpactSimulator() {
   const animationFrameRef = useRef<number | null>(null);
   const lastUpdateRef = useRef<number>(0);
   
+  // Simulation statistics
+  const [simulationStats, setSimulationStats] = useState({
+    totalDistanceTraveled: 0,
+    totalWaitTime: 0,
+    journeysCompleted: 0,
+    stationsVisited: 0,
+    avgSpeed: 0,
+    simulationTime: 0,
+  });
+  const simulationStartRef = useRef<number>(0);
+  
   // Dialogs
   const [addLoopDialog, setAddLoopDialog] = useState(false);
   const [addMainLineDialog, setAddMainLineDialog] = useState(false);
@@ -1053,8 +1064,44 @@ export function InfrastructureImpactSimulator() {
         });
       });
       
+      // Update simulation stats
+      setSimulationStats(prev => {
+        const elapsedSeconds = (Date.now() - simulationStartRef.current) / 1000;
+        const movingTrains = animatedTrains.filter(t => t.status === 'moving');
+        const avgSpeedNow = movingTrains.length > 0 
+          ? movingTrains.reduce((sum, t) => sum + t.speed, 0) / movingTrains.length 
+          : prev.avgSpeed;
+        
+        // Calculate total distance from trails
+        const totalDist = animatedTrains.reduce((sum, t) => {
+          if (t.trail.length < 2) return sum;
+          let dist = 0;
+          for (let i = 1; i < t.trail.length; i++) {
+            dist += Math.abs(t.trail[i].positionKm - t.trail[i-1].positionKm);
+          }
+          return sum + dist;
+        }, 0);
+        
+        // Count waiting time
+        const waitingTrains = animatedTrains.filter(t => t.status === 'waiting').length;
+        
+        return {
+          totalDistanceTraveled: Math.round(totalDist * 10) / 10,
+          totalWaitTime: prev.totalWaitTime + (waitingTrains * deltaTime * simulationSpeed),
+          journeysCompleted: animatedTrains.filter(t => t.trail.length >= 10).length,
+          stationsVisited: animatedTrains.reduce((sum, t) => sum + Math.floor(t.trail.length / 3), 0),
+          avgSpeed: Math.round((prev.avgSpeed * 0.9 + avgSpeedNow * 0.1) * 10) / 10,
+          simulationTime: Math.round(elapsedSeconds),
+        };
+      });
+      
       animationFrameRef.current = requestAnimationFrame(animate);
     };
+    
+    // Start simulation timer
+    if (simulationStartRef.current === 0) {
+      simulationStartRef.current = Date.now();
+    }
     
     animationFrameRef.current = requestAnimationFrame(animate);
     
@@ -1063,13 +1110,22 @@ export function InfrastructureImpactSimulator() {
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isSimulating, simulationSpeed, infra.stations, initializeAnimatedTrains, getSectionSpeed, stationHasLoop]);
+  }, [isSimulating, simulationSpeed, infra.stations, initializeAnimatedTrains, getSectionSpeed, stationHasLoop, animatedTrains]);
   
-  // Reset animated trains when simulation stops
+  // Reset animated trains and stats when simulation stops
   useEffect(() => {
     if (!isSimulating) {
       setAnimatedTrains([]);
       lastUpdateRef.current = 0;
+      simulationStartRef.current = 0;
+      setSimulationStats({
+        totalDistanceTraveled: 0,
+        totalWaitTime: 0,
+        journeysCompleted: 0,
+        stationsVisited: 0,
+        avgSpeed: 0,
+        simulationTime: 0,
+      });
     }
   }, [isSimulating]);
   
@@ -1664,6 +1720,139 @@ export function InfrastructureImpactSimulator() {
           infraModifications={infraModifications}
         />
       </div>
+      
+      {/* Simulation Statistics Panel */}
+      <AnimatePresence>
+        {isSimulating && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+          >
+            <Card className="bg-gradient-to-br from-green-500/5 to-cyan-500/5 border-green-500/20">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Activity className="h-4 w-4 text-green-400" />
+                    Simulation Statistics
+                    <Badge variant="outline" className="text-xs border-green-500/30 text-green-400">
+                      Live
+                    </Badge>
+                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Timer className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm font-mono text-muted-foreground">
+                      {Math.floor(simulationStats.simulationTime / 60)}:{String(simulationStats.simulationTime % 60).padStart(2, '0')}
+                    </span>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                  {/* Distance Traveled */}
+                  <div className="bg-card/50 rounded-lg p-3 border border-border/50">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Route className="h-3.5 w-3.5 text-blue-400" />
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Distance</span>
+                    </div>
+                    <span className="text-lg font-bold text-blue-400">{simulationStats.totalDistanceTraveled}</span>
+                    <span className="text-xs text-muted-foreground ml-1">km</span>
+                  </div>
+                  
+                  {/* Average Speed */}
+                  <div className="bg-card/50 rounded-lg p-3 border border-border/50">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Gauge className="h-3.5 w-3.5 text-green-400" />
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Avg Speed</span>
+                    </div>
+                    <span className="text-lg font-bold text-green-400">{simulationStats.avgSpeed}</span>
+                    <span className="text-xs text-muted-foreground ml-1">km/h</span>
+                  </div>
+                  
+                  {/* Wait Time */}
+                  <div className="bg-card/50 rounded-lg p-3 border border-border/50">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Clock className="h-3.5 w-3.5 text-amber-400" />
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Wait Time</span>
+                    </div>
+                    <span className="text-lg font-bold text-amber-400">{Math.round(simulationStats.totalWaitTime)}</span>
+                    <span className="text-xs text-muted-foreground ml-1">sec</span>
+                  </div>
+                  
+                  {/* Stations Visited */}
+                  <div className="bg-card/50 rounded-lg p-3 border border-border/50">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Target className="h-3.5 w-3.5 text-purple-400" />
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Stations</span>
+                    </div>
+                    <span className="text-lg font-bold text-purple-400">{simulationStats.stationsVisited}</span>
+                    <span className="text-xs text-muted-foreground ml-1">visited</span>
+                  </div>
+                  
+                  {/* Journeys Completed */}
+                  <div className="bg-card/50 rounded-lg p-3 border border-border/50">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Train className="h-3.5 w-3.5 text-cyan-400" />
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Journeys</span>
+                    </div>
+                    <span className="text-lg font-bold text-cyan-400">{simulationStats.journeysCompleted}</span>
+                    <span className="text-xs text-muted-foreground ml-1">complete</span>
+                  </div>
+                  
+                  {/* Improvement from Infrastructure */}
+                  <div className={cn(
+                    "bg-card/50 rounded-lg p-3 border",
+                    kpiChanges && kpiChanges.capacity > 0 ? "border-green-500/30" : "border-border/50"
+                  )}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <TrendingUp className="h-3.5 w-3.5 text-green-400" />
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Improvement</span>
+                    </div>
+                    {kpiChanges && kpiChanges.capacity > 0 ? (
+                      <>
+                        <span className="text-lg font-bold text-green-400">+{kpiChanges.capacity}</span>
+                        <span className="text-xs text-muted-foreground ml-1">trains/day</span>
+                      </>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">Set baseline first</span>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Delays Avoided Summary */}
+                {kpiChanges && (kpiChanges.delay < 0 || kpiChanges.speed > 0) && (
+                  <div className="mt-4 p-3 bg-green-500/10 rounded-lg border border-green-500/20">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <TrendingDown className="h-4 w-4 text-green-400" />
+                        <span className="text-sm text-green-400 font-medium">Infrastructure Impact:</span>
+                      </div>
+                      {kpiChanges.delay < 0 && (
+                        <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                          <Clock className="h-3 w-3 mr-1" />
+                          {Math.abs(kpiChanges.delay)} min delay reduced
+                        </Badge>
+                      )}
+                      {kpiChanges.speed > 0 && (
+                        <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
+                          <Gauge className="h-3 w-3 mr-1" />
+                          +{kpiChanges.speed} km/h faster
+                        </Badge>
+                      )}
+                      {kpiChanges.risk < 0 && (
+                        <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/30">
+                          <AlertTriangle className="h-3 w-3 mr-1" />
+                          {Math.abs(kpiChanges.risk)}% less conflict risk
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
       
       {/* Action Panel */}
       <AnimatePresence>
