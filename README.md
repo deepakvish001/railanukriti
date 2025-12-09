@@ -46,7 +46,7 @@ Assist section controllers with real-time, optimized decisions for train precede
 - **Charts**: Recharts
 - **Maps**: Mapbox GL
 - **Backend**: Supabase (Database, Auth, Edge Functions)
-- **AI**: Lovable AI (Google Gemini integration)
+- **AI**: Google Gemini integration
 
 ## 🚀 Getting Started
 
