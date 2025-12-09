@@ -1,0 +1,41 @@
+import { Helmet } from 'react-helmet-async';
+import { MinimalDashboardLayout } from '@/components/dashboard/MinimalDashboardLayout';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { FreightThroughputDashboard } from '@/components/dashboard/FreightThroughputDashboard';
+import { DisruptionManager } from '@/components/dashboard/DisruptionManager';
+import { RouteVisualization } from '@/components/dashboard/RouteVisualization';
+import { RailwayDataImporter } from '@/components/dashboard/RailwayDataImporter';
+
+const FreightAnalysis = () => {
+  return (
+    <>
+      <Helmet>
+        <title>Freight Throughput Analysis | RailAnukriti</title>
+        <meta name="description" content="Maximize freight train throughput with real-time analysis of delays, halts, and stoppages." />
+      </Helmet>
+      <MinimalDashboardLayout title="Freight Throughput Analysis">
+        <div className="space-y-6">
+          <RouteVisualization />
+          <DisruptionManager />
+          
+          <Tabs defaultValue="throughput">
+            <TabsList>
+              <TabsTrigger value="throughput">Throughput Dashboard</TabsTrigger>
+              <TabsTrigger value="import">Data Import</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="throughput">
+              <FreightThroughputDashboard />
+            </TabsContent>
+            
+            <TabsContent value="import">
+              <RailwayDataImporter />
+            </TabsContent>
+          </Tabs>
+        </div>
+      </MinimalDashboardLayout>
+    </>
+  );
+};
+
+export default FreightAnalysis;
