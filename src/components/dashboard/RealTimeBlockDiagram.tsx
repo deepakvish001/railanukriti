@@ -11,17 +11,22 @@ import {
   TrendingUp, Clock, AlertTriangle, 
   GitBranch, ArrowRight, ArrowLeft, Zap, Plus, Minus,
   Activity, BarChart3, Signal, RefreshCw, Database, Wifi,
-  Edit3, Wrench, X, Check, Trash2
+  Edit3, Wrench, X, Check, Trash2, Save, Loader2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // Types
 interface Station {
@@ -110,9 +115,40 @@ export function RealTimeBlockDiagram() {
   const [pendingEdits, setPendingEdits] = useState<InfrastructureEdit[]>([]);
   const [selectedStation, setSelectedStation] = useState<string | null>(null);
   const [localStationOverrides, setLocalStationOverrides] = useState<Map<string, { hasLoop?: boolean; hasCrossover?: boolean; signalType?: 'AT' | 'AB' }>>(new Map());
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   
   const animationRef = useRef<number | null>(null);
   const lastUpdateRef = useRef<number>(Date.now());
+
+  // Fetch saved infrastructure edits from database
+  const { data: savedEdits, refetch: refetchSavedEdits } = useQuery({
+    queryKey: ['infrastructure-edits'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('infrastructure_edits')
+        .select('*')
+        .eq('status', 'applied')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // Apply saved edits to local state on load
+  useEffect(() => {
+    if (!savedEdits || savedEdits.length === 0) return;
+    
+    const overrides = new Map<string, { hasLoop?: boolean; hasCrossover?: boolean; signalType?: 'AT' | 'AB' }>();
+    savedEdits.forEach((edit: any) => {
+      const existing = overrides.get(edit.station_code) || {};
+      if (edit.edit_type === 'loop') existing.hasLoop = true;
+      if (edit.edit_type === 'crossover') existing.hasCrossover = true;
+      if (edit.edit_type === 'upgrade_at') existing.signalType = 'AT';
+      overrides.set(edit.station_code, existing);
+    });
+    setLocalStationOverrides(overrides);
+  }, [savedEdits]);
 
   // Fetch stations data
   const { data: stationsData, isLoading } = useQuery({
@@ -474,11 +510,68 @@ export function RealTimeBlockDiagram() {
     toast.info('All edits cleared');
   }, []);
 
-  const handleApplyEdits = useCallback(async () => {
-    // In a real implementation, this would save to the database
-    toast.success(`Applied ${pendingEdits.length} infrastructure changes - KPIs updated!`);
-    // Keep the edits applied visually
+  const handleApplyEdits = useCallback(() => {
+    if (pendingEdits.length === 0) {
+      toast.info('No pending edits to save');
+      return;
+    }
+    setShowSaveDialog(true);
   }, [pendingEdits]);
+
+  const handleConfirmSave = useCallback(async () => {
+    if (pendingEdits.length === 0) return;
+    
+    setIsSaving(true);
+    try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Calculate capacity gain for each edit
+      const editsToInsert = pendingEdits.map(edit => {
+        let capacityGain = 0;
+        let estimatedCost = 0;
+        
+        if (edit.type === 'loop') {
+          capacityGain = 2;
+          estimatedCost = 150; // 1.5 crore in lakhs
+        } else if (edit.type === 'crossover') {
+          capacityGain = 1;
+          estimatedCost = 50; // 50 lakh
+        } else if (edit.type === 'upgrade_at') {
+          capacityGain = 6; // AT gives 6 more than AB (12-6)
+          estimatedCost = 500; // 5 crore in lakhs
+        }
+        
+        return {
+          station_code: edit.stationCode,
+          edit_type: edit.type,
+          status: 'applied',
+          capacity_gain: capacityGain,
+          estimated_cost_lakhs: estimatedCost,
+          created_by: user?.id || null,
+          applied_at: new Date().toISOString(),
+          applied_by: user?.id || null,
+        };
+      });
+      
+      const { error } = await supabase
+        .from('infrastructure_edits')
+        .insert(editsToInsert);
+      
+      if (error) throw error;
+      
+      toast.success(`Saved ${pendingEdits.length} infrastructure changes to database!`);
+      setPendingEdits([]);
+      setShowSaveDialog(false);
+      refetchSavedEdits();
+      
+    } catch (error) {
+      console.error('Error saving edits:', error);
+      toast.error('Failed to save infrastructure changes');
+    } finally {
+      setIsSaving(false);
+    }
+  }, [pendingEdits, refetchSavedEdits]);
 
   // Render station building
   const renderStation = (x: number, y: number, code: string, hasLoop: boolean, isJunction: boolean) => (
@@ -1212,6 +1305,84 @@ export function RealTimeBlockDiagram() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Save Confirmation Dialog */}
+      <AlertDialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Save className="h-5 w-5 text-primary" />
+              Save Infrastructure Changes
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3">
+                <p>You are about to save {pendingEdits.length} infrastructure changes to the database:</p>
+                
+                <div className="bg-muted/50 rounded-lg p-3 space-y-2 max-h-48 overflow-y-auto">
+                  {pendingEdits.map((edit, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-sm">
+                      <span className="flex items-center gap-2">
+                        {edit.type === 'loop' && <GitBranch className="h-4 w-4 text-blue-500" />}
+                        {edit.type === 'crossover' && <ArrowRight className="h-4 w-4 text-orange-500" />}
+                        {edit.type === 'upgrade_at' && <Zap className="h-4 w-4 text-green-500" />}
+                        <span className="font-mono">{edit.stationCode}</span>
+                        <span className="text-muted-foreground">
+                          {edit.type === 'loop' ? 'Loop Line' : edit.type === 'crossover' ? 'Crossover' : 'AB→AT Upgrade'}
+                        </span>
+                      </span>
+                      <Badge variant="outline" className="text-green-500">
+                        +{edit.type === 'loop' ? 2 : edit.type === 'crossover' ? 1 : 6} capacity
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between text-sm border-t pt-2">
+                  <span className="font-medium">Total Capacity Gain:</span>
+                  <Badge className="bg-green-500/20 text-green-500">
+                    +{pendingEdits.reduce((sum, e) => 
+                      sum + (e.type === 'loop' ? 2 : e.type === 'crossover' ? 1 : 6), 0
+                    )} trains/hr
+                  </Badge>
+                </div>
+                
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">Estimated Cost:</span>
+                  <Badge variant="outline">
+                    ₹{(pendingEdits.reduce((sum, e) => 
+                      sum + (e.type === 'loop' ? 150 : e.type === 'crossover' ? 50 : 500), 0
+                    ) / 100).toFixed(1)} Cr
+                  </Badge>
+                </div>
+                
+                <p className="text-xs text-muted-foreground">
+                  These changes will be permanently saved and visible to all users.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSaving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleConfirmSave} 
+              disabled={isSaving}
+              className="bg-primary"
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Save Changes
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

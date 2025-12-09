@@ -651,6 +651,48 @@ export type Database = {
           },
         ]
       }
+      infrastructure_edits: {
+        Row: {
+          applied_at: string | null
+          applied_by: string | null
+          capacity_gain: number | null
+          created_at: string
+          created_by: string | null
+          edit_type: string
+          estimated_cost_lakhs: number | null
+          id: string
+          notes: string | null
+          station_code: string
+          status: string
+        }
+        Insert: {
+          applied_at?: string | null
+          applied_by?: string | null
+          capacity_gain?: number | null
+          created_at?: string
+          created_by?: string | null
+          edit_type: string
+          estimated_cost_lakhs?: number | null
+          id?: string
+          notes?: string | null
+          station_code: string
+          status?: string
+        }
+        Update: {
+          applied_at?: string | null
+          applied_by?: string | null
+          capacity_gain?: number | null
+          created_at?: string
+          created_by?: string | null
+          edit_type?: string
+          estimated_cost_lakhs?: number | null
+          id?: string
+          notes?: string | null
+          station_code?: string
+          status?: string
+        }
+        Relationships: []
+      }
       loop_lines: {
         Row: {
           capacity_trains: number | null
