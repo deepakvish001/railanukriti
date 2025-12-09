@@ -10,12 +10,12 @@ import {
   Play, Pause, RotateCcw, Train, Gauge, 
   TrendingUp, Clock, AlertTriangle, 
   GitBranch, ArrowRight, ArrowLeft, Zap, Plus, Minus,
-  Activity, BarChart3, Signal, Home, ChevronLeft, ChevronRight
+  Activity, BarChart3, Signal, RefreshCw, Database, Wifi
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 // Types
 interface Station {
@@ -32,7 +32,7 @@ interface Station {
   loopCount: number;
 }
 
-interface SimulatedTrain {
+interface FreightTrain {
   id: string;
   loadId: string;
   position: number;
@@ -40,8 +40,11 @@ interface SimulatedTrain {
   direction: 'UP' | 'DN';
   status: 'running' | 'stopped' | 'halted';
   commodity?: string;
+  destination?: string;
+  currentStation: string;
   line: 'main' | 'loop' | 'additional';
   color: string;
+  lastUpdate: Date;
 }
 
 interface KPIMetrics {
@@ -55,22 +58,39 @@ interface KPIMetrics {
   conflictRisk: number;
 }
 
-// Train colors
-const trainColors = [
-  '#3b82f6', '#8b5cf6', '#ec4899', '#f97316', '#14b8a6',
-  '#6366f1', '#84cc16', '#f43f5e', '#0ea5e9', '#a855f7'
-];
+// Train colors based on commodity
+const commodityColors: Record<string, string> = {
+  'COAL': '#374151',
+  'IRON': '#dc2626',
+  'CEMENT': '#6b7280',
+  'FOOD': '#16a34a',
+  'OIL': '#ca8a04',
+  'AUTO': '#2563eb',
+  'SLAG': '#78716c',
+  'IORE': '#b91c1c',
+  'PHC': '#0891b2',
+  'NPKF': '#7c3aed',
+  'default': '#3b82f6',
+};
+
+const getTrainColor = (commodity?: string): string => {
+  if (!commodity) return commodityColors.default;
+  return commodityColors[commodity.toUpperCase()] || commodityColors.default;
+};
 
 export function RealTimeBlockDiagram() {
+  const queryClient = useQueryClient();
   const [isSimulating, setIsSimulating] = useState(false);
   const [simulationSpeed, setSimulationSpeed] = useState(1);
   const [showSignals, setShowSignals] = useState(true);
   const [showLoops, setShowLoops] = useState(true);
   const [showAdditionalLine, setShowAdditionalLine] = useState(true);
   const [selectedTrain, setSelectedTrain] = useState<string | null>(null);
-  const [trains, setTrains] = useState<SimulatedTrain[]>([]);
+  const [trains, setTrains] = useState<FreightTrain[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [isConnected, setIsConnected] = useState(false);
+  const [lastDataUpdate, setLastDataUpdate] = useState<Date | null>(null);
   
   const animationRef = useRef<number | null>(null);
   const lastUpdateRef = useRef<number>(Date.now());
@@ -102,6 +122,38 @@ export function RealTimeBlockDiagram() {
     },
   });
 
+  // Fetch freight movements with train info
+  const { data: freightMovementsData, refetch: refetchMovements } = useQuery({
+    queryKey: ['freight-movements-realtime'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('freight_movements')
+        .select(`
+          id,
+          load_id,
+          station_code,
+          arrival_time,
+          departure_time,
+          speed,
+          delay_minutes,
+          halt_minutes,
+          is_stoppage,
+          freight_trains!inner(
+            id,
+            load_id,
+            commodity,
+            destination_station,
+            source_station
+          )
+        `)
+        .order('arrival_time', { ascending: false })
+        .limit(150);
+      if (error) throw error;
+      return data;
+    },
+    refetchInterval: isSimulating ? 5000 : false, // Auto-refetch every 5s when simulating
+  });
+
   // Process stations
   const stations = useMemo<Station[]>(() => {
     if (!stationsData) return [];
@@ -127,52 +179,115 @@ export function RealTimeBlockDiagram() {
     }));
   }, [stationsData, stationLinesData]);
 
+  // Create station distance lookup
+  const stationDistanceMap = useMemo(() => {
+    const map = new Map<string, number>();
+    stations.forEach(s => {
+      map.set(s.code, s.cumulativeDistance);
+    });
+    return map;
+  }, [stations]);
+
   const totalDistance = useMemo(() => {
     if (stations.length === 0) return 100;
     return Math.max(...stations.map(s => s.cumulativeDistance), 100);
   }, [stations]);
 
-  // Initialize trains
+  // Process freight movements into train positions
   useEffect(() => {
-    if (trains.length > 0 || stations.length === 0) return;
+    if (!freightMovementsData || stations.length === 0) return;
 
-    const initialTrains: SimulatedTrain[] = [];
+    // Group movements by load_id to get latest position per train
+    const latestByTrain = new Map<string, any>();
     
-    // Main line trains
-    for (let i = 0; i < 5; i++) {
-      const pos = (i / 5) * totalDistance * 0.8 + totalDistance * 0.1;
-      initialTrains.push({
-        id: `main-${i}`,
-        loadId: `FRT-${1001 + i}`,
-        position: pos,
-        speed: 40 + Math.random() * 40,
-        direction: i % 2 === 0 ? 'UP' : 'DN',
-        status: 'running',
-        commodity: ['COAL', 'IRON', 'CEMENT', 'FOOD', 'OIL'][i % 5],
-        line: 'main',
-        color: trainColors[i % trainColors.length],
+    freightMovementsData.forEach((movement: any) => {
+      const loadId = movement.load_id;
+      const existing = latestByTrain.get(loadId);
+      
+      if (!existing || new Date(movement.arrival_time) > new Date(existing.arrival_time)) {
+        latestByTrain.set(loadId, movement);
+      }
+    });
+
+    // Convert to train objects
+    const processedTrains: FreightTrain[] = [];
+    let colorIndex = 0;
+
+    latestByTrain.forEach((movement, loadId) => {
+      const stationCode = movement.station_code;
+      const stationDistance = stationDistanceMap.get(stationCode);
+      
+      // Only include trains at stations we have in our diagram
+      if (stationDistance === undefined) return;
+      
+      const commodity = movement.freight_trains?.commodity;
+      const isHalted = movement.is_stoppage || (movement.halt_minutes && movement.halt_minutes > 30);
+      
+      // Determine direction based on source and destination
+      const sourceStation = movement.freight_trains?.source_station;
+      const destStation = movement.freight_trains?.destination_station;
+      let direction: 'UP' | 'DN' = 'UP';
+      
+      if (sourceStation && destStation) {
+        const sourceDistance = stationDistanceMap.get(sourceStation) || 0;
+        const destDistance = stationDistanceMap.get(destStation) || totalDistance;
+        direction = destDistance > sourceDistance ? 'UP' : 'DN';
+      }
+
+      processedTrains.push({
+        id: movement.id,
+        loadId: loadId.substring(0, 15),
+        position: stationDistance,
+        speed: movement.speed || 0,
+        direction,
+        status: isHalted ? 'halted' : (movement.speed > 0 ? 'running' : 'stopped'),
+        commodity,
+        destination: destStation,
+        currentStation: stationCode,
+        line: colorIndex % 3 === 0 ? 'additional' : 'main',
+        color: getTrainColor(commodity),
+        lastUpdate: new Date(movement.arrival_time),
       });
-    }
+      
+      colorIndex++;
+    });
 
-    // Additional line trains
-    for (let i = 0; i < 3; i++) {
-      const pos = (i / 3) * totalDistance * 0.6 + totalDistance * 0.2;
-      initialTrains.push({
-        id: `add-${i}`,
-        loadId: `EXP-${2001 + i}`,
-        position: pos,
-        speed: 60 + Math.random() * 30,
-        direction: 'UP',
-        status: 'running',
-        line: 'additional',
-        color: trainColors[(i + 5) % trainColors.length],
+    // Limit to top 12 trains for visibility
+    setTrains(processedTrains.slice(0, 12));
+    setLastDataUpdate(new Date());
+  }, [freightMovementsData, stations, stationDistanceMap, totalDistance]);
+
+  // Set up real-time subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel('freight-movements-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'freight_movements'
+        },
+        (payload) => {
+          console.log('Real-time update:', payload);
+          setIsConnected(true);
+          refetchMovements();
+          toast.info('Train position updated', { duration: 2000 });
+        }
+      )
+      .subscribe((status) => {
+        setIsConnected(status === 'SUBSCRIBED');
+        if (status === 'SUBSCRIBED') {
+          toast.success('Connected to real-time updates');
+        }
       });
-    }
 
-    setTrains(initialTrains);
-  }, [stations, totalDistance, trains.length]);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [refetchMovements]);
 
-  // Animation loop
+  // Animation loop for smooth train movement
   useEffect(() => {
     if (!isSimulating) {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
@@ -186,26 +301,17 @@ export function RealTimeBlockDiagram() {
       setCurrentTime(new Date());
 
       setTrains(prevTrains => prevTrains.map(train => {
-        if (train.status === 'stopped') return train;
+        if (train.status === 'stopped' || train.status === 'halted') return train;
 
         const speedKmPerSecond = (train.speed / 3600) * simulationSpeed;
         let newPosition = train.position + (train.direction === 'UP' ? speedKmPerSecond : -speedKmPerSecond) * deltaTime * 60;
 
+        // Boundary checks
         if (newPosition <= 0) {
           return { ...train, position: 0, direction: 'UP' as const };
         }
         if (newPosition >= totalDistance) {
           return { ...train, position: totalDistance, direction: 'DN' as const };
-        }
-
-        // Random halts
-        const nearStation = stations.find(s => Math.abs(s.cumulativeDistance - newPosition) < 1);
-        if (nearStation && Math.random() < 0.001 * simulationSpeed) {
-          return { ...train, position: newPosition, status: 'halted' as const };
-        }
-
-        if (train.status === 'halted' && Math.random() < 0.02 * simulationSpeed) {
-          return { ...train, position: newPosition, status: 'running' as const };
         }
 
         return { ...train, position: newPosition };
@@ -220,7 +326,7 @@ export function RealTimeBlockDiagram() {
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
     };
-  }, [isSimulating, simulationSpeed, stations, totalDistance]);
+  }, [isSimulating, simulationSpeed, totalDistance]);
 
   // Calculate KPIs
   const kpis = useMemo<KPIMetrics>(() => {
@@ -244,79 +350,51 @@ export function RealTimeBlockDiagram() {
     };
   }, [trains, stations]);
 
+  // Manual refresh
+  const handleRefresh = useCallback(() => {
+    refetchMovements();
+    toast.success('Data refreshed');
+  }, [refetchMovements]);
+
   // Render station building
-  const renderStation = (x: number, y: number, code: string, hasLoop: boolean, isJunction: boolean, signalType: 'AT' | 'AB') => (
+  const renderStation = (x: number, y: number, code: string, hasLoop: boolean, isJunction: boolean) => (
     <g>
       {/* Station platform */}
-      <rect
-        x={x - 30}
-        y={y + 8}
-        width={60}
-        height={12}
-        fill="#94a3b8"
-        stroke="#64748b"
-        strokeWidth={1}
-        rx={2}
-      />
+      <rect x={x - 30} y={y + 8} width={60} height={12} fill="#94a3b8" stroke="#64748b" strokeWidth={1} rx={2} />
       
       {/* Station building */}
       <g transform={`translate(${x}, ${y - 25})`}>
-        {/* Building base */}
         <rect x={-18} y={0} width={36} height={25} fill="#e2e8f0" stroke="#94a3b8" strokeWidth={1.5} />
-        {/* Roof */}
         <polygon points="-22,0 0,-12 22,0" fill="#475569" stroke="#334155" strokeWidth={1} />
-        {/* Door */}
         <rect x={-5} y={12} width={10} height={13} fill="#64748b" />
-        {/* Windows */}
         <rect x={-14} y={5} width={6} height={6} fill="#0ea5e9" opacity={0.7} />
         <rect x={8} y={5} width={6} height={6} fill="#0ea5e9" opacity={0.7} />
       </g>
 
       {/* Station code label */}
-      <rect
-        x={x - 16}
-        y={y + 22}
-        width={32}
-        height={14}
-        fill="#1e293b"
-        rx={2}
-      />
-      <text
-        x={x}
-        y={y + 32}
-        textAnchor="middle"
-        className="text-[9px] font-bold fill-white"
-      >
-        {code}
-      </text>
+      <rect x={x - 16} y={y + 22} width={32} height={14} fill="#1e293b" rx={2} />
+      <text x={x} y={y + 32} textAnchor="middle" className="text-[9px] font-bold fill-white">{code}</text>
 
       {/* Junction indicator */}
-      {isJunction && (
-        <circle cx={x + 22} cy={y - 30} r={6} fill="#8b5cf6" stroke="white" strokeWidth={1} />
-      )}
+      {isJunction && <circle cx={x + 22} cy={y - 30} r={6} fill="#8b5cf6" stroke="white" strokeWidth={1} />}
     </g>
   );
 
   // Render signal
   const renderSignal = (x: number, y: number, direction: 'left' | 'right', aspect: 'red' | 'yellow' | 'green' = 'green') => (
     <g transform={`translate(${x}, ${y})`}>
-      {/* Signal post */}
       <rect x={-2} y={0} width={4} height={20} fill="#374151" />
-      
-      {/* Signal head */}
       <rect x={direction === 'left' ? -14 : 2} y={-8} width={12} height={28} fill="#1e293b" stroke="#475569" rx={2} />
-      
-      {/* Signal lights */}
       <circle cx={direction === 'left' ? -8 : 8} cy={-2} r={4} fill={aspect === 'red' ? '#ef4444' : '#374151'} />
       <circle cx={direction === 'left' ? -8 : 8} cy={8} r={4} fill={aspect === 'yellow' ? '#eab308' : '#374151'} />
       <circle cx={direction === 'left' ? -8 : 8} cy={18} r={4} fill={aspect === 'green' ? '#22c55e' : '#374151'} />
     </g>
   );
 
-  // Render train
-  const renderTrain = (train: SimulatedTrain, baseY: number) => {
+  // Render train with real data
+  const renderTrain = (train: FreightTrain, baseY: number) => {
     const x = 80 + (train.position / totalDistance) * 1040;
-    const y = train.line === 'main' ? baseY : (train.line === 'additional' ? baseY + 180 : baseY - 60);
+    const y = train.line === 'additional' ? baseY + 180 : baseY;
     const isSelected = selectedTrain === train.id;
 
     return (
@@ -328,26 +406,15 @@ export function RealTimeBlockDiagram() {
         {/* Train glow effect */}
         {isSelected && (
           <rect
-            x={x - 22}
-            y={y - 12}
-            width={44}
-            height={24}
-            rx={6}
-            fill="none"
-            stroke={train.color}
-            strokeWidth={3}
-            opacity={0.5}
+            x={x - 22} y={y - 12} width={44} height={24}
+            rx={6} fill="none" stroke={train.color} strokeWidth={3} opacity={0.5}
             className="animate-pulse"
           />
         )}
 
         {/* Train body */}
         <rect
-          x={x - 18}
-          y={y - 8}
-          width={36}
-          height={16}
-          rx={4}
+          x={x - 18} y={y - 8} width={36} height={16} rx={4}
           fill={train.color}
           stroke={isSelected ? 'white' : train.color}
           strokeWidth={isSelected ? 2 : 0}
@@ -371,35 +438,40 @@ export function RealTimeBlockDiagram() {
         />
 
         {/* Train ID */}
-        <text
-          x={x}
-          y={y + 3}
-          textAnchor="middle"
-          className="text-[7px] fill-white font-bold"
-        >
+        <text x={x} y={y + 3} textAnchor="middle" className="text-[7px] fill-white font-bold">
           {train.loadId.slice(-4)}
         </text>
 
         {/* Speed indicator */}
-        <text
-          x={x}
-          y={y - 14}
-          textAnchor="middle"
-          className="text-[8px] fill-foreground font-mono"
-        >
+        <text x={x} y={y - 14} textAnchor="middle" className="text-[8px] fill-foreground font-mono">
           {Math.round(train.speed)} km/h
         </text>
 
-        {/* Halted indicator */}
+        {/* Status indicator */}
         {train.status === 'halted' && (
           <circle cx={x} cy={y - 22} r={4} fill="#ef4444" className="animate-pulse" />
         )}
 
-        {/* Direction arrow */}
-        {train.direction === 'UP' ? (
-          <ArrowRight className="text-white" x={x - 4} y={y - 4} width={8} height={8} />
-        ) : (
-          <ArrowLeft className="text-white" x={x - 4} y={y - 4} width={8} height={8} />
+        {/* Info tooltip when selected */}
+        {isSelected && (
+          <g>
+            <rect
+              x={x - 60} y={y + 20} width={120} height={55}
+              rx={4} fill="#1e293b" stroke="#475569" opacity={0.95}
+            />
+            <text x={x} y={y + 35} textAnchor="middle" className="text-[9px] fill-white font-semibold">
+              {train.loadId}
+            </text>
+            <text x={x} y={y + 47} textAnchor="middle" className="text-[8px] fill-muted-foreground">
+              {train.commodity || 'Freight'} → {train.destination || 'Unknown'}
+            </text>
+            <text x={x} y={y + 59} textAnchor="middle" className="text-[8px] fill-muted-foreground">
+              Station: {train.currentStation} • {train.direction}
+            </text>
+            <text x={x} y={y + 71} textAnchor="middle" className="text-[7px] fill-green-400">
+              Updated: {train.lastUpdate.toLocaleTimeString()}
+            </text>
+          </g>
         )}
       </g>
     );
@@ -423,6 +495,17 @@ export function RealTimeBlockDiagram() {
         <CardContent className="py-3">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-4">
+              {/* Connection status */}
+              <div className="flex items-center gap-2">
+                <div className={cn(
+                  'w-2 h-2 rounded-full',
+                  isConnected ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'
+                )} />
+                <span className="text-xs text-muted-foreground">
+                  {isConnected ? 'Live' : 'Connecting...'}
+                </span>
+              </div>
+
               <div className="flex items-center gap-2">
                 <Signal className="h-4 w-4 text-muted-foreground" />
                 <Label className="text-xs">Signals</Label>
@@ -434,12 +517,17 @@ export function RealTimeBlockDiagram() {
                 <Switch checked={showLoops} onCheckedChange={setShowLoops} />
               </div>
               <div className="flex items-center gap-2">
-                <Label className="text-xs">Additional Line</Label>
+                <Label className="text-xs">Add. Line</Label>
                 <Switch checked={showAdditionalLine} onCheckedChange={setShowAdditionalLine} />
               </div>
             </div>
 
             <div className="flex items-center gap-3">
+              <Button variant="outline" size="sm" onClick={handleRefresh}>
+                <RefreshCw className="h-4 w-4 mr-1" />
+                Refresh
+              </Button>
+
               <div className="flex items-center gap-2">
                 <Label className="text-xs">Speed:</Label>
                 <Select value={simulationSpeed.toString()} onValueChange={(v) => setSimulationSpeed(Number(v))}>
@@ -460,11 +548,11 @@ export function RealTimeBlockDiagram() {
                 variant={isSimulating ? "destructive" : "default"}
                 onClick={() => {
                   setIsSimulating(!isSimulating);
-                  if (!isSimulating) toast.success('Simulation started');
+                  if (!isSimulating) toast.success('Simulation started - trains will animate');
                 }}
               >
                 {isSimulating ? <Pause className="h-4 w-4 mr-1" /> : <Play className="h-4 w-4 mr-1" />}
-                {isSimulating ? 'Stop' : 'Start'}
+                {isSimulating ? 'Stop' : 'Animate'}
               </Button>
             </div>
           </div>
@@ -489,16 +577,22 @@ export function RealTimeBlockDiagram() {
           <div className="flex items-center justify-between">
             <div>
               <CardTitle className="flex items-center gap-2 text-lg">
-                <Activity className="h-5 w-5 text-primary" />
+                <Database className="h-5 w-5 text-primary" />
                 Real-Time Block Diagram
-                {isSimulating && (
+                {isConnected && (
                   <Badge variant="outline" className="ml-2 bg-green-500/20 text-green-500 animate-pulse">
-                    LIVE
+                    <Wifi className="h-3 w-3 mr-1" />
+                    LIVE DATA
                   </Badge>
                 )}
               </CardTitle>
               <CardDescription>
-                {stations.length} stations • {trains.length} trains • Real-time simulation with AB/AT signalling
+                {stations.length} stations • {trains.length} freight trains from database
+                {lastDataUpdate && (
+                  <span className="ml-2 text-green-500">
+                    • Last update: {lastDataUpdate.toLocaleTimeString()}
+                  </span>
+                )}
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
@@ -520,7 +614,6 @@ export function RealTimeBlockDiagram() {
             <div style={{ width: `${Math.max(100, zoomLevel * 100)}%`, minWidth: '1200px' }}>
               <svg viewBox="0 0 1200 500" className="w-full h-[500px] bg-gradient-to-b from-background to-muted/20">
                 <defs>
-                  {/* Track pattern */}
                   <pattern id="sleepers" patternUnits="userSpaceOnUse" width="16" height="12">
                     <rect x="6" y="0" width="4" height="12" fill="#64748b" opacity="0.4" />
                   </pattern>
@@ -534,19 +627,13 @@ export function RealTimeBlockDiagram() {
 
                 {/* Main line track - UP direction */}
                 <g>
-                  {/* Track bed */}
                   <rect x="60" y="125" width="1080" height="16" fill="url(#sleepers)" />
-                  {/* Rails */}
                   <line x1="60" y1="128" x2="1140" y2="128" stroke="#475569" strokeWidth="3" />
                   <line x1="60" y1="138" x2="1140" y2="138" stroke="#475569" strokeWidth="3" />
-                  
-                  {/* Direction arrows */}
                   <g className="fill-muted-foreground">
-                    <polygon points="200,133 210,128 210,138" />
-                    <polygon points="400,133 410,128 410,138" />
-                    <polygon points="600,133 610,128 610,138" />
-                    <polygon points="800,133 810,128 810,138" />
-                    <polygon points="1000,133 1010,128 1010,138" />
+                    {[200, 400, 600, 800, 1000].map(x => (
+                      <polygon key={x} points={`${x},133 ${x + 10},128 ${x + 10},138`} />
+                    ))}
                   </g>
                 </g>
 
@@ -555,14 +642,10 @@ export function RealTimeBlockDiagram() {
                   <rect x="60" y="165" width="1080" height="16" fill="url(#sleepers)" />
                   <line x1="60" y1="168" x2="1140" y2="168" stroke="#475569" strokeWidth="3" />
                   <line x1="60" y1="178" x2="1140" y2="178" stroke="#475569" strokeWidth="3" />
-                  
-                  {/* Direction arrows (opposite direction) */}
                   <g className="fill-muted-foreground">
-                    <polygon points="250,173 240,168 240,178" />
-                    <polygon points="450,173 440,168 440,178" />
-                    <polygon points="650,173 640,168 640,178" />
-                    <polygon points="850,173 840,168 840,178" />
-                    <polygon points="1050,173 1040,168 1040,178" />
+                    {[250, 450, 650, 850, 1050].map(x => (
+                      <polygon key={x} points={`${x},173 ${x - 10},168 ${x - 10},178`} />
+                    ))}
                   </g>
                 </g>
 
@@ -572,20 +655,18 @@ export function RealTimeBlockDiagram() {
                     <rect x="60" y="305" width="1080" height="16" fill="url(#sleepers)" />
                     <line x1="60" y1="308" x2="1140" y2="308" stroke="#475569" strokeWidth="3" />
                     <line x1="60" y1="318" x2="1140" y2="318" stroke="#475569" strokeWidth="3" />
-                    
                     <g className="fill-muted-foreground">
-                      <polygon points="300,313 310,308 310,318" />
-                      <polygon points="600,313 610,308 610,318" />
-                      <polygon points="900,313 910,308 910,318" />
+                      {[300, 600, 900].map(x => (
+                        <polygon key={x} points={`${x},313 ${x + 10},308 ${x + 10},318`} />
+                      ))}
                     </g>
                   </g>
                 )}
 
-                {/* Block section labels and backgrounds */}
+                {/* Block section labels */}
                 {stations.slice(0, -1).map((station, idx) => {
                   const nextStation = stations[idx + 1];
                   if (!nextStation) return null;
-
                   const x1 = 80 + (station.cumulativeDistance / totalDistance) * 1040;
                   const x2 = 80 + (nextStation.cumulativeDistance / totalDistance) * 1040;
                   const isAT = station.signalType === 'AT';
@@ -593,23 +674,15 @@ export function RealTimeBlockDiagram() {
 
                   return (
                     <g key={`section-${station.code}`}>
-                      {/* Section highlight */}
                       <rect
-                        x={x1}
-                        y={110}
-                        width={x2 - x1}
-                        height={85}
+                        x={x1} y={110} width={x2 - x1} height={85}
                         fill={isAT ? 'rgba(34, 197, 94, 0.05)' : 'rgba(234, 179, 8, 0.05)'}
                         stroke={isAT ? 'rgba(34, 197, 94, 0.2)' : 'rgba(234, 179, 8, 0.2)'}
                         strokeDasharray={isAT ? '' : '8,4'}
                       />
-
-                      {/* Section type label */}
                       <text x={midX} y="105" textAnchor="middle" className="text-[10px] fill-muted-foreground">
                         {isAT ? 'Automatic Block (AT)' : 'Absolute Block (AB)'}
                       </text>
-
-                      {/* AT section signal spacing */}
                       {isAT && showSignals && (
                         <g>
                           {Array.from({ length: Math.floor((x2 - x1) / 40) }).map((_, i) => {
@@ -617,9 +690,7 @@ export function RealTimeBlockDiagram() {
                             if (sigX > x2 - 30) return null;
                             return (
                               <g key={`at-sig-${idx}-${i}`}>
-                                <text x={sigX} y="98" textAnchor="middle" className="text-[7px] fill-green-500">
-                                  1.2 km
-                                </text>
+                                <text x={sigX} y="98" textAnchor="middle" className="text-[7px] fill-green-500">1.2 km</text>
                                 <line x1={sigX - 15} y1="100" x2={sigX + 15} y2="100" stroke="#22c55e" strokeWidth="1" strokeDasharray="2,2" />
                               </g>
                             );
@@ -631,68 +702,42 @@ export function RealTimeBlockDiagram() {
                 })}
 
                 {/* Loop lines */}
-                {showLoops && stations.filter(s => s.hasLoop).map((station, idx) => {
+                {showLoops && stations.filter(s => s.hasLoop).map((station) => {
                   const x = 80 + (station.cumulativeDistance / totalDistance) * 1040;
-                  
                   return (
                     <g key={`loop-${station.code}`}>
-                      {/* Loop track */}
                       <path
                         d={`M ${x - 50} 128 C ${x - 50} 70, ${x - 30} 50, ${x} 50 C ${x + 30} 50, ${x + 50} 70, ${x + 50} 128`}
-                        fill="none"
-                        stroke="#475569"
-                        strokeWidth="3"
+                        fill="none" stroke="#475569" strokeWidth="3"
                       />
-                      
-                      {/* Loop label */}
                       <text x={x} y="40" textAnchor="middle" className="text-[9px] fill-indigo-400 font-medium">
                         {station.code} Loop
                       </text>
-
-                      {/* Loop signals */}
                       {showSignals && (
                         <>
                           {renderSignal(x - 45, 60, 'right', 'green')}
                           {renderSignal(x + 45, 60, 'left', 'red')}
                         </>
                       )}
-
-                      {/* Switch/Points indicators */}
                       <circle cx={x - 50} cy={128} r={4} fill="#f97316" />
                       <circle cx={x + 50} cy={128} r={4} fill="#f97316" />
                     </g>
                   );
                 })}
 
-                {/* Cross lines connecting main to additional */}
+                {/* Cross lines */}
                 {showAdditionalLine && stations.filter((_, i) => i % 3 === 1).slice(0, 2).map((station, idx) => {
                   const x = 80 + (station.cumulativeDistance / totalDistance) * 1040;
-                  
                   return (
                     <g key={`cross-${station.code}`}>
-                      {/* Cross line track */}
-                      <path
-                        d={`M ${x - 20} 178 C ${x - 20} 220, ${x - 60} 260, ${x - 80} 308`}
-                        fill="none"
-                        stroke="#475569"
-                        strokeWidth="2.5"
-                      />
-                      <path
-                        d={`M ${x + 20} 178 C ${x + 20} 220, ${x + 60} 260, ${x + 80} 308`}
-                        fill="none"
-                        stroke="#475569"
-                        strokeWidth="2.5"
-                      />
-                      
-                      {/* Cross line signals */}
+                      <path d={`M ${x - 20} 178 C ${x - 20} 220, ${x - 60} 260, ${x - 80} 308`} fill="none" stroke="#475569" strokeWidth="2.5" />
+                      <path d={`M ${x + 20} 178 C ${x + 20} 220, ${x + 60} 260, ${x + 80} 308`} fill="none" stroke="#475569" strokeWidth="2.5" />
                       {showSignals && (
                         <>
                           {renderSignal(x - 30, 210, 'right', 'yellow')}
                           {renderSignal(x + 30, 210, 'left', 'yellow')}
                         </>
                       )}
-
-                      {/* Points indicators */}
                       <circle cx={x - 20} cy={178} r={4} fill="#f97316" />
                       <circle cx={x + 20} cy={178} r={4} fill="#f97316" />
                       <circle cx={x - 80} cy={308} r={4} fill="#f97316" />
@@ -701,22 +746,18 @@ export function RealTimeBlockDiagram() {
                   );
                 })}
 
-                {/* Stations on main line */}
-                {stations.map((station, idx) => {
+                {/* Stations */}
+                {stations.map((station) => {
                   const x = 80 + (station.cumulativeDistance / totalDistance) * 1040;
                   return (
                     <g key={station.code}>
-                      {renderStation(x, 155, station.code, station.hasLoop, station.isJunction, station.signalType)}
-                      
-                      {/* Signals at station */}
+                      {renderStation(x, 155, station.code, station.hasLoop, station.isJunction)}
                       {showSignals && (
                         <>
                           {renderSignal(x - 35, 115, 'right', 'green')}
                           {renderSignal(x + 35, 115, 'left', 'green')}
                         </>
                       )}
-
-                      {/* Distance marker */}
                       <text x={x} y={210} textAnchor="middle" className="text-[8px] fill-muted-foreground font-mono">
                         {station.cumulativeDistance.toFixed(1)} km
                       </text>
@@ -724,15 +765,12 @@ export function RealTimeBlockDiagram() {
                   );
                 })}
 
-                {/* Stations on additional line */}
+                {/* Additional line stations */}
                 {showAdditionalLine && stations.filter((_, i) => i % 2 === 1).slice(0, 3).map((station, idx) => {
                   const x = 180 + idx * 350;
-                  const addCode = `S${idx + 4}`;
-                  
                   return (
-                    <g key={`add-${addCode}`}>
-                      {renderStation(x, 335, addCode, false, false, 'AT')}
-                      
+                    <g key={`add-${idx}`}>
+                      {renderStation(x, 335, `S${idx + 4}`, false, false)}
                       {showSignals && (
                         <>
                           {renderSignal(x - 35, 295, 'right', 'green')}
@@ -743,56 +781,46 @@ export function RealTimeBlockDiagram() {
                   );
                 })}
 
-                {/* Trains */}
-                {trains.filter(t => t.line === 'main').map(train => renderTrain(train, 133))}
-                {trains.filter(t => t.line === 'main').map(train => {
-                  // DN trains on second track
-                  if (train.direction === 'DN') {
-                    return (
-                      <g key={`dn-${train.id}`}>
-                        {renderTrain({ ...train, id: `dn-render-${train.id}` }, 173)}
-                      </g>
-                    );
-                  }
-                  return null;
-                })}
-                {showAdditionalLine && trains.filter(t => t.line === 'additional').map(train => renderTrain(train, 133))}
+                {/* Trains from database */}
+                {trains.map(train => renderTrain(train, 133))}
 
                 {/* Legend */}
                 <g transform="translate(60, 420)">
                   <rect x={0} y={0} width={1080} height={70} fill="rgba(30, 41, 59, 0.5)" rx={4} />
-                  
                   <text x={20} y={20} className="text-[11px] fill-foreground font-semibold">Legend:</text>
                   
-                  {/* AB Section */}
                   <rect x={20} y={30} width={40} height={20} fill="rgba(234, 179, 8, 0.2)" stroke="#eab308" strokeDasharray="4,2" rx={2} />
-                  <text x={70} y={43} className="text-[9px] fill-muted-foreground">[AB] Absolute Block - One train allowed</text>
+                  <text x={70} y={43} className="text-[9px] fill-muted-foreground">[AB] Absolute Block</text>
                   
-                  {/* AT Section */}
-                  <rect x={280} y={30} width={40} height={20} fill="rgba(34, 197, 94, 0.2)" stroke="#22c55e" rx={2} />
-                  <text x={330} y={43} className="text-[9px] fill-muted-foreground">[AT] Automatic Block - Multiple trains (1.2 km spacing)</text>
+                  <rect x={220} y={30} width={40} height={20} fill="rgba(34, 197, 94, 0.2)" stroke="#22c55e" rx={2} />
+                  <text x={270} y={43} className="text-[9px] fill-muted-foreground">[AT] Automatic Block</text>
                   
-                  {/* Signal */}
-                  <g transform="translate(600, 35)">
+                  <g transform="translate(430, 35)">
                     <rect x={0} y={-5} width={8} height={18} fill="#1e293b" rx={1} />
                     <circle cx={4} cy={-1} r={3} fill="#ef4444" />
                     <circle cx={4} cy={6} r={3} fill="#374151" />
                     <circle cx={4} cy={13} r={3} fill="#374151" />
                   </g>
-                  <text x={620} y={43} className="text-[9px] fill-muted-foreground">Signal</text>
+                  <text x={450} y={43} className="text-[9px] fill-muted-foreground">Signal</text>
                   
-                  {/* Loop */}
-                  <path d="M 700 40 C 700 30, 720 25, 740 30 C 755 35, 755 45, 740 50" fill="none" stroke="#475569" strokeWidth="2" />
-                  <text x={770} y={43} className="text-[9px] fill-muted-foreground">Loop Line</text>
+                  <circle cx={530} cy={40} r={5} fill="#f97316" />
+                  <text x={545} y={43} className="text-[9px] fill-muted-foreground">Points</text>
                   
-                  {/* Points */}
-                  <circle cx={860} cy={40} r={5} fill="#f97316" />
-                  <text x={875} y={43} className="text-[9px] fill-muted-foreground">Points/Switch</text>
-                  
-                  {/* Train */}
-                  <rect x={960} y={32} width={30} height={14} rx={3} fill="#3b82f6" />
-                  <polygon points="990,39 996,32 996,46" fill="#3b82f6" />
-                  <text x={1010} y={43} className="text-[9px] fill-muted-foreground">Train</text>
+                  <rect x={610} y={32} width={30} height={14} rx={3} fill="#3b82f6" />
+                  <text x={650} y={43} className="text-[9px] fill-muted-foreground">Train</text>
+
+                  {/* Commodity colors */}
+                  <text x={720} y={20} className="text-[9px] fill-muted-foreground">Commodities:</text>
+                  <rect x={720} y={30} width={16} height={12} rx={2} fill={commodityColors.COAL} />
+                  <text x={740} y={40} className="text-[7px] fill-muted-foreground">Coal</text>
+                  <rect x={780} y={30} width={16} height={12} rx={2} fill={commodityColors.IRON} />
+                  <text x={800} y={40} className="text-[7px] fill-muted-foreground">Iron</text>
+                  <rect x={840} y={30} width={16} height={12} rx={2} fill={commodityColors.CEMENT} />
+                  <text x={860} y={40} className="text-[7px] fill-muted-foreground">Cement</text>
+                  <rect x={920} y={30} width={16} height={12} rx={2} fill={commodityColors.OIL} />
+                  <text x={940} y={40} className="text-[7px] fill-muted-foreground">Oil</text>
+                  <rect x={980} y={30} width={16} height={12} rx={2} fill={commodityColors.FOOD} />
+                  <text x={1000} y={40} className="text-[7px] fill-muted-foreground">Food</text>
                 </g>
               </svg>
             </div>
@@ -805,27 +833,27 @@ export function RealTimeBlockDiagram() {
       <Card className="bg-card/50 backdrop-blur border-border/50">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <Train className="h-4 w-4" />
-            Active Trains ({trains.length})
+            <Database className="h-4 w-4" />
+            Freight Trains from Database ({trains.length})
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
             {trains.map(train => (
               <div
                 key={train.id}
                 className={cn(
-                  'p-2 rounded-lg border cursor-pointer transition-all hover:scale-105',
+                  'p-3 rounded-lg border cursor-pointer transition-all hover:scale-[1.02]',
                   selectedTrain === train.id ? 'border-primary bg-primary/10 ring-2 ring-primary/20' : 'border-border/50 hover:border-primary/50',
                   train.status === 'halted' && 'border-red-500/50 bg-red-500/10'
                 )}
                 onClick={() => setSelectedTrain(selectedTrain === train.id ? null : train.id)}
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: train.color }} />
-                  <span className="text-xs font-mono truncate">{train.loadId}</span>
+                  <div className="w-4 h-4 rounded-full" style={{ backgroundColor: train.color }} />
+                  <span className="text-sm font-mono font-semibold truncate">{train.loadId}</span>
                 </div>
-                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
                   <span className="flex items-center gap-1">
                     {train.direction === 'UP' ? <ArrowRight className="h-3 w-3" /> : <ArrowLeft className="h-3 w-3" />}
                     {train.speed.toFixed(0)} km/h
@@ -833,18 +861,29 @@ export function RealTimeBlockDiagram() {
                   <Badge
                     variant="outline"
                     className={cn(
-                      'text-[8px] px-1',
+                      'text-[9px] px-1',
                       train.status === 'running' && 'bg-green-500/20 text-green-500',
-                      train.status === 'halted' && 'bg-red-500/20 text-red-500'
+                      train.status === 'halted' && 'bg-red-500/20 text-red-500',
+                      train.status === 'stopped' && 'bg-yellow-500/20 text-yellow-500'
                     )}
                   >
                     {train.status}
                   </Badge>
                 </div>
-                <div className="text-[9px] text-muted-foreground mt-1">
-                  {train.line === 'main' ? 'Main Line' : 'Additional'}
-                  {train.commodity && ` • ${train.commodity}`}
+                <div className="text-[10px] text-muted-foreground">
+                  {train.commodity && (
+                    <span className="inline-flex items-center gap-1 mr-2">
+                      <span className="w-2 h-2 rounded-full" style={{ backgroundColor: train.color }} />
+                      {train.commodity}
+                    </span>
+                  )}
+                  @ {train.currentStation}
                 </div>
+                {train.destination && (
+                  <div className="text-[10px] text-blue-400 mt-1">
+                    → {train.destination}
+                  </div>
+                )}
               </div>
             ))}
           </div>
