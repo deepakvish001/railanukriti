@@ -2,9 +2,9 @@ import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { ZoomIn, ZoomOut, RotateCcw, Download, Loader2, Train, MapPin, Clock, ArrowRight, Package, Users, X } from 'lucide-react';
+import { ZoomIn, ZoomOut, RotateCcw, Download, Loader2, Train, MapPin, Clock, ArrowRight, Package, Users, X, AlertTriangle, CheckCircle } from 'lucide-react';
 import { useRouteStations } from '@/hooks/useFreightData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -103,7 +103,9 @@ export function DistanceTimeChart() {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [hoveredTrain, setHoveredTrain] = useState<string | null>(null);
   const [selectedTrain, setSelectedTrain] = useState<SelectedTrainInfo | null>(null);
+  const [selectedDisruption, setSelectedDisruption] = useState<Disruption | null>(null);
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
+  const [isResolvingDisruption, setIsResolvingDisruption] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const svgRef = useRef<SVGSVGElement>(null);
   const queryClient = useQueryClient();
@@ -533,6 +535,37 @@ export function DistanceTimeChart() {
     }
   };
 
+  // Handle resolving a disruption
+  const handleResolveDisruption = async () => {
+    if (!selectedDisruption) return;
+    
+    setIsResolvingDisruption(true);
+    try {
+      const { error } = await supabase
+        .from('disruptions')
+        .update({
+          is_active: false,
+          resolved_at: new Date().toISOString(),
+        })
+        .eq('id', selectedDisruption.id);
+
+      if (error) throw error;
+      
+      toast.success('Disruption resolved', {
+        description: `${selectedDisruption.disruption_type} at ${selectedDisruption.station_code || selectedDisruption.block_section_code} has been cleared.`
+      });
+      
+      setSelectedDisruption(null);
+      queryClient.invalidateQueries({ queryKey: ['disruptions-chart'] });
+    } catch (error: any) {
+      toast.error('Failed to resolve disruption', {
+        description: error.message
+      });
+    } finally {
+      setIsResolvingDisruption(false);
+    }
+  };
+
   const activeDisruptions = disruptions?.filter(d => d.is_active) ?? [];
 
   if (freightLoading || passengerLoading || stationsLoading) {
@@ -683,9 +716,15 @@ export function DistanceTimeChart() {
               const severityColor = disruption.severity === 'critical' ? '#EF4444' : 
                                    disruption.severity === 'high' ? '#F97316' :
                                    disruption.severity === 'major' ? '#F97316' : COLORS.disruption;
+              
+              const isSelected = selectedDisruption?.id === disruption.id;
 
               return (
-                <g key={disruption.id}>
+                <g 
+                  key={disruption.id} 
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setSelectedDisruption(disruption)}
+                >
                   {/* Disruption rectangle */}
                   <rect
                     x={x1}
@@ -693,10 +732,10 @@ export function DistanceTimeChart() {
                     width={rectWidth}
                     height={bandHeight}
                     fill={severityColor}
-                    opacity={0.4}
-                    stroke={severityColor}
-                    strokeWidth={1}
-                    strokeDasharray="4,2"
+                    opacity={isSelected ? 0.7 : 0.4}
+                    stroke={isSelected ? '#000' : severityColor}
+                    strokeWidth={isSelected ? 2 : 1}
+                    strokeDasharray={isSelected ? "0" : "4,2"}
                   />
                   {/* Disruption pattern overlay */}
                   <pattern id={`diag-${disruption.id}`} patternUnits="userSpaceOnUse" width="8" height="8">
@@ -709,10 +748,40 @@ export function DistanceTimeChart() {
                     height={bandHeight}
                     fill={`url(#diag-${disruption.id})`}
                   />
+                  {/* Alert icon */}
+                  <circle
+                    cx={x1 + 12}
+                    cy={yPos}
+                    r={8}
+                    fill={severityColor}
+                    stroke="white"
+                    strokeWidth={1}
+                  >
+                    {!isSelected && (
+                      <animate
+                        attributeName="opacity"
+                        values="1;0.5;1"
+                        dur="1.5s"
+                        repeatCount="indefinite"
+                      />
+                    )}
+                  </circle>
+                  <text
+                    x={x1 + 12}
+                    y={yPos + 1}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fill="white"
+                    fontSize="10"
+                    fontWeight="bold"
+                    fontFamily="system-ui"
+                  >
+                    !
+                  </text>
                   {/* Disruption label */}
-                  {rectWidth > 80 && (
+                  {rectWidth > 100 && (
                     <text
-                      x={x1 + rectWidth / 2}
+                      x={x1 + 28 + (rectWidth - 28) / 2}
                       y={yPos}
                       textAnchor="middle"
                       dominantBaseline="middle"
@@ -1014,7 +1083,12 @@ export function DistanceTimeChart() {
             {/* Disruption window */}
             <div className="flex items-center gap-2">
               <div className="w-4 h-4 rounded" style={{ backgroundColor: COLORS.disruption, opacity: 0.5 }} />
-              <span className="text-gray-600">Disruption window</span>
+              <span className="text-gray-600">Disruption (click to resolve)</span>
+            </div>
+            {/* Affected trains */}
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-0.5 rounded" style={{ backgroundColor: COLORS.affected }} />
+              <span className="text-gray-600">Affected by disruption</span>
             </div>
             {/* Prioritization decision */}
             <div className="flex items-center gap-2">
@@ -1169,6 +1243,115 @@ export function DistanceTimeChart() {
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Disruption Details Dialog */}
+      <Dialog open={!!selectedDisruption} onOpenChange={() => setSelectedDisruption(null)}>
+        <DialogContent className="max-w-md bg-white border-gray-200">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className={`w-5 h-5 ${
+                selectedDisruption?.severity === 'critical' ? 'text-red-500' : 
+                selectedDisruption?.severity === 'high' ? 'text-orange-500' : 'text-amber-500'
+              }`} />
+              <span>Disruption Details</span>
+            </DialogTitle>
+          </DialogHeader>
+
+          {selectedDisruption && (
+            <div className="space-y-4">
+              {/* Type & Severity */}
+              <div className="flex items-center gap-2">
+                <Badge className={`${
+                  selectedDisruption.severity === 'critical' ? 'bg-red-100 text-red-800' :
+                  selectedDisruption.severity === 'high' ? 'bg-orange-100 text-orange-800' :
+                  'bg-amber-100 text-amber-800'
+                }`}>
+                  {selectedDisruption.severity.toUpperCase()}
+                </Badge>
+                <Badge variant="outline" className="font-mono">
+                  {selectedDisruption.disruption_type}
+                </Badge>
+              </div>
+
+              {/* Location */}
+              <div className="p-3 bg-gray-50 rounded-lg border">
+                <div className="flex items-center gap-2 text-sm">
+                  <MapPin className="w-4 h-4 text-gray-500" />
+                  <span className="font-medium">Location:</span>
+                  <span className="text-gray-700">
+                    {selectedDisruption.station_code || selectedDisruption.block_section_code || 'Unknown'}
+                  </span>
+                </div>
+                {selectedDisruption.affected_direction && (
+                  <div className="flex items-center gap-2 text-sm mt-2">
+                    <ArrowRight className="w-4 h-4 text-gray-500" />
+                    <span className="font-medium">Direction:</span>
+                    <span className="text-gray-700">{selectedDisruption.affected_direction}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Time Info */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                  <p className="text-xs text-red-600 font-medium">Started</p>
+                  <p className="text-sm font-bold text-red-800">
+                    {format(parseISO(selectedDisruption.start_time), 'MMM d, HH:mm')}
+                  </p>
+                </div>
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <p className="text-xs text-gray-600 font-medium">Duration</p>
+                  <p className="text-sm font-bold text-gray-800">
+                    {differenceInMinutes(new Date(), parseISO(selectedDisruption.start_time))} min
+                  </p>
+                </div>
+              </div>
+
+              {/* Description */}
+              {selectedDisruption.description && (
+                <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                  <p className="text-xs text-amber-600 font-medium mb-1">Description</p>
+                  <p className="text-sm text-amber-900">{selectedDisruption.description}</p>
+                </div>
+              )}
+
+              {/* Affected Trains Count */}
+              {allPaths.filter(p => p.isAffected).length > 0 && (
+                <div className="p-3 bg-orange-50 rounded-lg border border-orange-200">
+                  <div className="flex items-center gap-2">
+                    <Train className="w-4 h-4 text-orange-600" />
+                    <span className="text-sm font-medium text-orange-800">
+                      {allPaths.filter(p => p.isAffected).length} trains affected
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="flex gap-2 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setSelectedDisruption(null)}
+              className="flex-1"
+            >
+              Close
+            </Button>
+            <Button
+              onClick={handleResolveDisruption}
+              disabled={isResolvingDisruption}
+              className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+            >
+              {isResolvingDisruption ? (
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              ) : (
+                <CheckCircle className="w-4 h-4 mr-2" />
+              )}
+              Resolve Disruption
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </Card>
