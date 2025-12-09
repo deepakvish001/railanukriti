@@ -10,12 +10,18 @@ import {
   Play, Pause, RotateCcw, Train, Gauge, 
   TrendingUp, Clock, AlertTriangle, 
   GitBranch, ArrowRight, ArrowLeft, Zap, Plus, Minus,
-  Activity, BarChart3, Signal, RefreshCw, Database, Wifi
+  Activity, BarChart3, Signal, RefreshCw, Database, Wifi,
+  Edit3, Wrench, X, Check, Trash2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 // Types
 interface Station {
@@ -55,7 +61,14 @@ interface KPIMetrics {
   abSections: number;
   atSections: number;
   totalLoops: number;
+  totalCrossovers: number;
   conflictRisk: number;
+  capacityGain: number;
+}
+
+interface InfrastructureEdit {
+  stationCode: string;
+  type: 'loop' | 'crossover' | 'upgrade_at';
 }
 
 // Train colors based on commodity
@@ -91,6 +104,12 @@ export function RealTimeBlockDiagram() {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [isConnected, setIsConnected] = useState(false);
   const [lastDataUpdate, setLastDataUpdate] = useState<Date | null>(null);
+  
+  // Infrastructure editing state
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [pendingEdits, setPendingEdits] = useState<InfrastructureEdit[]>([]);
+  const [selectedStation, setSelectedStation] = useState<string | null>(null);
+  const [localStationOverrides, setLocalStationOverrides] = useState<Map<string, { hasLoop?: boolean; hasCrossover?: boolean; signalType?: 'AT' | 'AB' }>>(new Map());
   
   const animationRef = useRef<number | null>(null);
   const lastUpdateRef = useRef<number>(Date.now());
@@ -328,33 +347,138 @@ export function RealTimeBlockDiagram() {
     };
   }, [isSimulating, simulationSpeed, totalDistance]);
 
+  // Calculate KPIs with infrastructure edits included
+  const effectiveStations = useMemo(() => {
+    return stations.map(s => {
+      const override = localStationOverrides.get(s.code);
+      if (!override) return s;
+      return {
+        ...s,
+        hasLoop: override.hasLoop ?? s.hasLoop,
+        signalType: override.signalType ?? s.signalType,
+      };
+    });
+  }, [stations, localStationOverrides]);
+
+  const crossoverCount = useMemo(() => {
+    let count = 0;
+    localStationOverrides.forEach(override => {
+      if (override.hasCrossover) count++;
+    });
+    return count;
+  }, [localStationOverrides]);
+
   // Calculate KPIs
   const kpis = useMemo<KPIMetrics>(() => {
     const runningTrains = trains.filter(t => t.status === 'running').length;
     const avgSpeed = trains.length > 0 ? trains.reduce((sum, t) => sum + t.speed, 0) / trains.length : 0;
-    const abSections = stations.filter(s => s.signalType === 'AB').length;
-    const atSections = stations.filter(s => s.signalType === 'AT').length;
-    const totalLoops = stations.reduce((sum, s) => sum + (s.hasLoop ? 1 : 0), 0);
-    const sectionCapacity = (atSections * 12) + (abSections * 6);
-    const utilization = sectionCapacity > 0 ? Math.min(100, (trains.length / sectionCapacity) * 100) : 0;
+    const abSections = effectiveStations.filter(s => s.signalType === 'AB').length;
+    const atSections = effectiveStations.filter(s => s.signalType === 'AT').length;
+    const totalLoops = effectiveStations.reduce((sum, s) => sum + (s.hasLoop ? 1 : 0), 0);
+    
+    // Capacity calculation: AT=12 trains/hr, AB=6 trains/hr, +2 per loop, +1 per crossover
+    const baseCapacity = (atSections * 12) + (abSections * 6);
+    const loopBonus = totalLoops * 2;
+    const crossoverBonus = crossoverCount * 1;
+    const totalCapacity = baseCapacity + loopBonus + crossoverBonus;
+    
+    const utilization = totalCapacity > 0 ? Math.min(100, (trains.length / totalCapacity) * 100) : 0;
+
+    // Calculate capacity gain from pending edits
+    const originalAT = stations.filter(s => s.signalType === 'AT').length;
+    const originalLoops = stations.reduce((sum, s) => sum + (s.hasLoop ? 1 : 0), 0);
+    const originalCapacity = (originalAT * 12) + ((stations.length - originalAT) * 6) + (originalLoops * 2);
+    const capacityGain = totalCapacity - originalCapacity;
 
     return {
-      throughputTrainsPerHour: atSections * 4 + abSections * 2,
+      throughputTrainsPerHour: atSections * 4 + abSections * 2 + totalLoops + crossoverCount,
       avgSpeed: Math.round(avgSpeed),
       utilization: Math.round(utilization),
       activeTrains: runningTrains,
       abSections,
       atSections,
       totalLoops,
-      conflictRisk: abSections > atSections ? 35 : 15,
+      totalCrossovers: crossoverCount,
+      conflictRisk: Math.max(5, 40 - (atSections * 3) - (totalLoops * 2) - (crossoverCount * 1)),
+      capacityGain,
     };
-  }, [trains, stations]);
+  }, [trains, effectiveStations, stations, crossoverCount]);
 
   // Manual refresh
   const handleRefresh = useCallback(() => {
     refetchMovements();
     toast.success('Data refreshed');
   }, [refetchMovements]);
+
+  // Infrastructure editing handlers
+  const handleAddLoop = useCallback((stationCode: string) => {
+    setLocalStationOverrides(prev => {
+      const newMap = new Map(prev);
+      const existing = newMap.get(stationCode) || {};
+      newMap.set(stationCode, { ...existing, hasLoop: true });
+      return newMap;
+    });
+    setPendingEdits(prev => [...prev, { stationCode, type: 'loop' }]);
+    toast.success(`Loop line added at ${stationCode}`);
+  }, []);
+
+  const handleAddCrossover = useCallback((stationCode: string) => {
+    setLocalStationOverrides(prev => {
+      const newMap = new Map(prev);
+      const existing = newMap.get(stationCode) || {};
+      newMap.set(stationCode, { ...existing, hasCrossover: true });
+      return newMap;
+    });
+    setPendingEdits(prev => [...prev, { stationCode, type: 'crossover' }]);
+    toast.success(`Crossover added near ${stationCode}`);
+  }, []);
+
+  const handleUpgradeToAT = useCallback((stationCode: string) => {
+    setLocalStationOverrides(prev => {
+      const newMap = new Map(prev);
+      const existing = newMap.get(stationCode) || {};
+      newMap.set(stationCode, { ...existing, signalType: 'AT' });
+      return newMap;
+    });
+    setPendingEdits(prev => [...prev, { stationCode, type: 'upgrade_at' }]);
+    toast.success(`Section upgraded to Automatic Block at ${stationCode}`);
+  }, []);
+
+  const handleRemoveEdit = useCallback((index: number) => {
+    const edit = pendingEdits[index];
+    if (!edit) return;
+    
+    setLocalStationOverrides(prev => {
+      const newMap = new Map(prev);
+      const existing = newMap.get(edit.stationCode);
+      if (existing) {
+        if (edit.type === 'loop') delete existing.hasLoop;
+        if (edit.type === 'crossover') delete existing.hasCrossover;
+        if (edit.type === 'upgrade_at') delete existing.signalType;
+        if (Object.keys(existing).length === 0) {
+          newMap.delete(edit.stationCode);
+        } else {
+          newMap.set(edit.stationCode, existing);
+        }
+      }
+      return newMap;
+    });
+    setPendingEdits(prev => prev.filter((_, i) => i !== index));
+    toast.info('Edit removed');
+  }, [pendingEdits]);
+
+  const handleClearAllEdits = useCallback(() => {
+    setLocalStationOverrides(new Map());
+    setPendingEdits([]);
+    setSelectedStation(null);
+    toast.info('All edits cleared');
+  }, []);
+
+  const handleApplyEdits = useCallback(async () => {
+    // In a real implementation, this would save to the database
+    toast.success(`Applied ${pendingEdits.length} infrastructure changes - KPIs updated!`);
+    // Keep the edits applied visually
+  }, [pendingEdits]);
 
   // Render station building
   const renderStation = (x: number, y: number, code: string, hasLoop: boolean, isJunction: boolean) => (
@@ -523,6 +647,17 @@ export function RealTimeBlockDiagram() {
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Edit Mode Toggle */}
+              <Button 
+                variant={isEditMode ? "default" : "outline"} 
+                size="sm" 
+                onClick={() => setIsEditMode(!isEditMode)}
+                className={cn(isEditMode && "bg-primary")}
+              >
+                <Edit3 className="h-4 w-4 mr-1" />
+                {isEditMode ? 'Editing' : 'Edit Infra'}
+              </Button>
+
               <Button variant="outline" size="sm" onClick={handleRefresh}>
                 <RefreshCw className="h-4 w-4 mr-1" />
                 Refresh
@@ -559,16 +694,76 @@ export function RealTimeBlockDiagram() {
         </CardContent>
       </Card>
 
+      {/* Pending Edits Panel */}
+      {isEditMode && pendingEdits.length > 0 && (
+        <Card className="bg-primary/5 border-primary/30">
+          <CardContent className="py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Wrench className="h-4 w-4 text-primary" />
+                <span className="text-sm font-medium">
+                  {pendingEdits.length} Pending Infrastructure Changes
+                </span>
+                {kpis.capacityGain > 0 && (
+                  <Badge variant="outline" className="bg-green-500/20 text-green-500">
+                    +{kpis.capacityGain} capacity gain
+                  </Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="ghost" onClick={handleClearAllEdits}>
+                  <X className="h-4 w-4 mr-1" />
+                  Clear All
+                </Button>
+                <Button size="sm" variant="default" onClick={handleApplyEdits}>
+                  <Check className="h-4 w-4 mr-1" />
+                  Apply Changes
+                </Button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {pendingEdits.map((edit, idx) => (
+                <Badge key={idx} variant="secondary" className="gap-1">
+                  {edit.type === 'loop' && <GitBranch className="h-3 w-3" />}
+                  {edit.type === 'crossover' && <ArrowRight className="h-3 w-3" />}
+                  {edit.type === 'upgrade_at' && <Zap className="h-3 w-3" />}
+                  {edit.stationCode}: {edit.type === 'loop' ? 'Loop' : edit.type === 'crossover' ? 'Crossover' : 'AB→AT'}
+                  <button onClick={() => handleRemoveEdit(idx)} className="ml-1 hover:text-destructive">
+                    <X className="h-3 w-3" />
+                  </button>
+                </Badge>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Edit Mode Instructions */}
+      {isEditMode && pendingEdits.length === 0 && (
+        <Card className="bg-amber-500/10 border-amber-500/30">
+          <CardContent className="py-3 flex items-center gap-3">
+            <Edit3 className="h-4 w-4 text-amber-500" />
+            <span className="text-sm text-amber-200">
+              Click on any station in the diagram to add loops, crossovers, or upgrade AB→AT sections. KPIs update in real-time.
+            </span>
+          </CardContent>
+        </Card>
+      )}
+
       {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-10 gap-2">
         <KPICard label="Active" value={kpis.activeTrains} icon={<Train className="h-3 w-3" />} />
-        <KPICard label="Throughput" value={`${kpis.throughputTrainsPerHour}/hr`} icon={<TrendingUp className="h-3 w-3" />} />
+        <KPICard label="Throughput" value={`${kpis.throughputTrainsPerHour}/hr`} icon={<TrendingUp className="h-3 w-3" />} highlight={kpis.capacityGain > 0} />
         <KPICard label="Avg Speed" value={`${kpis.avgSpeed}`} icon={<Gauge className="h-3 w-3" />} />
         <KPICard label="Utilization" value={`${kpis.utilization}%`} icon={<BarChart3 className="h-3 w-3" />} />
-        <KPICard label="AT Sections" value={kpis.atSections} icon={<Zap className="h-3 w-3 text-green-500" />} />
+        <KPICard label="AT Sections" value={kpis.atSections} icon={<Zap className="h-3 w-3 text-green-500" />} highlight={kpis.atSections > stations.filter(s => s.signalType === 'AT').length} />
         <KPICard label="AB Sections" value={kpis.abSections} icon={<Clock className="h-3 w-3 text-amber-500" />} />
-        <KPICard label="Loops" value={kpis.totalLoops} icon={<GitBranch className="h-3 w-3 text-blue-500" />} />
+        <KPICard label="Loops" value={kpis.totalLoops} icon={<GitBranch className="h-3 w-3 text-blue-500" />} highlight={kpis.totalLoops > stations.filter(s => s.hasLoop).length} />
+        <KPICard label="Crossovers" value={kpis.totalCrossovers} icon={<ArrowRight className="h-3 w-3 text-orange-500" />} highlight={kpis.totalCrossovers > 0} />
         <KPICard label="Risk" value={`${kpis.conflictRisk}%`} icon={<AlertTriangle className="h-3 w-3 text-red-500" />} highlight={kpis.conflictRisk > 30} />
+        {kpis.capacityGain > 0 && (
+          <KPICard label="Gain" value={`+${kpis.capacityGain}`} icon={<TrendingUp className="h-3 w-3 text-green-500" />} highlight />
+        )}
       </div>
 
       {/* Block Diagram */}
@@ -663,14 +858,15 @@ export function RealTimeBlockDiagram() {
                   </g>
                 )}
 
-                {/* Block section labels */}
-                {stations.slice(0, -1).map((station, idx) => {
-                  const nextStation = stations[idx + 1];
+                {/* Block section labels - use effectiveStations for edits */}
+                {effectiveStations.slice(0, -1).map((station, idx) => {
+                  const nextStation = effectiveStations[idx + 1];
                   if (!nextStation) return null;
                   const x1 = 80 + (station.cumulativeDistance / totalDistance) * 1040;
                   const x2 = 80 + (nextStation.cumulativeDistance / totalDistance) * 1040;
                   const isAT = station.signalType === 'AT';
                   const midX = (x1 + x2) / 2;
+                  const wasUpgraded = localStationOverrides.get(station.code)?.signalType === 'AT';
 
                   return (
                     <g key={`section-${station.code}`}>
@@ -679,9 +875,14 @@ export function RealTimeBlockDiagram() {
                         fill={isAT ? 'rgba(34, 197, 94, 0.05)' : 'rgba(234, 179, 8, 0.05)'}
                         stroke={isAT ? 'rgba(34, 197, 94, 0.2)' : 'rgba(234, 179, 8, 0.2)'}
                         strokeDasharray={isAT ? '' : '8,4'}
+                        className={wasUpgraded ? 'animate-pulse' : ''}
                       />
-                      <text x={midX} y="105" textAnchor="middle" className="text-[10px] fill-muted-foreground">
+                      <text x={midX} y="105" textAnchor="middle" className={cn(
+                        "text-[10px]",
+                        wasUpgraded ? "fill-green-400 font-semibold" : "fill-muted-foreground"
+                      )}>
                         {isAT ? 'Automatic Block (AT)' : 'Absolute Block (AB)'}
+                        {wasUpgraded && ' ✓'}
                       </text>
                       {isAT && showSignals && (
                         <g>
@@ -701,17 +902,24 @@ export function RealTimeBlockDiagram() {
                   );
                 })}
 
-                {/* Loop lines */}
-                {showLoops && stations.filter(s => s.hasLoop).map((station) => {
+                {/* Loop lines - original + added */}
+                {showLoops && effectiveStations.filter(s => s.hasLoop).map((station) => {
                   const x = 80 + (station.cumulativeDistance / totalDistance) * 1040;
+                  const isNewLoop = localStationOverrides.get(station.code)?.hasLoop && !stations.find(s => s.code === station.code)?.hasLoop;
                   return (
                     <g key={`loop-${station.code}`}>
                       <path
                         d={`M ${x - 50} 128 C ${x - 50} 70, ${x - 30} 50, ${x} 50 C ${x + 30} 50, ${x + 50} 70, ${x + 50} 128`}
-                        fill="none" stroke="#475569" strokeWidth="3"
+                        fill="none" 
+                        stroke={isNewLoop ? "#22c55e" : "#475569"} 
+                        strokeWidth="3"
+                        className={isNewLoop ? "animate-pulse" : ""}
                       />
-                      <text x={x} y="40" textAnchor="middle" className="text-[9px] fill-indigo-400 font-medium">
-                        {station.code} Loop
+                      <text x={x} y="40" textAnchor="middle" className={cn(
+                        "text-[9px] font-medium",
+                        isNewLoop ? "fill-green-400" : "fill-indigo-400"
+                      )}>
+                        {station.code} Loop {isNewLoop && '(NEW)'}
                       </text>
                       {showSignals && (
                         <>
@@ -719,14 +927,45 @@ export function RealTimeBlockDiagram() {
                           {renderSignal(x + 45, 60, 'left', 'red')}
                         </>
                       )}
-                      <circle cx={x - 50} cy={128} r={4} fill="#f97316" />
-                      <circle cx={x + 50} cy={128} r={4} fill="#f97316" />
+                      <circle cx={x - 50} cy={128} r={4} fill={isNewLoop ? "#22c55e" : "#f97316"} />
+                      <circle cx={x + 50} cy={128} r={4} fill={isNewLoop ? "#22c55e" : "#f97316"} />
                     </g>
                   );
                 })}
 
+                {/* Added crossovers visualization */}
+                {Array.from(localStationOverrides.entries())
+                  .filter(([_, v]) => v.hasCrossover)
+                  .map(([stationCode]) => {
+                    const station = effectiveStations.find(s => s.code === stationCode);
+                    if (!station) return null;
+                    const x = 80 + (station.cumulativeDistance / totalDistance) * 1040;
+                    return (
+                      <g key={`crossover-${stationCode}`}>
+                        {/* Crossover lines between UP and DN tracks */}
+                        <path 
+                          d={`M ${x - 15} 138 L ${x + 15} 168`} 
+                          stroke="#22c55e" strokeWidth="3" 
+                          className="animate-pulse"
+                        />
+                        <path 
+                          d={`M ${x + 15} 138 L ${x - 15} 168`} 
+                          stroke="#22c55e" strokeWidth="3" 
+                          className="animate-pulse"
+                        />
+                        <circle cx={x - 15} cy={138} r={4} fill="#22c55e" />
+                        <circle cx={x + 15} cy={138} r={4} fill="#22c55e" />
+                        <circle cx={x - 15} cy={168} r={4} fill="#22c55e" />
+                        <circle cx={x + 15} cy={168} r={4} fill="#22c55e" />
+                        <text x={x} y="235" textAnchor="middle" className="text-[8px] fill-green-400 font-medium">
+                          Crossover (NEW)
+                        </text>
+                      </g>
+                    );
+                  })}
+
                 {/* Cross lines */}
-                {showAdditionalLine && stations.filter((_, i) => i % 3 === 1).slice(0, 2).map((station, idx) => {
+                {showAdditionalLine && effectiveStations.filter((_, i) => i % 3 === 1).slice(0, 2).map((station, idx) => {
                   const x = 80 + (station.cumulativeDistance / totalDistance) * 1040;
                   return (
                     <g key={`cross-${station.code}`}>
@@ -746,12 +985,46 @@ export function RealTimeBlockDiagram() {
                   );
                 })}
 
-                {/* Stations */}
-                {stations.map((station) => {
+                {/* Stations - clickable in edit mode */}
+                {effectiveStations.map((station) => {
                   const x = 80 + (station.cumulativeDistance / totalDistance) * 1040;
+                  const override = localStationOverrides.get(station.code);
+                  const hasEdits = override && (override.hasLoop || override.hasCrossover || override.signalType);
+                  
                   return (
                     <g key={station.code}>
+                      {/* Edit mode click area */}
+                      {isEditMode && (
+                        <g 
+                          className="cursor-pointer" 
+                          onClick={() => setSelectedStation(selectedStation === station.code ? null : station.code)}
+                        >
+                          <rect 
+                            x={x - 45} y={100} width={90} height={120} 
+                            fill="transparent" 
+                            className="hover:fill-primary/10"
+                          />
+                        </g>
+                      )}
+                      
                       {renderStation(x, 155, station.code, station.hasLoop, station.isJunction)}
+                      
+                      {/* Edit indicator */}
+                      {hasEdits && (
+                        <circle cx={x + 25} cy={125} r={8} fill="#22c55e" className="animate-pulse">
+                          <title>Infrastructure changes pending</title>
+                        </circle>
+                      )}
+                      
+                      {/* Edit mode selection highlight */}
+                      {isEditMode && selectedStation === station.code && (
+                        <rect 
+                          x={x - 45} y={100} width={90} height={120} 
+                          fill="none" stroke="#3b82f6" strokeWidth="2" 
+                          strokeDasharray="4,2" className="animate-pulse"
+                        />
+                      )}
+                      
                       {showSignals && (
                         <>
                           {renderSignal(x - 35, 115, 'right', 'green')}
@@ -761,6 +1034,56 @@ export function RealTimeBlockDiagram() {
                       <text x={x} y={210} textAnchor="middle" className="text-[8px] fill-muted-foreground font-mono">
                         {station.cumulativeDistance.toFixed(1)} km
                       </text>
+                      
+                      {/* Edit popup */}
+                      {isEditMode && selectedStation === station.code && (
+                        <foreignObject x={x - 80} y={220} width={160} height={130}>
+                          <div className="bg-popover border border-border rounded-lg p-2 shadow-xl">
+                            <div className="text-xs font-semibold text-foreground mb-2">{station.code} - Add Infrastructure</div>
+                            <div className="flex flex-col gap-1.5">
+                              <button
+                                onClick={() => { handleAddLoop(station.code); setSelectedStation(null); }}
+                                disabled={station.hasLoop}
+                                className={cn(
+                                  "flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors",
+                                  station.hasLoop 
+                                    ? "bg-muted text-muted-foreground cursor-not-allowed" 
+                                    : "bg-blue-500/20 text-blue-400 hover:bg-blue-500/30"
+                                )}
+                              >
+                                <GitBranch className="h-3 w-3" />
+                                Add Loop Line
+                              </button>
+                              <button
+                                onClick={() => { handleAddCrossover(station.code); setSelectedStation(null); }}
+                                disabled={override?.hasCrossover}
+                                className={cn(
+                                  "flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors",
+                                  override?.hasCrossover 
+                                    ? "bg-muted text-muted-foreground cursor-not-allowed" 
+                                    : "bg-orange-500/20 text-orange-400 hover:bg-orange-500/30"
+                                )}
+                              >
+                                <ArrowRight className="h-3 w-3" />
+                                Add Crossover
+                              </button>
+                              <button
+                                onClick={() => { handleUpgradeToAT(station.code); setSelectedStation(null); }}
+                                disabled={station.signalType === 'AT'}
+                                className={cn(
+                                  "flex items-center gap-2 px-2 py-1.5 rounded text-xs transition-colors",
+                                  station.signalType === 'AT' 
+                                    ? "bg-muted text-muted-foreground cursor-not-allowed" 
+                                    : "bg-green-500/20 text-green-400 hover:bg-green-500/30"
+                                )}
+                              >
+                                <Zap className="h-3 w-3" />
+                                Upgrade AB → AT
+                              </button>
+                            </div>
+                          </div>
+                        </foreignObject>
+                      )}
                     </g>
                   );
                 })}
