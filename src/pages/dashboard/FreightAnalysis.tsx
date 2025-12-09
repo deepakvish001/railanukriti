@@ -7,6 +7,7 @@ import { DisruptionManager } from '@/components/dashboard/DisruptionManager';
 import { RouteVisualization } from '@/components/dashboard/RouteVisualization';
 import { RailwayDataImporter } from '@/components/dashboard/RailwayDataImporter';
 import { FreightGanttChart } from '@/components/dashboard/FreightGanttChart';
+import { DistanceTimeChart } from '@/components/dashboard/DistanceTimeChart';
 import { StoppageAnalysis } from '@/components/dashboard/StoppageAnalysis';
 import { FreightPathComparison } from '@/components/dashboard/FreightPathComparison';
 import { RealTimeBlockDiagram } from '@/components/dashboard/RealTimeBlockDiagram';
@@ -64,13 +65,13 @@ const FreightAnalysis = () => {
             </TabsList>
             
             <TabsContent value="time-distance" className="mt-4">
-              <Card className="p-4 border-border">
-                <div className="mb-4">
+              <div className="space-y-4">
+                <div className="mb-2">
                   <h3 className="text-lg font-semibold text-foreground">Time vs Distance Simulation</h3>
-                  <p className="text-sm text-muted-foreground">Live Marey diagram · KTV → PSA</p>
+                  <p className="text-sm text-muted-foreground">Live Marey diagram · KTV → PSA · Real freight movement data</p>
                 </div>
-                <FreightGanttChart />
-              </Card>
+                <DistanceTimeChart />
+              </div>
             </TabsContent>
             
             <TabsContent value="block-diagram" className="mt-4">
