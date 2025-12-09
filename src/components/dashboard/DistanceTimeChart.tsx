@@ -208,7 +208,7 @@ export function DistanceTimeChart() {
     return Math.max(...processedStations.map(s => s.cumulative_distance_km), 180);
   }, [processedStations]);
 
-  // Calculate actual data time range from freight movements
+  // Calculate actual data time range from freight movements AND active disruptions
   const dataTimeRange = useMemo(() => {
     if (!freightMovements || freightMovements.length === 0) {
       return { start: startOfDay(new Date()), end: addHours(startOfDay(new Date()), 24) };
@@ -227,12 +227,24 @@ export function DistanceTimeChart() {
       }
     });
     
+    // Include active disruptions in time range
+    if (disruptions && disruptions.length > 0) {
+      disruptions.forEach(d => {
+        if (d.is_active) {
+          const disruptStart = parseISO(d.start_time).getTime();
+          const disruptEnd = d.end_time ? parseISO(d.end_time).getTime() : disruptStart + 4 * 60 * 60 * 1000;
+          if (disruptStart < minTime) minTime = disruptStart;
+          if (disruptEnd > maxTime) maxTime = disruptEnd;
+        }
+      });
+    }
+    
     // Add some padding
     const start = new Date(minTime - 30 * 60 * 1000); // 30 min before
     const end = new Date(maxTime + 30 * 60 * 1000); // 30 min after
     
     return { start, end };
-  }, [freightMovements]);
+  }, [freightMovements, disruptions]);
   
   const baseDate = useMemo(() => startOfDay(dataTimeRange.start), [dataTimeRange]);
 
@@ -669,6 +681,7 @@ export function DistanceTimeChart() {
               if (rectWidth <= 0) return null;
               
               const severityColor = disruption.severity === 'critical' ? '#EF4444' : 
+                                   disruption.severity === 'high' ? '#F97316' :
                                    disruption.severity === 'major' ? '#F97316' : COLORS.disruption;
 
               return (
