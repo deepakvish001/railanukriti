@@ -90,6 +90,7 @@ const COLORS = {
   waiting: '#9CA3AF',        // Gray - Waiting/dwell
   disruption: '#FCD34D',     // Yellow - Disruption window
   prioritization: '#10B981', // Green - Prioritization decision
+  affected: '#F97316',       // Orange - Affected by disruption
   // Grid
   gridLine: '#E5E7EB',       // Light gray grid
   gridLineMajor: '#D1D5DB',  // Slightly darker for major lines
@@ -335,10 +336,55 @@ export function DistanceTimeChart() {
     return Array.from(pathMap.values()).filter(p => p.movements.length >= 2);
   }, [passengerSchedule, stationDistanceMap, stationSeqMap, baseDate]);
 
-  // Combine all paths
+  // Helper to check if a train is affected by any disruption
+  const isTrainAffectedByDisruption = useCallback((path: TrainPath): boolean => {
+    if (!disruptions || disruptions.length === 0) return false;
+    
+    for (const disruption of disruptions) {
+      if (!disruption.is_active) continue;
+      
+      const disruptionStart = parseISO(disruption.start_time);
+      const disruptionEnd = disruption.end_time ? parseISO(disruption.end_time) : addHours(disruptionStart, 4);
+      
+      // Check if train passes through disrupted location during disruption time
+      for (const movement of path.movements) {
+        const movementEnd = movement.departure || movement.arrival;
+        
+        // Check station match
+        const stationMatch = disruption.station_code === movement.station_code;
+        
+        // Check block section match (format: "STA1-STA2")
+        let blockMatch = false;
+        if (disruption.block_section_code) {
+          const parts = disruption.block_section_code.split('-');
+          if (parts.length === 2) {
+            blockMatch = parts.includes(movement.station_code);
+          }
+        }
+        
+        // Check direction match
+        const directionMatch = !disruption.affected_direction || 
+                              disruption.affected_direction === 'both' ||
+                              disruption.affected_direction === path.direction;
+        
+        if ((stationMatch || blockMatch) && directionMatch) {
+          // Check time overlap
+          const timeOverlap = movement.arrival <= disruptionEnd && movementEnd >= disruptionStart;
+          if (timeOverlap) return true;
+        }
+      }
+    }
+    return false;
+  }, [disruptions]);
+
+  // Combine all paths with affected status
   const allPaths = useMemo(() => {
-    return [...passengerPaths, ...freightPaths];
-  }, [freightPaths, passengerPaths]);
+    const paths = [...passengerPaths, ...freightPaths];
+    return paths.map(path => ({
+      ...path,
+      isAffected: isTrainAffectedByDisruption(path),
+    }));
+  }, [freightPaths, passengerPaths, isTrainAffectedByDisruption]);
 
   // Time range - based on actual data with at least 24 hours
   const timeRange = useMemo(() => {
@@ -506,6 +552,16 @@ export function DistanceTimeChart() {
             <span className="px-2 py-0.5 bg-gray-200 text-gray-700 rounded text-xs font-medium">
               {freightPaths.length} Freight
             </span>
+            {allPaths.filter(p => p.isAffected).length > 0 && (
+              <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-xs font-medium animate-pulse">
+                ⚠ {allPaths.filter(p => p.isAffected).length} Affected
+              </span>
+            )}
+            {activeDisruptions.length > 0 && (
+              <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-medium">
+                {activeDisruptions.length} Disruption{activeDisruptions.length > 1 ? 's' : ''}
+              </span>
+            )}
             <span className="text-xs text-gray-500">
               {format(timeRange.start, 'MMM d, HH:mm')} - {format(timeRange.end, 'MMM d, HH:mm')}
             </span>
@@ -769,15 +825,36 @@ export function DistanceTimeChart() {
             {allPaths.map((path) => {
               const isHovered = hoveredTrain === `${path.type}-${path.id}`;
               const isSelected = selectedTrain?.path.id === path.id && selectedTrain?.path.type === path.type;
-              const strokeWidth = isSelected ? 3 : isHovered ? 2.5 : 1.5;
+              const strokeWidth = path.isAffected ? 2.5 : isSelected ? 3 : isHovered ? 2.5 : 1.5;
               const opacity = isSelected ? 1 : isHovered ? 1 : 0.8;
+              const strokeColor = isSelected ? '#8B5CF6' : path.isAffected ? COLORS.affected : path.color;
               
               return (
                 <g key={`${path.type}-${path.id}`}>
+                  {/* Glow effect for affected trains */}
+                  {path.isAffected && (
+                    <path
+                      d={generatePath(path)}
+                      fill="none"
+                      stroke={COLORS.affected}
+                      strokeWidth={6}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeDasharray={path.isDashed ? "5,3" : "0"}
+                      opacity={0.3}
+                    >
+                      <animate
+                        attributeName="opacity"
+                        values="0.3;0.6;0.3"
+                        dur="1.5s"
+                        repeatCount="indefinite"
+                      />
+                    </path>
+                  )}
                   <path
                     d={generatePath(path)}
                     fill="none"
-                    stroke={isSelected ? '#8B5CF6' : path.color}
+                    stroke={strokeColor}
                     strokeWidth={strokeWidth}
                     strokeLinecap="round"
                     strokeLinejoin="round"
@@ -788,18 +865,38 @@ export function DistanceTimeChart() {
                     onMouseLeave={() => setHoveredTrain(null)}
                     onClick={() => handleTrainClick(path)}
                   />
-                  {/* Show train ID on hover or when selected */}
-                  {(isHovered || isSelected) && path.movements.length > 0 && (
-                    <text
-                      x={xScale(path.movements[0].arrival) + 5}
-                      y={yScale(path.movements[0].distance_km) - 10}
-                      fill={isSelected ? '#8B5CF6' : path.color}
-                      fontSize="10"
-                      fontWeight="600"
-                      fontFamily="system-ui, -apple-system, sans-serif"
-                    >
-                      {path.id}
-                    </text>
+                  {/* Show train ID on hover, when selected, or when affected */}
+                  {(isHovered || isSelected || path.isAffected) && path.movements.length > 0 && (
+                    <g>
+                      {path.isAffected && !isHovered && !isSelected && (
+                        <rect
+                          x={xScale(path.movements[0].arrival) + 2}
+                          y={yScale(path.movements[0].distance_km) - 20}
+                          width={path.id.length * 6 + 10}
+                          height={14}
+                          rx={3}
+                          fill={COLORS.affected}
+                          opacity={0.9}
+                        >
+                          <animate
+                            attributeName="opacity"
+                            values="0.7;1;0.7"
+                            dur="1.5s"
+                            repeatCount="indefinite"
+                          />
+                        </rect>
+                      )}
+                      <text
+                        x={xScale(path.movements[0].arrival) + (path.isAffected && !isHovered && !isSelected ? 7 : 5)}
+                        y={yScale(path.movements[0].distance_km) - (path.isAffected && !isHovered && !isSelected ? 10 : 10)}
+                        fill={path.isAffected && !isHovered && !isSelected ? 'white' : strokeColor}
+                        fontSize="10"
+                        fontWeight="600"
+                        fontFamily="system-ui, -apple-system, sans-serif"
+                      >
+                        {path.id}
+                      </text>
+                    </g>
                   )}
                 </g>
               );
