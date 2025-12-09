@@ -7,11 +7,12 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Clock, Train, ZoomIn, ZoomOut, GitCompare, Timer, TrendingUp, AlertTriangle, Users, AlertCircle, Lightbulb, Route, CheckCircle2, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { Clock, Train, ZoomIn, ZoomOut, GitCompare, Timer, TrendingUp, AlertTriangle, Users, AlertCircle, Lightbulb, Route, CheckCircle2, X, ChevronDown, ChevronUp, Sparkles, RefreshCw, Loader2, Brain } from 'lucide-react';
 import { useRouteStations, useDisruptions, Disruption } from '@/hooks/useFreightData';
 import { supabase } from '@/integrations/supabase/client';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { format, parseISO, differenceInMinutes, addHours, startOfDay, addSeconds } from 'date-fns';
+import { toast } from 'sonner';
 
 interface MovementData {
   id: string;
@@ -84,7 +85,7 @@ interface ReschedulingSuggestion {
   description: string;
   details: string;
   estimatedBenefit: string;
-  affectedDisruption: Disruption;
+  affectedDisruption?: Disruption;
   originalDelay: number;
   suggestedAction: {
     delayMinutes?: number;
@@ -92,6 +93,27 @@ interface ReschedulingSuggestion {
     speedReduction?: number;
     alternateRoute?: string[];
   };
+  isAI?: boolean;
+}
+
+interface AIReschedulingResponse {
+  suggestions: {
+    trainId: string;
+    type: 'delay_departure' | 'speed_adjustment' | 'alternate_route' | 'hold_at_station' | 'priority_change';
+    priority: 'high' | 'medium' | 'low';
+    description: string;
+    details: string;
+    estimatedBenefit: string;
+    suggestedAction: {
+      delayMinutes?: number;
+      holdStation?: string;
+      speedReduction?: number;
+      alternateRoute?: string[];
+    };
+  }[];
+  overallAnalysis?: string;
+  prioritizedActions?: string[];
+  error?: string;
 }
 
 export function FreightGanttChart() {
@@ -108,6 +130,8 @@ export function FreightGanttChart() {
   const [showSuggestions, setShowSuggestions] = useState(true);
   const [appliedSuggestions, setAppliedSuggestions] = useState<Set<string>>(new Set());
   const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(new Set());
+  const [aiSuggestions, setAISuggestions] = useState<ReschedulingSuggestion[]>([]);
+  const [aiAnalysis, setAIAnalysis] = useState<{ overview: string; priorities: string[] } | null>(null);
 
   // Fetch movements data
   const { data: movements, isLoading } = useQuery({
@@ -601,10 +625,118 @@ export function FreightGanttChart() {
     });
   }, [disruptionImpacts, showDisruptions, trainPaths, stationSeqMap, orderedStations, appliedSuggestions, dismissedSuggestions]);
 
+  // AI-powered rescheduling mutation
+  const aiReschedulingMutation = useMutation({
+    mutationFn: async () => {
+      // Build request payload for AI analysis
+      const affectedTrainsData = disruptionImpacts.map(impact => ({
+        disruption: {
+          id: impact.disruption.id,
+          disruption_type: impact.disruption.disruption_type,
+          severity: impact.disruption.severity,
+          station_code: impact.disruption.station_code,
+          block_section_code: impact.disruption.block_section_code,
+          description: impact.disruption.description,
+          max_speed_allowed: impact.disruption.max_speed_allowed,
+        },
+        trains: impact.affectedTrains.map(t => ({
+          loadId: t.loadId,
+          stationsAffected: t.stationsAffected,
+          estimatedDelayMinutes: t.estimatedDelayMinutes,
+        })),
+      }));
+
+      const averageDelay = disruptionImpacts.reduce((sum, i) => 
+        sum + i.affectedTrains.reduce((s, t) => s + t.estimatedDelayMinutes, 0), 0
+      ) / Math.max(1, disruptionImpacts.reduce((sum, i) => sum + i.totalTrainsAffected, 0));
+
+      const response = await supabase.functions.invoke('ai-rescheduling', {
+        body: {
+          disruptions: disruptions.map(d => ({
+            id: d.id,
+            disruption_type: d.disruption_type,
+            severity: d.severity,
+            station_code: d.station_code,
+            block_section_code: d.block_section_code,
+            description: d.description,
+            max_speed_allowed: d.max_speed_allowed,
+          })),
+          affectedTrains: affectedTrainsData,
+          networkState: {
+            totalTrains: trainPaths.length,
+            totalDisruptions: disruptions.length,
+            averageDelay,
+          },
+        },
+      });
+
+      if (response.error) throw response.error;
+      return response.data as AIReschedulingResponse;
+    },
+    onSuccess: (data) => {
+      if (data.error) {
+        toast.error(data.error);
+        return;
+      }
+
+      // Convert AI suggestions to ReschedulingSuggestion format
+      const convertedSuggestions: ReschedulingSuggestion[] = (data.suggestions || []).map((s, idx) => {
+        const train = trainPaths.find(tp => tp.load_id === s.trainId);
+        return {
+          id: `ai-${s.trainId}-${idx}`,
+          trainId: s.trainId,
+          trainColor: train?.color || '#3b82f6',
+          type: s.type,
+          priority: s.priority,
+          description: s.description,
+          details: s.details,
+          estimatedBenefit: s.estimatedBenefit,
+          originalDelay: 0,
+          suggestedAction: s.suggestedAction,
+          isAI: true,
+        };
+      });
+
+      setAISuggestions(convertedSuggestions);
+      
+      if (data.overallAnalysis || data.prioritizedActions) {
+        setAIAnalysis({
+          overview: data.overallAnalysis || '',
+          priorities: data.prioritizedActions || [],
+        });
+      }
+
+      toast.success(`AI generated ${convertedSuggestions.length} rescheduling recommendations`);
+    },
+    onError: (error) => {
+      console.error('AI rescheduling error:', error);
+      toast.error('Failed to generate AI recommendations');
+    },
+  });
+
+  // Combine rule-based and AI suggestions
+  const allSuggestions = useMemo(() => {
+    const combined = [...reschedulingSuggestions, ...aiSuggestions];
+    // Remove duplicates (same train + type)
+    const seen = new Set<string>();
+    return combined.filter(s => {
+      const key = `${s.trainId}-${s.type}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).sort((a, b) => {
+      // AI suggestions first, then by priority
+      if (a.isAI && !b.isAI) return -1;
+      if (!a.isAI && b.isAI) return 1;
+      const priorityOrder = { high: 0, medium: 1, low: 2 };
+      return priorityOrder[a.priority] - priorityOrder[b.priority];
+    });
+  }, [reschedulingSuggestions, aiSuggestions]);
+
   // Handle applying a suggestion
   const handleApplySuggestion = (suggestion: ReschedulingSuggestion) => {
     setAppliedSuggestions(prev => new Set([...prev, suggestion.id]));
-    // In a real system, this would send the action to the backend
+    toast.success(`Applied: ${suggestion.description}`);
     console.log('Applied suggestion:', suggestion);
   };
 
@@ -1021,7 +1153,7 @@ export function FreightGanttChart() {
           )}
 
           {/* Rescheduling Suggestions Panel */}
-          {showDisruptions && reschedulingSuggestions.length > 0 && (
+          {showDisruptions && (allSuggestions.length > 0 || disruptions.length > 0) && (
             <div className="p-3 bg-primary/10 rounded-lg border border-primary/30">
               <div 
                 className="flex items-center justify-between cursor-pointer"
@@ -1031,122 +1163,191 @@ export function FreightGanttChart() {
                   <Lightbulb className="h-4 w-4 text-primary" />
                   <span className="font-medium text-primary">Rescheduling Suggestions</span>
                   <Badge variant="secondary" className="text-xs bg-primary/20 text-primary">
-                    {reschedulingSuggestions.length} recommendations
+                    {allSuggestions.length} recommendations
                   </Badge>
+                  {aiSuggestions.length > 0 && (
+                    <Badge className="text-xs bg-gradient-to-r from-purple-500 to-blue-500 text-white border-0">
+                      <Sparkles className="h-3 w-3 mr-1" />
+                      {aiSuggestions.length} AI
+                    </Badge>
+                  )}
                   {appliedSuggestions.size > 0 && (
                     <Badge variant="outline" className="text-xs text-green-500 border-green-500">
                       {appliedSuggestions.size} applied
                     </Badge>
                   )}
                 </div>
-                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
-                  {showSuggestions ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1 bg-gradient-to-r from-purple-500/10 to-blue-500/10 border-purple-500/30 hover:border-purple-500"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      aiReschedulingMutation.mutate();
+                    }}
+                    disabled={aiReschedulingMutation.isPending || disruptions.length === 0}
+                  >
+                    {aiReschedulingMutation.isPending ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Brain className="h-3 w-3" />
+                    )}
+                    {aiReschedulingMutation.isPending ? 'Analyzing...' : 'AI Analysis'}
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                    {showSuggestions ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </Button>
+                </div>
               </div>
               
               {showSuggestions && (
-                <div className="mt-3 space-y-2 max-h-80 overflow-y-auto">
-                  {reschedulingSuggestions.slice(0, 10).map((suggestion) => {
-                    const priorityColors: Record<string, string> = {
-                      high: 'border-red-500 bg-red-500/10',
-                      medium: 'border-amber-500 bg-amber-500/10',
-                      low: 'border-green-500 bg-green-500/10',
-                    };
-                    const typeIcons: Record<string, React.ReactNode> = {
-                      delay_departure: <Timer className="h-3.5 w-3.5" />,
-                      speed_adjustment: <TrendingUp className="h-3.5 w-3.5" />,
-                      alternate_route: <Route className="h-3.5 w-3.5" />,
-                      hold_at_station: <AlertCircle className="h-3.5 w-3.5" />,
-                      priority_change: <Train className="h-3.5 w-3.5" />,
-                    };
-                    
-                    return (
-                      <div 
-                        key={suggestion.id}
-                        className={`p-3 rounded-lg border ${priorityColors[suggestion.priority] || 'border-border'}`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <div 
-                                className="w-3 h-3 rounded-full flex-shrink-0" 
-                                style={{ backgroundColor: suggestion.trainColor }}
-                              />
-                              <span className="font-medium text-sm truncate">{suggestion.trainId}</span>
-                              <Badge variant="outline" className="text-[10px] flex-shrink-0">
-                                {suggestion.priority.toUpperCase()}
-                              </Badge>
-                              <span className="text-muted-foreground flex items-center gap-1 text-xs flex-shrink-0">
-                                {typeIcons[suggestion.type]}
-                                {suggestion.type.replace(/_/g, ' ')}
-                              </span>
+                <div className="mt-3 space-y-3">
+                  {/* AI Analysis Overview */}
+                  {aiAnalysis && (
+                    <div className="p-3 rounded-lg bg-gradient-to-r from-purple-500/10 to-blue-500/10 border border-purple-500/30">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Brain className="h-4 w-4 text-purple-400" />
+                        <span className="font-medium text-sm text-purple-400">AI Network Analysis</span>
+                      </div>
+                      {aiAnalysis.overview && (
+                        <p className="text-xs text-muted-foreground mb-2">{aiAnalysis.overview}</p>
+                      )}
+                      {aiAnalysis.priorities.length > 0 && (
+                        <div className="space-y-1">
+                          <span className="text-xs font-medium text-purple-300">Priority Actions:</span>
+                          <ul className="text-xs text-muted-foreground space-y-1">
+                            {aiAnalysis.priorities.slice(0, 3).map((action, idx) => (
+                              <li key={idx} className="flex items-start gap-2">
+                                <span className="text-purple-400 font-medium">{idx + 1}.</span>
+                                {action}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Suggestions List */}
+                  <div className="space-y-2 max-h-80 overflow-y-auto">
+                    {allSuggestions.filter(s => !appliedSuggestions.has(s.id) && !dismissedSuggestions.has(s.id)).slice(0, 10).map((suggestion) => {
+                      const priorityColors: Record<string, string> = {
+                        high: 'border-red-500 bg-red-500/10',
+                        medium: 'border-amber-500 bg-amber-500/10',
+                        low: 'border-green-500 bg-green-500/10',
+                      };
+                      const typeIcons: Record<string, React.ReactNode> = {
+                        delay_departure: <Timer className="h-3.5 w-3.5" />,
+                        speed_adjustment: <TrendingUp className="h-3.5 w-3.5" />,
+                        alternate_route: <Route className="h-3.5 w-3.5" />,
+                        hold_at_station: <AlertCircle className="h-3.5 w-3.5" />,
+                        priority_change: <Train className="h-3.5 w-3.5" />,
+                      };
+                      
+                      return (
+                        <div 
+                          key={suggestion.id}
+                          className={`p-3 rounded-lg border ${suggestion.isAI ? 'border-purple-500/50 bg-purple-500/5' : priorityColors[suggestion.priority] || 'border-border'}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <div 
+                                  className="w-3 h-3 rounded-full flex-shrink-0" 
+                                  style={{ backgroundColor: suggestion.trainColor }}
+                                />
+                                <span className="font-medium text-sm truncate">{suggestion.trainId}</span>
+                                {suggestion.isAI && (
+                                  <Badge className="text-[10px] bg-gradient-to-r from-purple-500 to-blue-500 text-white border-0 px-1.5 py-0">
+                                    <Sparkles className="h-2.5 w-2.5 mr-0.5" />
+                                    AI
+                                  </Badge>
+                                )}
+                                <Badge variant="outline" className="text-[10px] flex-shrink-0">
+                                  {suggestion.priority.toUpperCase()}
+                                </Badge>
+                                <span className="text-muted-foreground flex items-center gap-1 text-xs flex-shrink-0">
+                                  {typeIcons[suggestion.type]}
+                                  {suggestion.type.replace(/_/g, ' ')}
+                                </span>
+                              </div>
+                              <p className="text-sm font-medium mb-1">{suggestion.description}</p>
+                              <p className="text-xs text-muted-foreground mb-2">{suggestion.details}</p>
+                              <div className="flex items-center gap-2 text-xs flex-wrap">
+                                <span className="text-green-500 font-medium flex items-center gap-1">
+                                  <TrendingUp className="h-3 w-3" />
+                                  {suggestion.estimatedBenefit}
+                                </span>
+                                {suggestion.originalDelay > 0 && (
+                                  <>
+                                    <span className="text-muted-foreground">|</span>
+                                    <span className="text-amber-500">
+                                      Original delay: {suggestion.originalDelay}min
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+                              {suggestion.suggestedAction.delayMinutes && (
+                                <div className="mt-2 text-xs text-muted-foreground">
+                                  <span className="font-medium">Action: </span>
+                                  Delay by {suggestion.suggestedAction.delayMinutes} minutes
+                                </div>
+                              )}
+                              {suggestion.suggestedAction.holdStation && (
+                                <div className="mt-2 text-xs text-muted-foreground">
+                                  <span className="font-medium">Action: </span>
+                                  Hold at {suggestion.suggestedAction.holdStation}
+                                </div>
+                              )}
+                              {suggestion.suggestedAction.speedReduction && (
+                                <div className="mt-2 text-xs text-muted-foreground">
+                                  <span className="font-medium">Action: </span>
+                                  Reduce speed to {suggestion.suggestedAction.speedReduction} km/h
+                                </div>
+                              )}
+                              {suggestion.suggestedAction.alternateRoute && (
+                                <div className="mt-2 text-xs text-muted-foreground">
+                                  <span className="font-medium">Action: </span>
+                                  Reroute via {suggestion.suggestedAction.alternateRoute.join(' → ')}
+                                </div>
+                              )}
                             </div>
-                            <p className="text-sm font-medium mb-1">{suggestion.description}</p>
-                            <p className="text-xs text-muted-foreground mb-2">{suggestion.details}</p>
-                            <div className="flex items-center gap-2 text-xs">
-                              <span className="text-green-500 font-medium flex items-center gap-1">
-                                <TrendingUp className="h-3 w-3" />
-                                {suggestion.estimatedBenefit}
-                              </span>
-                              <span className="text-muted-foreground">|</span>
-                              <span className="text-amber-500">
-                                Original delay: {suggestion.originalDelay}min
-                              </span>
+                            <div className="flex flex-col gap-1 flex-shrink-0">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs gap-1 text-green-500 border-green-500 hover:bg-green-500/10"
+                                onClick={() => handleApplySuggestion(suggestion)}
+                              >
+                                <CheckCircle2 className="h-3 w-3" />
+                                Apply
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-xs gap-1 text-muted-foreground hover:text-destructive"
+                                onClick={() => handleDismissSuggestion(suggestion)}
+                              >
+                                <X className="h-3 w-3" />
+                                Dismiss
+                              </Button>
                             </div>
-                            {suggestion.suggestedAction.delayMinutes && (
-                              <div className="mt-2 text-xs text-muted-foreground">
-                                <span className="font-medium">Action: </span>
-                                Delay by {suggestion.suggestedAction.delayMinutes} minutes
-                              </div>
-                            )}
-                            {suggestion.suggestedAction.holdStation && (
-                              <div className="mt-2 text-xs text-muted-foreground">
-                                <span className="font-medium">Action: </span>
-                                Hold at {suggestion.suggestedAction.holdStation}
-                              </div>
-                            )}
-                            {suggestion.suggestedAction.speedReduction && (
-                              <div className="mt-2 text-xs text-muted-foreground">
-                                <span className="font-medium">Action: </span>
-                                Reduce speed to {suggestion.suggestedAction.speedReduction} km/h
-                              </div>
-                            )}
-                            {suggestion.suggestedAction.alternateRoute && (
-                              <div className="mt-2 text-xs text-muted-foreground">
-                                <span className="font-medium">Action: </span>
-                                Reroute via {suggestion.suggestedAction.alternateRoute.join(' → ')}
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex flex-col gap-1 flex-shrink-0">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-xs gap-1 text-green-500 border-green-500 hover:bg-green-500/10"
-                              onClick={() => handleApplySuggestion(suggestion)}
-                            >
-                              <CheckCircle2 className="h-3 w-3" />
-                              Apply
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 text-xs gap-1 text-muted-foreground hover:text-destructive"
-                              onClick={() => handleDismissSuggestion(suggestion)}
-                            >
-                              <X className="h-3 w-3" />
-                              Dismiss
-                            </Button>
                           </div>
                         </div>
+                      );
+                    })}
+                    {allSuggestions.filter(s => !appliedSuggestions.has(s.id) && !dismissedSuggestions.has(s.id)).length > 10 && (
+                      <p className="text-xs text-muted-foreground text-center py-2">
+                        +{allSuggestions.filter(s => !appliedSuggestions.has(s.id) && !dismissedSuggestions.has(s.id)).length - 10} more suggestions...
+                      </p>
+                    )}
+                    {allSuggestions.length === 0 && disruptions.length > 0 && (
+                      <div className="text-center py-4 text-muted-foreground">
+                        <p className="text-sm mb-2">No suggestions yet. Click "AI Analysis" to generate intelligent recommendations.</p>
                       </div>
-                    );
-                  })}
-                  {reschedulingSuggestions.length > 10 && (
-                    <p className="text-xs text-muted-foreground text-center py-2">
-                      +{reschedulingSuggestions.length - 10} more suggestions...
-                    </p>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
             </div>

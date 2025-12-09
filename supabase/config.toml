@@ -54,3 +54,6 @@ verify_jwt = false
 
 [functions.periodic-section-analysis]
 verify_jwt = false
+
+[functions.ai-rescheduling]
+verify_jwt = false
