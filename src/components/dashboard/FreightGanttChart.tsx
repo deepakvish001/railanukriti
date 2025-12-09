@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -7,8 +7,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Clock, Train, ZoomIn, ZoomOut, GitCompare, Timer, TrendingUp, AlertTriangle, Users } from 'lucide-react';
-import { useRouteStations } from '@/hooks/useFreightData';
+import { Clock, Train, ZoomIn, ZoomOut, GitCompare, Timer, TrendingUp, AlertTriangle, Users, AlertCircle } from 'lucide-react';
+import { useRouteStations, useDisruptions, Disruption } from '@/hooks/useFreightData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import { format, parseISO, differenceInMinutes, addHours, startOfDay, addSeconds } from 'date-fns';
@@ -76,6 +76,7 @@ const PASSENGER_COLOR = '#a78bfa'; // Purple for passenger trains
 
 export function FreightGanttChart() {
   const { stations } = useRouteStations();
+  const { disruptions } = useDisruptions();
   const [zoomLevel, setZoomLevel] = useState(1);
   const [timeOffset, setTimeOffset] = useState(0);
   const [selectedTrain, setSelectedTrain] = useState<string | null>(null);
@@ -83,6 +84,7 @@ export function FreightGanttChart() {
   const [compareTrain1, setCompareTrain1] = useState<string | null>(null);
   const [compareTrain2, setCompareTrain2] = useState<string | null>(null);
   const [showPassengerTrains, setShowPassengerTrains] = useState(false);
+  const [showDisruptions, setShowDisruptions] = useState(true);
 
   // Fetch movements data
   const { data: movements, isLoading } = useQuery({
@@ -468,7 +470,24 @@ export function FreightGanttChart() {
                 )}
               </div>
 
-              {/* Compare Mode Toggle */}
+              {/* Disruptions Toggle */}
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="disruptions-overlay"
+                  checked={showDisruptions}
+                  onCheckedChange={setShowDisruptions}
+                />
+                <Label htmlFor="disruptions-overlay" className="text-sm flex items-center gap-1">
+                  <AlertCircle className="h-4 w-4" />
+                  Disruptions
+                </Label>
+                {showDisruptions && disruptions.length > 0 && (
+                  <Badge variant="destructive" className="text-xs animate-pulse">
+                    {disruptions.length} active
+                  </Badge>
+                )}
+              </div>
+
               <div className="flex items-center gap-2">
                 <Switch
                   id="compare-mode"
@@ -697,6 +716,128 @@ export function FreightGanttChart() {
                   </g>
                 ))}
               </g>
+
+              {/* Disruption zones */}
+              {showDisruptions && disruptions.length > 0 && (
+                <g className="disruption-zones">
+                  {disruptions.map((disruption) => {
+                    // Find station(s) affected by this disruption
+                    let stationSeqs: number[] = [];
+                    
+                    if (disruption.station_code) {
+                      const seq = stationSeqMap.get(disruption.station_code);
+                      if (seq !== undefined) {
+                        stationSeqs = [seq];
+                      }
+                    } else if (disruption.block_section_code) {
+                      // Block section affects area between two stations
+                      // Parse block section code (e.g., "KTV-PSA" -> from KTV to PSA)
+                      const parts = disruption.block_section_code.split('-');
+                      if (parts.length >= 2) {
+                        const fromSeq = stationSeqMap.get(parts[0]);
+                        const toSeq = stationSeqMap.get(parts[1]);
+                        if (fromSeq !== undefined && toSeq !== undefined) {
+                          stationSeqs = [fromSeq, toSeq];
+                        }
+                      }
+                    }
+                    
+                    if (stationSeqs.length === 0) return null;
+                    
+                    const minSeq = Math.min(...stationSeqs);
+                    const maxSeq = Math.max(...stationSeqs);
+                    const y1 = stationToY(minSeq);
+                    const y2 = stationSeqs.length > 1 ? stationToY(maxSeq) : y1;
+                    const height = Math.max(20, Math.abs(y2 - y1) + 20);
+                    const yPos = Math.min(y1, y2) - 10;
+                    
+                    // Get color based on severity
+                    const severityColors: Record<string, string> = {
+                      critical: '#ef4444',
+                      high: '#f97316',
+                      medium: '#f59e0b',
+                      low: '#22c55e',
+                    };
+                    const color = severityColors[disruption.severity] || '#ef4444';
+                    
+                    return (
+                      <g key={disruption.id}>
+                        {/* Disruption zone rectangle spanning full time range */}
+                        <rect
+                          x={marginLeft}
+                          y={yPos}
+                          width={plotWidth}
+                          height={height}
+                          fill={color}
+                          fillOpacity={0.15}
+                          stroke={color}
+                          strokeWidth={2}
+                          strokeDasharray="8,4"
+                          strokeOpacity={0.6}
+                          className="animate-pulse"
+                        />
+                        
+                        {/* Disruption label */}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <g className="cursor-pointer">
+                              <rect
+                                x={marginLeft + 5}
+                                y={yPos + 2}
+                                width={140}
+                                height={18}
+                                rx={4}
+                                fill={color}
+                                fillOpacity={0.9}
+                              />
+                              <text
+                                x={marginLeft + 10}
+                                y={yPos + 14}
+                                className="fill-white text-[10px] font-bold"
+                              >
+                                <tspan>⚠ {disruption.disruption_type.toUpperCase()}</tspan>
+                              </text>
+                              <text
+                                x={marginLeft + 100}
+                                y={yPos + 14}
+                                className="fill-white text-[9px]"
+                              >
+                                {disruption.block_section_code || disruption.station_code}
+                              </text>
+                            </g>
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="bg-destructive text-destructive-foreground border-destructive">
+                            <div className="space-y-1">
+                              <p className="font-bold flex items-center gap-1">
+                                <AlertTriangle className="h-4 w-4" />
+                                {disruption.disruption_type.replace('_', ' ').toUpperCase()}
+                              </p>
+                              <p className="text-sm">
+                                Location: {disruption.block_section_code || disruption.station_code}
+                              </p>
+                              <p className="text-sm">Severity: {disruption.severity.toUpperCase()}</p>
+                              {disruption.description && (
+                                <p className="text-sm opacity-80">{disruption.description}</p>
+                              )}
+                              <p className="text-xs opacity-70">
+                                Since: {format(new Date(disruption.start_time), 'dd MMM HH:mm')}
+                              </p>
+                              {disruption.max_speed_allowed && (
+                                <p className="text-sm font-medium">
+                                  Max Speed: {disruption.max_speed_allowed} km/h
+                                </p>
+                              )}
+                              {disruption.affected_direction && (
+                                <p className="text-sm">Direction: {disruption.affected_direction}</p>
+                              )}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </g>
+                    );
+                  })}
+                </g>
+              )}
 
               {/* Train paths */}
               <g className="train-paths">
