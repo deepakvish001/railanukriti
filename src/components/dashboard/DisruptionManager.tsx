@@ -118,16 +118,16 @@ export function DisruptionManager() {
                 <div className="space-y-2">
                   <Label>Block Section</Label>
                   <Select
-                    value={formData.block_section_code}
-                    onValueChange={(v) => setFormData({ ...formData, block_section_code: v, station_code: '' })}
+                    value={formData.block_section_code || "none"}
+                    onValueChange={(v) => setFormData({ ...formData, block_section_code: v === "none" ? "" : v, station_code: '' })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select block section" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
                       {sections.map((section) => (
-                        <SelectItem key={section.id} value={section.block_section_code}>
+                        <SelectItem key={section.id} value={section.block_section_code || `section-${section.id}`}>
                           {section.block_section_code} ({section.distance_km} km)
                         </SelectItem>
                       ))}
@@ -138,16 +138,16 @@ export function DisruptionManager() {
                 <div className="space-y-2">
                   <Label>Or Station</Label>
                   <Select
-                    value={formData.station_code}
-                    onValueChange={(v) => setFormData({ ...formData, station_code: v, block_section_code: '' })}
+                    value={formData.station_code || "none"}
+                    onValueChange={(v) => setFormData({ ...formData, station_code: v === "none" ? "" : v, block_section_code: '' })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select station" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">None</SelectItem>
+                      <SelectItem value="none">None</SelectItem>
                       {stations.map((station) => (
-                        <SelectItem key={station.id} value={station.station_code}>
+                        <SelectItem key={station.id} value={station.station_code || `station-${station.id}`}>
                           {station.station_code} - {station.station_name}
                         </SelectItem>
                       ))}
