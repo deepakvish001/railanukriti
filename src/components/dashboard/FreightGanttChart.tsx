@@ -219,6 +219,82 @@ export function FreightGanttChart() {
     return Array.from(pathMap.values());
   }, [passengerSchedule, stationSeqMap, showPassengerTrains, movements]);
 
+  // Detect conflicts between freight and passenger trains
+  interface Conflict {
+    id: string;
+    freightLoadId: string;
+    passengerTrainNumber: string;
+    stationCode: string;
+    stationSeq: number;
+    freightArrival: Date;
+    freightDeparture: Date;
+    passengerArrival: Date;
+    passengerDeparture: Date;
+    overlapMinutes: number;
+  }
+
+  const conflicts = useMemo((): Conflict[] => {
+    if (!showPassengerTrains || passengerPaths.length === 0 || trainPaths.length === 0) {
+      return [];
+    }
+
+    const detected: Conflict[] = [];
+    const CONFLICT_THRESHOLD_MINUTES = 5; // Minimum overlap to consider a conflict
+
+    // For each freight train movement
+    trainPaths.forEach(freightTrain => {
+      freightTrain.movements.forEach((fMovement, fIdx) => {
+        if (!fMovement.arrival || !fMovement.departure) return;
+        
+        // Check against each passenger train stop at the same station
+        passengerPaths.forEach(passengerTrain => {
+          passengerTrain.stops.forEach((pStop) => {
+            if (pStop.station_code !== fMovement.station_code) return;
+            if (!pStop.arrival || !pStop.departure) return;
+
+            // Check for time overlap
+            const fStart = fMovement.arrival!.getTime();
+            const fEnd = fMovement.departure!.getTime();
+            const pStart = pStop.arrival!.getTime();
+            const pEnd = pStop.departure!.getTime();
+
+            // Calculate overlap
+            const overlapStart = Math.max(fStart, pStart);
+            const overlapEnd = Math.min(fEnd, pEnd);
+            const overlapMs = overlapEnd - overlapStart;
+            const overlapMinutes = overlapMs / 60000;
+
+            if (overlapMinutes >= CONFLICT_THRESHOLD_MINUTES) {
+              detected.push({
+                id: `${freightTrain.load_id}-${passengerTrain.train_id}-${fMovement.station_code}`,
+                freightLoadId: freightTrain.load_id,
+                passengerTrainNumber: passengerTrain.train_number,
+                stationCode: fMovement.station_code,
+                stationSeq: fMovement.station_seq,
+                freightArrival: fMovement.arrival!,
+                freightDeparture: fMovement.departure!,
+                passengerArrival: pStop.arrival!,
+                passengerDeparture: pStop.departure!,
+                overlapMinutes: Math.round(overlapMinutes),
+              });
+            }
+          });
+        });
+      });
+    });
+
+    return detected;
+  }, [showPassengerTrains, passengerPaths, trainPaths]);
+
+  // Create a set of conflict locations for quick lookup
+  const conflictLocations = useMemo(() => {
+    const set = new Set<string>();
+    conflicts.forEach(c => {
+      set.add(`${c.freightLoadId}-${c.stationCode}`);
+    });
+    return set;
+  }, [conflicts]);
+
   // Get comparison train data
   const getCompareTrains = useMemo(() => {
     if (!compareMode) return [];
@@ -384,6 +460,11 @@ export function FreightGanttChart() {
                 {showPassengerTrains && passengerPaths.length > 0 && (
                   <Badge variant="outline" className="text-xs" style={{ borderColor: PASSENGER_COLOR, color: PASSENGER_COLOR }}>
                     {passengerPaths.length}
+                  </Badge>
+                )}
+                {showPassengerTrains && conflicts.length > 0 && (
+                  <Badge variant="destructive" className="text-xs animate-pulse">
+                    {conflicts.length} conflicts
                   </Badge>
                 )}
               </div>
@@ -666,35 +747,64 @@ export function FreightGanttChart() {
                         
                         const x = timeToX(movement.arrival);
                         const y = stationToY(movement.station_seq);
+                        const hasConflict = conflictLocations.has(`${train.load_id}-${movement.station_code}`);
+                        const conflictInfo = conflicts.find(
+                          c => c.freightLoadId === train.load_id && c.stationCode === movement.station_code
+                        );
 
                         return (
-                          <Tooltip key={`stop-${train.load_id}-${idx}`}>
-                            <TooltipTrigger asChild>
+                          <g key={`stop-${train.load_id}-${idx}`}>
+                            {/* Conflict highlight ring */}
+                            {hasConflict && (
                               <circle
                                 cx={x}
                                 cy={y}
-                                r={compareMode ? 6 : (movement.is_stoppage ? 5 : movement.halt_minutes > 10 ? 4 : 3)}
-                                fill={movement.is_stoppage ? '#ef4444' : movement.halt_minutes > 10 ? '#f59e0b' : train.color}
-                                stroke={compareMode ? train.color : "white"}
-                                strokeWidth={compareMode ? 2 : 1}
-                                className="cursor-pointer"
-                                onClick={() => !compareMode && setSelectedTrain(train.load_id)}
+                                r={10}
+                                fill="none"
+                                stroke="#ef4444"
+                                strokeWidth={2}
+                                strokeDasharray="3,3"
+                                className="animate-pulse"
                               />
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <div className="text-sm">
-                                <p className="font-semibold" style={{ color: train.color }}>{train.load_id}</p>
-                                <p>Station: {movement.station_code}</p>
-                                <p>Arrival: {movement.arrival ? format(movement.arrival, 'HH:mm') : '-'}</p>
-                                <p>Departure: {movement.departure ? format(movement.departure, 'HH:mm') : '-'}</p>
-                                {movement.halt_minutes > 0 && (
-                                  <p className={movement.is_stoppage ? 'text-red-500' : 'text-amber-500'}>
-                                    {movement.is_stoppage ? 'Stoppage' : 'Halt'}: {movement.halt_minutes} min
+                            )}
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <circle
+                                  cx={x}
+                                  cy={y}
+                                  r={hasConflict ? 6 : (compareMode ? 6 : (movement.is_stoppage ? 5 : movement.halt_minutes > 10 ? 4 : 3))}
+                                  fill={hasConflict ? '#ef4444' : (movement.is_stoppage ? '#ef4444' : movement.halt_minutes > 10 ? '#f59e0b' : train.color)}
+                                  stroke={hasConflict ? '#fef2f2' : (compareMode ? train.color : "white")}
+                                  strokeWidth={hasConflict ? 2 : (compareMode ? 2 : 1)}
+                                  className="cursor-pointer"
+                                  onClick={() => !compareMode && setSelectedTrain(train.load_id)}
+                                />
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <div className="text-sm">
+                                  <p className="font-semibold" style={{ color: hasConflict ? '#ef4444' : train.color }}>
+                                    {train.load_id}
+                                    {hasConflict && <span className="ml-2 text-red-500">⚠ CONFLICT</span>}
                                   </p>
-                                )}
-                              </div>
-                            </TooltipContent>
-                          </Tooltip>
+                                  <p>Station: {movement.station_code}</p>
+                                  <p>Arrival: {movement.arrival ? format(movement.arrival, 'HH:mm') : '-'}</p>
+                                  <p>Departure: {movement.departure ? format(movement.departure, 'HH:mm') : '-'}</p>
+                                  {movement.halt_minutes > 0 && (
+                                    <p className={movement.is_stoppage ? 'text-red-500' : 'text-amber-500'}>
+                                      {movement.is_stoppage ? 'Stoppage' : 'Halt'}: {movement.halt_minutes} min
+                                    </p>
+                                  )}
+                                  {conflictInfo && (
+                                    <div className="mt-2 pt-2 border-t border-red-500/30">
+                                      <p className="text-red-400 font-medium">Conflict with Passenger Train:</p>
+                                      <p>{conflictInfo.passengerTrainNumber}</p>
+                                      <p>Overlap: {conflictInfo.overlapMinutes} min</p>
+                                    </div>
+                                  )}
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          </g>
                         );
                       })}
                     </g>
@@ -852,9 +962,54 @@ export function FreightGanttChart() {
                 </svg>
                 <span className="text-muted-foreground">Passenger Halt</span>
               </div>
+              {conflicts.length > 0 && (
+                <div className="flex items-center gap-1.5">
+                  <div className="w-4 h-4 rounded-full bg-red-500 border-2 border-dashed border-red-300" />
+                  <span className="text-red-500">Conflict</span>
+                </div>
+              )}
             </>
           )}
         </div>
+
+        {/* Conflicts Summary Panel */}
+        {showPassengerTrains && conflicts.length > 0 && (
+          <div className="mt-4 p-3 border border-red-500/30 rounded-lg bg-red-500/5">
+            <div className="flex items-center gap-2 mb-3">
+              <AlertTriangle className="h-4 w-4 text-red-500" />
+              <span className="font-semibold text-red-500">
+                {conflicts.length} Freight-Passenger Conflict{conflicts.length > 1 ? 's' : ''} Detected
+              </span>
+            </div>
+            <ScrollArea className="max-h-[150px]">
+              <div className="space-y-2">
+                {conflicts.slice(0, 10).map((conflict) => (
+                  <div 
+                    key={conflict.id}
+                    className="flex items-center justify-between text-xs p-2 rounded bg-background/50 border border-red-500/20"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div>
+                        <span className="font-mono text-foreground">{conflict.freightLoadId.slice(0, 15)}</span>
+                        <span className="text-muted-foreground mx-2">×</span>
+                        <span className="font-mono" style={{ color: PASSENGER_COLOR }}>{conflict.passengerTrainNumber}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4 text-muted-foreground">
+                      <span>@ {conflict.stationCode}</span>
+                      <span className="text-red-400 font-medium">{conflict.overlapMinutes}m overlap</span>
+                    </div>
+                  </div>
+                ))}
+                {conflicts.length > 10 && (
+                  <div className="text-xs text-muted-foreground text-center py-2">
+                    +{conflicts.length - 10} more conflicts...
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </div>
+        )}
 
         {/* Selected train details - only show when not in compare mode */}
         {!compareMode && selectedTrain && (
