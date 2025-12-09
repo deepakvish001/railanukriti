@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { MinimalDashboardLayout } from '@/components/dashboard/MinimalDashboardLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -8,6 +9,8 @@ import { RailwayDataImporter } from '@/components/dashboard/RailwayDataImporter'
 import { FreightGanttChart } from '@/components/dashboard/FreightGanttChart';
 import { StoppageAnalysis } from '@/components/dashboard/StoppageAnalysis';
 import { FreightPathComparison } from '@/components/dashboard/FreightPathComparison';
+import { InteractiveBlockDiagram } from '@/components/dashboard/InteractiveBlockDiagram';
+import { InfrastructureImpactSimulator } from '@/components/dashboard/InfrastructureImpactSimulator';
 
 const FreightAnalysis = () => {
   return (
@@ -21,14 +24,19 @@ const FreightAnalysis = () => {
           <RouteVisualization />
           <DisruptionManager />
           
-          <Tabs defaultValue="gantt">
+          <Tabs defaultValue="simulator">
             <TabsList>
+              <TabsTrigger value="simulator">Infrastructure Simulator</TabsTrigger>
               <TabsTrigger value="gantt">Time-Distance Chart</TabsTrigger>
               <TabsTrigger value="comparison">Path Comparison</TabsTrigger>
               <TabsTrigger value="stoppage">Stoppage Analysis</TabsTrigger>
               <TabsTrigger value="throughput">Throughput Dashboard</TabsTrigger>
               <TabsTrigger value="import">Data Import</TabsTrigger>
             </TabsList>
+            
+            <TabsContent value="simulator">
+              <InfrastructureImpactSimulator />
+            </TabsContent>
             
             <TabsContent value="comparison">
               <FreightPathComparison />
