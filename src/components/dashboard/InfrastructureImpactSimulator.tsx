@@ -1,8 +1,7 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -10,20 +9,45 @@ import { Slider } from '@/components/ui/slider';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Progress } from '@/components/ui/progress';
+import { Skeleton } from '@/components/ui/skeleton';
 import { 
   Train, Gauge, Clock, TrendingUp, TrendingDown, AlertTriangle,
   Plus, Minus, RotateCcw, Play, Pause, Settings2, GitBranch,
   Repeat, Zap, ArrowLeftRight, Activity, Target, ChevronDown,
-  ChevronUp, Eye, Timer, Route, Layers
+  ChevronUp, Timer, Route, Layers, Database, RefreshCw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
 
 // ===========================================
 // Types
 // ===========================================
+
+interface RouteStationData {
+  id: number;
+  seq_no: number;
+  station_code: string;
+  station_name: string;
+  is_junction: boolean | null;
+  cumulative_distance_km: number | null;
+  signal_type: string | null;
+  no_of_tracks: number | null;
+}
+
+interface FreightMovementData {
+  id: string;
+  load_id: string;
+  station_code: string;
+  arrival_time: string | null;
+  departure_time: string | null;
+  speed: number | null;
+  is_stoppage: boolean | null;
+  halt_minutes: number | null;
+  delay_minutes: number | null;
+}
 
 interface Station {
   id: string;
@@ -31,7 +55,9 @@ interface Station {
   name: string;
   type: 'station' | 'junction' | 'halt';
   positionKm: number;
-  platforms: number;
+  seqNo: number;
+  signalType: string;
+  tracks: number;
   loops: LoopLine[];
 }
 
@@ -73,53 +99,117 @@ interface KPIMetrics {
   utilizationPercent: number;
   conflictRiskPercent: number;
   bottleneckSection: string | null;
+  totalStoppages: number;
+  totalHaltMinutes: number;
 }
 
-interface SimulatedTrain {
-  id: string;
+interface TrainPath {
   loadId: string;
-  currentPositionKm: number;
-  speed: number;
-  status: 'running' | 'waiting' | 'stopped';
-  delay: number;
   color: string;
+  movements: {
+    stationCode: string;
+    seqNo: number;
+    positionKm: number;
+    arrivalTime: Date | null;
+    departureTime: Date | null;
+    speed: number;
+    isStoppage: boolean;
+    haltMinutes: number;
+    delayMinutes: number;
+  }[];
+}
+
+const TRAIN_COLORS = [
+  '#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6',
+  '#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1',
+  '#14b8a6', '#a855f7', '#eab308', '#0ea5e9', '#d946ef',
+];
+
+// ===========================================
+// Data Processing Functions
+// ===========================================
+
+function processRouteStations(data: RouteStationData[]): Station[] {
+  return data.map((station, idx) => ({
+    id: station.station_code.toLowerCase(),
+    code: station.station_code,
+    name: station.station_name,
+    type: station.is_junction ? 'junction' : 'station',
+    positionKm: station.cumulative_distance_km || (idx * 10),
+    seqNo: station.seq_no,
+    signalType: station.signal_type || 'AB',
+    tracks: station.no_of_tracks || 2,
+    loops: [],
+  }));
+}
+
+function buildSectionsFromStations(stations: Station[]): BlockSection[] {
+  const sections: BlockSection[] = [];
+  
+  for (let i = 0; i < stations.length - 1; i++) {
+    const from = stations[i];
+    const to = stations[i + 1];
+    
+    sections.push({
+      id: `${from.code}-${to.code}`.toLowerCase(),
+      fromStation: from.id,
+      toStation: to.id,
+      distanceKm: Math.round((to.positionKm - from.positionKm) * 10) / 10,
+      signallingType: to.signalType === 'AT' ? 'automatic' : 'absolute',
+      mainLines: Math.min(from.tracks, to.tracks),
+      maxSpeed: 100,
+      crossovers: [],
+    });
+  }
+  
+  return sections;
+}
+
+function processFreightMovements(
+  movements: FreightMovementData[], 
+  stationMap: Map<string, Station>
+): TrainPath[] {
+  const pathMap = new Map<string, TrainPath>();
+  
+  movements.forEach((m, idx) => {
+    const station = stationMap.get(m.station_code);
+    if (!station) return;
+    
+    if (!pathMap.has(m.load_id)) {
+      pathMap.set(m.load_id, {
+        loadId: m.load_id,
+        color: TRAIN_COLORS[pathMap.size % TRAIN_COLORS.length],
+        movements: [],
+      });
+    }
+    
+    const path = pathMap.get(m.load_id)!;
+    path.movements.push({
+      stationCode: m.station_code,
+      seqNo: station.seqNo,
+      positionKm: station.positionKm,
+      arrivalTime: m.arrival_time ? new Date(m.arrival_time) : null,
+      departureTime: m.departure_time ? new Date(m.departure_time) : null,
+      speed: m.speed || 0,
+      isStoppage: m.is_stoppage || false,
+      haltMinutes: m.halt_minutes || 0,
+      delayMinutes: m.delay_minutes || 0,
+    });
+  });
+  
+  // Sort movements by sequence
+  pathMap.forEach(path => {
+    path.movements.sort((a, b) => a.seqNo - b.seqNo);
+  });
+  
+  return Array.from(pathMap.values()).slice(0, 15); // Limit to 15 trains for performance
 }
 
 // ===========================================
-// Initial Data - KTV Route
+// KPI Calculator with Real Data
 // ===========================================
 
-const getInitialInfra = (): InfraState => ({
-  stations: [
-    { id: 'jbp', code: 'JBP', name: 'Jabalpur', type: 'junction', positionKm: 0, platforms: 6, loops: [] },
-    { id: 'mni', code: 'MNI', name: 'Madan Mahal', type: 'station', positionKm: 8, platforms: 2, loops: [] },
-    { id: 'sgh', code: 'SGH', name: 'Sohagpur', type: 'station', positionKm: 35, platforms: 2, loops: [] },
-    { id: 'nrsh', code: 'NRSH', name: 'Narsinghpur', type: 'station', positionKm: 55, platforms: 3, loops: [
-      { id: 'nrsh-l1', name: 'Loop 1', lengthM: 750, maxSpeed: 30, direction: 'both' }
-    ]},
-    { id: 'krli', code: 'KRLI', name: 'Kareli', type: 'station', positionKm: 75, platforms: 2, loops: [] },
-    { id: 'gdw', code: 'GDW', name: 'Gadarwara', type: 'station', positionKm: 95, platforms: 2, loops: [] },
-    { id: 'ppr', code: 'PPR', name: 'Pipariya', type: 'junction', positionKm: 120, platforms: 3, loops: [
-      { id: 'ppr-l1', name: 'Loop 1', lengthM: 750, maxSpeed: 30, direction: 'both' }
-    ]},
-    { id: 'itr', code: 'ITR', name: 'Itarsi', type: 'junction', positionKm: 155, platforms: 7, loops: [] },
-  ],
-  sections: [
-    { id: 'jbp-mni', fromStation: 'jbp', toStation: 'mni', distanceKm: 8, signallingType: 'automatic', mainLines: 2, maxSpeed: 110, crossovers: [] },
-    { id: 'mni-sgh', fromStation: 'mni', toStation: 'sgh', distanceKm: 27, signallingType: 'automatic', mainLines: 2, maxSpeed: 100, crossovers: [] },
-    { id: 'sgh-nrsh', fromStation: 'sgh', toStation: 'nrsh', distanceKm: 20, signallingType: 'absolute', mainLines: 1, maxSpeed: 90, crossovers: [] },
-    { id: 'nrsh-krli', fromStation: 'nrsh', toStation: 'krli', distanceKm: 20, signallingType: 'absolute', mainLines: 1, maxSpeed: 85, crossovers: [] },
-    { id: 'krli-gdw', fromStation: 'krli', toStation: 'gdw', distanceKm: 20, signallingType: 'absolute', mainLines: 1, maxSpeed: 85, crossovers: [] },
-    { id: 'gdw-ppr', fromStation: 'gdw', toStation: 'ppr', distanceKm: 25, signallingType: 'automatic', mainLines: 2, maxSpeed: 100, crossovers: [] },
-    { id: 'ppr-itr', fromStation: 'ppr', toStation: 'itr', distanceKm: 35, signallingType: 'automatic', mainLines: 2, maxSpeed: 110, crossovers: [] },
-  ],
-});
-
-// ===========================================
-// KPI Calculator
-// ===========================================
-
-const calculateKPIs = (infra: InfraState): KPIMetrics => {
+function calculateKPIs(infra: InfraState, trainPaths: TrainPath[]): KPIMetrics {
   let totalCapacity = 0;
   let weightedSpeed = 0;
   let totalDistance = 0;
@@ -131,14 +221,14 @@ const calculateKPIs = (infra: InfraState): KPIMetrics => {
     const distance = section.distanceKm;
     totalDistance += distance;
     
-    // Base capacity based on signalling (trains per day)
+    // Base capacity based on signalling
     let baseCapacity = section.signallingType === 'automatic' ? 52 : 
                        section.signallingType === 'semi-automatic' ? 40 : 26;
     
     // Track multiplier
     baseCapacity *= section.mainLines;
     
-    // Loop bonus from adjacent stations
+    // Loop bonus
     const fromStation = infra.stations.find(s => s.id === section.fromStation);
     const toStation = infra.stations.find(s => s.id === section.toStation);
     const loopCount = (fromStation?.loops.length || 0) + (toStation?.loops.length || 0);
@@ -156,7 +246,7 @@ const calculateKPIs = (infra: InfraState): KPIMetrics => {
     totalCapacity += baseCapacity;
     weightedSpeed += section.maxSpeed * distance;
     
-    // Conflict risk (higher for single line absolute block)
+    // Conflict risk
     if (section.mainLines === 1 && section.signallingType === 'absolute') {
       conflictRiskSum += 35;
     } else if (section.mainLines === 1) {
@@ -166,226 +256,354 @@ const calculateKPIs = (infra: InfraState): KPIMetrics => {
     }
   });
   
-  const sectionCount = infra.sections.length;
+  const sectionCount = infra.sections.length || 1;
   const avgCapacity = Math.round(totalCapacity / sectionCount);
-  const avgSpeed = Math.round(weightedSpeed / totalDistance);
+  const avgSpeed = Math.round(weightedSpeed / Math.max(totalDistance, 1));
   const avgConflictRisk = Math.round(conflictRiskSum / sectionCount);
+  const effectiveCapacity = Math.round(minCapacity === Infinity ? avgCapacity : minCapacity);
   
-  // Overall capacity is limited by bottleneck
-  const effectiveCapacity = Math.round(minCapacity);
+  // Calculate from real train data
+  let totalDelay = 0;
+  let totalStoppages = 0;
+  let totalHaltMinutes = 0;
+  let speedSum = 0;
+  let speedCount = 0;
   
-  // Simulated current usage
-  const currentTrains = 32;
-  const utilizationPercent = Math.min(100, Math.round((currentTrains / effectiveCapacity) * 100));
+  trainPaths.forEach(train => {
+    train.movements.forEach(m => {
+      totalDelay += m.delayMinutes;
+      if (m.isStoppage) totalStoppages++;
+      totalHaltMinutes += m.haltMinutes;
+      if (m.speed > 0) {
+        speedSum += m.speed;
+        speedCount++;
+      }
+    });
+  });
   
-  // Delay estimation
-  const baseDelay = 18;
-  const capacityFactor = effectiveCapacity > 45 ? 0.4 : effectiveCapacity > 35 ? 0.65 : 1;
-  const avgDelay = Math.round(baseDelay * capacityFactor);
+  const currentTrains = trainPaths.length;
+  const utilizationPercent = effectiveCapacity > 0 
+    ? Math.min(100, Math.round((currentTrains / effectiveCapacity) * 100))
+    : 0;
+  
+  const movementCount = trainPaths.reduce((sum, t) => sum + t.movements.length, 0);
+  const avgDelayFromData = movementCount > 0 ? Math.round(totalDelay / movementCount) : 0;
+  const avgSpeedFromData = speedCount > 0 ? Math.round(speedSum / speedCount) : avgSpeed;
   
   return {
     throughputTrainsPerDay: currentTrains,
-    avgSpeedKmh: avgSpeed,
-    avgDelayMin: avgDelay,
+    avgSpeedKmh: avgSpeedFromData || avgSpeed,
+    avgDelayMin: avgDelayFromData,
     capacityTrainsPerDay: effectiveCapacity,
     utilizationPercent,
     conflictRiskPercent: avgConflictRisk,
     bottleneckSection,
+    totalStoppages,
+    totalHaltMinutes: Math.round(totalHaltMinutes),
   };
-};
-
-// ===========================================
-// Simple Time-Distance Chart Component
-// ===========================================
-
-interface SimpleTimeDistanceProps {
-  infra: InfraState;
-  simulatedTrains: SimulatedTrain[];
-  isSimulating: boolean;
 }
 
-function SimpleTimeDistanceChart({ infra, simulatedTrains, isSimulating }: SimpleTimeDistanceProps) {
-  const totalDistance = infra.stations[infra.stations.length - 1]?.positionKm || 155;
-  const chartHeight = 300;
-  const chartWidth = 600;
-  const padding = { top: 30, right: 20, bottom: 40, left: 60 };
+// ===========================================
+// Time-Distance Chart with Real Data
+// ===========================================
+
+interface RealTimeDistanceProps {
+  infra: InfraState;
+  trainPaths: TrainPath[];
+  isSimulating: boolean;
+  infraModifications: number;
+}
+
+function RealTimeDistanceChart({ infra, trainPaths, isSimulating, infraModifications }: RealTimeDistanceProps) {
+  const totalDistance = infra.stations.length > 0 
+    ? infra.stations[infra.stations.length - 1]?.positionKm || 180
+    : 180;
+  
+  const chartHeight = 350;
+  const chartWidth = 700;
+  const padding = { top: 30, right: 30, bottom: 50, left: 70 };
   
   const innerWidth = chartWidth - padding.left - padding.right;
   const innerHeight = chartHeight - padding.top - padding.bottom;
   
-  // Time scale: 0-24 hours
-  const timeToX = (hour: number) => padding.left + (hour / 24) * innerWidth;
+  // Find time range from actual data
+  const { minTime, maxTime } = useMemo(() => {
+    let min = Infinity;
+    let max = -Infinity;
+    
+    trainPaths.forEach(train => {
+      train.movements.forEach(m => {
+        if (m.arrivalTime) {
+          const time = m.arrivalTime.getTime();
+          if (time < min) min = time;
+          if (time > max) max = time;
+        }
+      });
+    });
+    
+    if (min === Infinity) {
+      const now = new Date();
+      min = now.setHours(0, 0, 0, 0);
+      max = now.setHours(24, 0, 0, 0);
+    }
+    
+    return { minTime: min, maxTime: max };
+  }, [trainPaths]);
+  
+  const timeRange = maxTime - minTime || 24 * 60 * 60 * 1000;
+  
+  const timeToX = (time: Date | number) => {
+    const t = typeof time === 'number' ? time : time.getTime();
+    return padding.left + ((t - minTime) / timeRange) * innerWidth;
+  };
+  
   const distToY = (km: number) => padding.top + ((totalDistance - km) / totalDistance) * innerHeight;
+  
+  // Build station position map
+  const stationPositionMap = useMemo(() => {
+    const map = new Map<string, number>();
+    infra.stations.forEach(s => map.set(s.code, s.positionKm));
+    return map;
+  }, [infra.stations]);
+  
+  // Calculate delay impact based on infrastructure
+  const delayModifier = useMemo(() => {
+    // More AT sections and loops = less delay
+    const atCount = infra.sections.filter(s => s.signallingType === 'automatic').length;
+    const loopCount = infra.stations.reduce((sum, s) => sum + s.loops.length, 0);
+    const multiTrackCount = infra.sections.filter(s => s.mainLines > 1).length;
+    
+    const improvement = (atCount * 0.1) + (loopCount * 0.05) + (multiTrackCount * 0.08);
+    return Math.max(0.3, 1 - improvement);
+  }, [infra, infraModifications]);
+  
+  if (trainPaths.length === 0) {
+    return (
+      <Card className="bg-card/50 backdrop-blur border-border/50">
+        <CardContent className="py-12 text-center">
+          <Train className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+          <p className="text-muted-foreground">No freight movement data available</p>
+          <p className="text-xs text-muted-foreground mt-1">Import freight data to see train paths</p>
+        </CardContent>
+      </Card>
+    );
+  }
   
   return (
     <Card className="bg-card/50 backdrop-blur border-border/50">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm flex items-center gap-2">
-          <Route className="h-4 w-4 text-primary" />
-          Simulated Time-Distance Graph
-        </CardTitle>
-        <CardDescription className="text-xs">
-          Shows predicted train movements based on current infrastructure
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Route className="h-4 w-4 text-primary" />
+              Real Train Paths
+              <Badge variant="outline" className="text-[10px]">
+                <Database className="h-3 w-3 mr-1" />
+                Live Data
+              </Badge>
+            </CardTitle>
+            <CardDescription className="text-xs">
+              {trainPaths.length} freight trains • Delays adjusted by infrastructure changes
+            </CardDescription>
+          </div>
+          {delayModifier < 1 && (
+            <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-xs">
+              <TrendingDown className="h-3 w-3 mr-1" />
+              {Math.round((1 - delayModifier) * 100)}% delay reduction
+            </Badge>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
-        <svg width="100%" viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="overflow-visible">
-          {/* Background grid */}
-          <defs>
-            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="hsl(var(--border))" strokeWidth="0.5" opacity="0.3" />
-            </pattern>
-          </defs>
-          <rect x={padding.left} y={padding.top} width={innerWidth} height={innerHeight} fill="url(#grid)" />
-          
-          {/* Station lines (horizontal) */}
-          {infra.stations.map(station => {
-            const y = distToY(station.positionKm);
-            return (
-              <g key={station.id}>
-                <line 
-                  x1={padding.left} 
-                  y1={y} 
-                  x2={padding.left + innerWidth} 
-                  y2={y}
-                  stroke="hsl(var(--muted-foreground))"
-                  strokeWidth={station.type === 'junction' ? 1.5 : 0.5}
-                  strokeDasharray={station.type === 'junction' ? 'none' : '4,4'}
-                  opacity={0.4}
+        <ScrollArea className="w-full">
+          <svg width={chartWidth} height={chartHeight} className="overflow-visible">
+            {/* Background grid */}
+            <defs>
+              <pattern id="sim-grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                <path d="M 40 0 L 0 0 0 40" fill="none" stroke="hsl(var(--border))" strokeWidth="0.5" opacity="0.3" />
+              </pattern>
+            </defs>
+            <rect x={padding.left} y={padding.top} width={innerWidth} height={innerHeight} fill="url(#sim-grid)" />
+            
+            {/* Highlight AB sections (bottlenecks) */}
+            {infra.sections.filter(s => s.signallingType === 'absolute' && s.mainLines === 1).map(section => {
+              const fromStation = infra.stations.find(s => s.id === section.fromStation);
+              const toStation = infra.stations.find(s => s.id === section.toStation);
+              if (!fromStation || !toStation) return null;
+              
+              const y1 = distToY(fromStation.positionKm);
+              const y2 = distToY(toStation.positionKm);
+              
+              return (
+                <rect
+                  key={section.id}
+                  x={padding.left}
+                  y={Math.min(y1, y2)}
+                  width={innerWidth}
+                  height={Math.abs(y2 - y1)}
+                  fill="hsl(var(--destructive))"
+                  opacity={0.08}
                 />
+              );
+            })}
+            
+            {/* Station lines */}
+            {infra.stations.map(station => {
+              const y = distToY(station.positionKm);
+              const isJunction = station.type === 'junction';
+              
+              return (
+                <g key={station.id}>
+                  <line 
+                    x1={padding.left} 
+                    y1={y} 
+                    x2={padding.left + innerWidth} 
+                    y2={y}
+                    stroke="hsl(var(--muted-foreground))"
+                    strokeWidth={isJunction ? 1 : 0.5}
+                    strokeDasharray={isJunction ? 'none' : '3,3'}
+                    opacity={0.4}
+                  />
+                  <text
+                    x={padding.left - 8}
+                    y={y}
+                    textAnchor="end"
+                    dominantBaseline="middle"
+                    className="text-[9px] fill-muted-foreground"
+                  >
+                    {station.code}
+                  </text>
+                  {/* Show loop indicator */}
+                  {station.loops.length > 0 && (
+                    <circle
+                      cx={padding.left - 4}
+                      cy={y}
+                      r={3}
+                      fill="hsl(var(--primary))"
+                      opacity={0.6}
+                    />
+                  )}
+                </g>
+              );
+            })}
+            
+            {/* Time axis */}
+            {[0, 0.25, 0.5, 0.75, 1].map(ratio => {
+              const time = new Date(minTime + ratio * timeRange);
+              const x = padding.left + ratio * innerWidth;
+              
+              return (
                 <text
-                  x={padding.left - 5}
-                  y={y}
-                  textAnchor="end"
-                  dominantBaseline="middle"
-                  className="text-[10px] fill-muted-foreground"
+                  key={ratio}
+                  x={x}
+                  y={chartHeight - 15}
+                  textAnchor="middle"
+                  className="text-[9px] fill-muted-foreground"
                 >
-                  {station.code}
+                  {time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </text>
-              </g>
-            );
-          })}
-          
-          {/* Time axis labels */}
-          {[0, 6, 12, 18, 24].map(hour => (
+              );
+            })}
+            
             <text
-              key={hour}
-              x={timeToX(hour)}
-              y={chartHeight - 10}
+              x={chartWidth / 2}
+              y={chartHeight - 2}
               textAnchor="middle"
               className="text-[10px] fill-muted-foreground"
             >
-              {hour}:00
+              Time
             </text>
-          ))}
-          
-          {/* Axis labels */}
-          <text
-            x={chartWidth / 2}
-            y={chartHeight - 2}
-            textAnchor="middle"
-            className="text-[10px] fill-muted-foreground"
-          >
-            Time (hours)
-          </text>
-          <text
-            x={12}
-            y={chartHeight / 2}
-            textAnchor="middle"
-            transform={`rotate(-90, 12, ${chartHeight / 2})`}
-            className="text-[10px] fill-muted-foreground"
-          >
-            Distance (km)
-          </text>
-          
-          {/* Simulated train paths */}
-          {simulatedTrains.map((train, idx) => {
-            // Generate a simple path based on train position
-            const startHour = (idx * 2) % 20;
-            const endHour = startHour + 5;
-            const startDist = 0;
-            const endDist = totalDistance;
             
-            // Add some variation for waiting at AB sections
-            const abSections = infra.sections.filter(s => s.signallingType === 'absolute');
-            const waitPoints = abSections.map(s => {
-              const station = infra.stations.find(st => st.id === s.fromStation);
-              return station?.positionKm || 0;
-            });
-            
-            // Build path
-            let pathD = `M ${timeToX(startHour)} ${distToY(startDist)}`;
-            let currentHour = startHour;
-            let currentDist = startDist;
-            
-            infra.stations.forEach((station, stIdx) => {
-              if (stIdx === 0) return;
+            {/* Train paths */}
+            {trainPaths.map((train, trainIdx) => {
+              if (train.movements.length < 2) return null;
               
-              const dist = station.positionKm;
-              const section = infra.sections[stIdx - 1];
-              const travelTime = section.distanceKm / (section.maxSpeed * 0.6); // simplified
-              currentHour += travelTime;
+              // Build path with actual positions
+              let pathD = '';
               
-              // Add wait time for AB sections
-              if (section.signallingType === 'absolute' && section.mainLines === 1) {
-                // Horizontal line for waiting
-                pathD += ` L ${timeToX(currentHour)} ${distToY(currentDist)}`;
-                currentHour += 0.3 + Math.random() * 0.4; // 18-42 min wait
-              }
+              train.movements.forEach((m, idx) => {
+                const pos = stationPositionMap.get(m.stationCode);
+                if (pos === undefined || !m.arrivalTime) return;
+                
+                const x = timeToX(m.arrivalTime);
+                const y = distToY(pos);
+                
+                if (idx === 0 || pathD === '') {
+                  pathD = `M ${x} ${y}`;
+                } else {
+                  // Add delay visualization (horizontal line for waiting)
+                  const prevM = train.movements[idx - 1];
+                  if (prevM.departureTime && m.arrivalTime) {
+                    const adjustedDelay = m.delayMinutes * delayModifier;
+                    if (adjustedDelay > 5) {
+                      // Show waiting period with modified delay
+                      const waitX = timeToX(new Date(m.arrivalTime.getTime() - adjustedDelay * 60000));
+                      const prevY = distToY(stationPositionMap.get(prevM.stationCode) || 0);
+                      pathD += ` L ${waitX} ${prevY}`;
+                    }
+                  }
+                  pathD += ` L ${x} ${y}`;
+                }
+              });
               
-              currentDist = dist;
-              pathD += ` L ${timeToX(currentHour)} ${distToY(currentDist)}`;
-            });
-            
-            return (
-              <motion.path
-                key={train.id}
-                d={pathD}
-                fill="none"
-                stroke={train.color}
-                strokeWidth={2}
-                strokeLinecap="round"
-                initial={{ pathLength: 0, opacity: 0 }}
-                animate={{ 
-                  pathLength: isSimulating ? 1 : 0.8,
-                  opacity: 1 
-                }}
-                transition={{ duration: isSimulating ? 2 : 0.5, delay: idx * 0.3 }}
-              />
-            );
-          })}
-          
-          {/* AB section markers */}
-          {infra.sections.filter(s => s.signallingType === 'absolute').map(section => {
-            const fromStation = infra.stations.find(s => s.id === section.fromStation);
-            const toStation = infra.stations.find(s => s.id === section.toStation);
-            if (!fromStation || !toStation) return null;
-            
-            const y1 = distToY(fromStation.positionKm);
-            const y2 = distToY(toStation.positionKm);
-            
-            return (
-              <rect
-                key={section.id}
-                x={padding.left}
-                y={Math.min(y1, y2)}
-                width={innerWidth}
-                height={Math.abs(y2 - y1)}
-                fill="hsl(var(--destructive))"
-                opacity={0.05}
-              />
-            );
-          })}
-        </svg>
+              return (
+                <g key={train.loadId}>
+                  <motion.path
+                    d={pathD}
+                    fill="none"
+                    stroke={train.color}
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    initial={{ pathLength: 0, opacity: 0 }}
+                    animate={{ pathLength: 1, opacity: 0.8 }}
+                    transition={{ duration: 1.5, delay: trainIdx * 0.1 }}
+                  />
+                  
+                  {/* Stoppage markers */}
+                  {train.movements.filter(m => m.isStoppage).map((m, idx) => {
+                    const pos = stationPositionMap.get(m.stationCode);
+                    if (pos === undefined || !m.arrivalTime) return null;
+                    
+                    return (
+                      <motion.circle
+                        key={idx}
+                        cx={timeToX(m.arrivalTime)}
+                        cy={distToY(pos)}
+                        r={4}
+                        fill="hsl(var(--destructive))"
+                        stroke="hsl(var(--background))"
+                        strokeWidth={1}
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ delay: 1 + trainIdx * 0.1 }}
+                      />
+                    );
+                  })}
+                </g>
+              );
+            })}
+          </svg>
+          <ScrollBar orientation="horizontal" />
+        </ScrollArea>
         
-        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
+        {/* Legend */}
+        <div className="flex flex-wrap gap-4 mt-3 text-xs text-muted-foreground">
           <div className="flex items-center gap-1">
-            <div className="w-4 h-2 bg-destructive/20 rounded" />
+            <div className="w-4 h-3 bg-destructive/20 rounded" />
             <span>AB Section (bottleneck)</span>
           </div>
           <div className="flex items-center gap-1">
             <div className="w-4 h-0.5 bg-green-500 rounded" />
             <span>Train Path</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-2 h-2 rounded-full bg-destructive" />
+            <span>Stoppage</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-2 h-2 rounded-full bg-primary" />
+            <span>Loop Available</span>
           </div>
         </div>
       </CardContent>
@@ -398,7 +616,7 @@ function SimpleTimeDistanceChart({ infra, simulatedTrains, isSimulating }: Simpl
 // ===========================================
 
 export function InfrastructureImpactSimulator() {
-  const [infra, setInfra] = useState<InfraState>(getInitialInfra);
+  const [infraModifications, setInfraModifications] = useState(0);
   const [baselineKPIs, setBaselineKPIs] = useState<KPIMetrics | null>(null);
   const [selectedStation, setSelectedStation] = useState<string | null>(null);
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
@@ -415,8 +633,64 @@ export function InfrastructureImpactSimulator() {
   const [newLoopName, setNewLoopName] = useState('New Loop');
   const [crossoverPosition, setCrossoverPosition] = useState(50);
   
+  // Fetch route stations from database
+  const { data: routeStationsData, isLoading: stationsLoading } = useQuery({
+    queryKey: ['route-stations-simulator'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('route_stations')
+        .select('id, seq_no, station_code, station_name, is_junction, cumulative_distance_km, signal_type, no_of_tracks')
+        .order('seq_no', { ascending: true })
+        .limit(30);
+      
+      if (error) throw error;
+      return data as RouteStationData[];
+    },
+  });
+  
+  // Fetch freight movements from database
+  const { data: freightMovementsData, isLoading: movementsLoading, refetch: refetchMovements } = useQuery({
+    queryKey: ['freight-movements-simulator'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('freight_movements')
+        .select('id, load_id, station_code, arrival_time, departure_time, speed, is_stoppage, halt_minutes, delay_minutes')
+        .not('arrival_time', 'is', null)
+        .order('load_id', { ascending: true })
+        .order('arrival_time', { ascending: true })
+        .limit(500);
+      
+      if (error) throw error;
+      return data as FreightMovementData[];
+    },
+  });
+  
+  // Process stations into infrastructure state
+  const [infra, setInfra] = useState<InfraState>({ stations: [], sections: [] });
+  
+  useEffect(() => {
+    if (routeStationsData && routeStationsData.length > 0) {
+      const stations = processRouteStations(routeStationsData);
+      const sections = buildSectionsFromStations(stations);
+      setInfra({ stations, sections });
+    }
+  }, [routeStationsData]);
+  
+  // Build station map for quick lookup
+  const stationMap = useMemo(() => {
+    const map = new Map<string, Station>();
+    infra.stations.forEach(s => map.set(s.code, s));
+    return map;
+  }, [infra.stations]);
+  
+  // Process freight movements into train paths
+  const trainPaths = useMemo(() => {
+    if (!freightMovementsData || freightMovementsData.length === 0) return [];
+    return processFreightMovements(freightMovementsData, stationMap);
+  }, [freightMovementsData, stationMap]);
+  
   // Calculate KPIs
-  const currentKPIs = useMemo(() => calculateKPIs(infra), [infra]);
+  const currentKPIs = useMemo(() => calculateKPIs(infra, trainPaths), [infra, trainPaths, infraModifications]);
   
   // KPI changes from baseline
   const kpiChanges = useMemo(() => {
@@ -430,22 +704,10 @@ export function InfrastructureImpactSimulator() {
     };
   }, [currentKPIs, baselineKPIs]);
   
-  // Simulated trains
-  const simulatedTrains = useMemo<SimulatedTrain[]>(() => {
-    const colors = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
-    return Array.from({ length: 8 }, (_, i) => ({
-      id: `train-${i}`,
-      loadId: `LOAD-${1000 + i}`,
-      currentPositionKm: (i * 20) % 155,
-      speed: 60 + Math.random() * 40,
-      status: i % 3 === 0 ? 'waiting' : 'running',
-      delay: Math.floor(Math.random() * 15),
-      color: colors[i % colors.length],
-    }));
-  }, [infra]);
-  
   // Total distance
-  const totalDistance = infra.stations[infra.stations.length - 1]?.positionKm || 155;
+  const totalDistance = infra.stations.length > 0 
+    ? infra.stations[infra.stations.length - 1]?.positionKm || 180
+    : 180;
   
   // Set baseline
   const handleSetBaseline = () => {
@@ -455,11 +717,16 @@ export function InfrastructureImpactSimulator() {
   
   // Reset infrastructure
   const handleReset = () => {
-    setInfra(getInitialInfra());
+    if (routeStationsData && routeStationsData.length > 0) {
+      const stations = processRouteStations(routeStationsData);
+      const sections = buildSectionsFromStations(stations);
+      setInfra({ stations, sections });
+    }
     setBaselineKPIs(null);
     setSelectedStation(null);
     setSelectedSection(null);
-    toast.info('Infrastructure reset to initial state');
+    setInfraModifications(0);
+    toast.info('Infrastructure reset to original state');
   };
   
   // Add loop
@@ -488,9 +755,10 @@ export function InfrastructureImpactSimulator() {
       })
     }));
     
+    setInfraModifications(prev => prev + 1);
     setAddLoopDialog(false);
     setNewLoopName('New Loop');
-    toast.success('Loop line added');
+    toast.success('Loop line added - capacity increased');
   };
   
   // Remove loop
@@ -507,6 +775,7 @@ export function InfrastructureImpactSimulator() {
         return station;
       })
     }));
+    setInfraModifications(prev => prev + 1);
     toast.info('Loop removed');
   };
   
@@ -524,8 +793,9 @@ export function InfrastructureImpactSimulator() {
       })
     }));
     
+    setInfraModifications(prev => prev + 1);
     setAddMainLineDialog(false);
-    toast.success('Main line added - capacity increased!');
+    toast.success('Main line added - capacity doubled!');
   };
   
   // Add crossover
@@ -558,6 +828,7 @@ export function InfrastructureImpactSimulator() {
       })
     }));
     
+    setInfraModifications(prev => prev + 1);
     setAddCrossoverDialog(false);
     toast.success('Crossover installed');
   };
@@ -576,12 +847,48 @@ export function InfrastructureImpactSimulator() {
       })
     }));
     
+    setInfraModifications(prev => prev + 1);
     setUpgradeSignalDialog(false);
     toast.success(`Signalling upgraded to ${newType === 'automatic' ? 'Automatic Block' : 'Semi-Automatic Block'}`);
   };
   
   // Get station by id
   const getStation = (id: string) => infra.stations.find(s => s.id === id);
+  
+  const isLoading = stationsLoading || movementsLoading;
+  
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-12 w-full" />
+        <div className="grid grid-cols-7 gap-3">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <Skeleton key={i} className="h-20" />
+          ))}
+        </div>
+        <div className="grid lg:grid-cols-2 gap-4">
+          <Skeleton className="h-64" />
+          <Skeleton className="h-64" />
+        </div>
+      </div>
+    );
+  }
+  
+  if (infra.stations.length === 0) {
+    return (
+      <Card className="bg-card/50 backdrop-blur border-border/50">
+        <CardContent className="py-12 text-center">
+          <Database className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+          <p className="text-lg font-medium">No Route Data Found</p>
+          <p className="text-muted-foreground mt-1">Import route station data to use the infrastructure simulator</p>
+          <Button variant="outline" className="mt-4" onClick={() => refetchMovements()}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
   
   return (
     <div className="space-y-4">
@@ -593,11 +900,24 @@ export function InfrastructureImpactSimulator() {
               <Train className="h-5 w-5 text-primary" />
               <span className="font-medium">Infrastructure Impact Simulator</span>
               <Badge variant="outline" className="text-xs">
-                {infra.stations.length} stations • {totalDistance} km
+                <Database className="h-3 w-3 mr-1" />
+                {infra.stations.length} stations • {Math.round(totalDistance)} km
               </Badge>
+              <Badge variant="outline" className="text-xs">
+                {trainPaths.length} trains loaded
+              </Badge>
+              {infraModifications > 0 && (
+                <Badge className="bg-primary/20 text-primary border-primary/30 text-xs">
+                  {infraModifications} changes
+                </Badge>
+              )}
             </div>
             
             <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => refetchMovements()}>
+                <RefreshCw className="h-4 w-4 mr-1" />
+                Refresh Data
+              </Button>
               <Button variant="outline" size="sm" onClick={handleSetBaseline}>
                 <Target className="h-4 w-4 mr-1" />
                 Set Baseline
@@ -633,7 +953,7 @@ export function InfrastructureImpactSimulator() {
         <KPICard 
           label="Throughput"
           value={currentKPIs.throughputTrainsPerDay}
-          unit="trains/day"
+          unit="trains"
           change={kpiChanges?.throughput}
           icon={<Train className="h-4 w-4" />}
           positive={true}
@@ -655,19 +975,19 @@ export function InfrastructureImpactSimulator() {
           positive={false}
         />
         <KPICard 
-          label="Utilization"
-          value={currentKPIs.utilizationPercent}
-          unit="%"
+          label="Stoppages"
+          value={currentKPIs.totalStoppages}
+          unit=""
           change={null}
-          icon={<TrendingUp className="h-4 w-4" />}
-          positive={true}
+          icon={<AlertTriangle className="h-4 w-4" />}
+          positive={false}
         />
         <KPICard 
-          label="Conflict Risk"
-          value={currentKPIs.conflictRiskPercent}
-          unit="%"
-          change={kpiChanges?.risk}
-          icon={<AlertTriangle className="h-4 w-4" />}
+          label="Total Halt"
+          value={currentKPIs.totalHaltMinutes}
+          unit="min"
+          change={null}
+          icon={<Timer className="h-4 w-4" />}
           positive={false}
         />
         <Card className={cn(
@@ -676,17 +996,17 @@ export function InfrastructureImpactSimulator() {
         )}>
           <CardContent className="py-3 px-4">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs text-muted-foreground">Bottleneck</span>
+              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Bottleneck</span>
               <AlertTriangle className="h-4 w-4 text-destructive" />
             </div>
-            <span className="text-lg font-bold text-destructive">
+            <span className="text-sm font-bold text-destructive">
               {currentKPIs.bottleneckSection || 'None'}
             </span>
           </CardContent>
         </Card>
       </div>
       
-      {/* Main Content - Block Diagram + Time-Distance */}
+      {/* Main Content */}
       <div className="grid lg:grid-cols-2 gap-4">
         {/* Block Diagram */}
         <Card className="bg-card/50 backdrop-blur border-border/50">
@@ -712,9 +1032,9 @@ export function InfrastructureImpactSimulator() {
           </CardHeader>
           <CardContent>
             <ScrollArea className="w-full pb-4">
-              <div className="relative min-w-[600px] h-[200px] py-4 px-2">
+              <div className="relative min-w-[600px] h-[180px] py-4 px-2">
                 {/* Section tracks */}
-                {infra.sections.map((section, idx) => {
+                {infra.sections.map((section) => {
                   const fromStation = getStation(section.fromStation);
                   const toStation = getStation(section.toStation);
                   if (!fromStation || !toStation) return null;
@@ -742,7 +1062,7 @@ export function InfrastructureImpactSimulator() {
                           <TooltipTrigger asChild>
                             <button
                               className={cn(
-                                "relative w-full h-12 group cursor-pointer transition-all rounded",
+                                "relative w-full h-10 group cursor-pointer transition-all rounded",
                                 isSelected && "ring-2 ring-primary ring-offset-1 ring-offset-background"
                               )}
                               onClick={() => setSelectedSection(isSelected ? null : section.id)}
@@ -766,17 +1086,6 @@ export function InfrastructureImpactSimulator() {
                                 />
                               ))}
                               
-                              {/* AT signals */}
-                              {isAT && Array.from({ length: Math.min(Math.floor(section.distanceKm / 2), 4) }).map((_, sigIdx) => (
-                                <div
-                                  key={sigIdx}
-                                  className="absolute top-1/2 -translate-y-1/2"
-                                  style={{ left: `${((sigIdx + 1) / (Math.floor(section.distanceKm / 2) + 1)) * 100}%` }}
-                                >
-                                  <div className="w-1 h-3 bg-green-400 rounded-sm shadow shadow-green-400/50" />
-                                </div>
-                              ))}
-                              
                               {/* Crossovers */}
                               {section.crossovers.map(xover => (
                                 <div
@@ -793,7 +1102,7 @@ export function InfrastructureImpactSimulator() {
                             <div className="space-y-1">
                               <p className="font-medium">{fromStation.code} → {toStation.code}</p>
                               <p className="text-xs text-muted-foreground">
-                                {section.distanceKm} km • {section.mainLines} line{section.mainLines > 1 ? 's' : ''} • {section.maxSpeed} km/h
+                                {section.distanceKm} km • {section.mainLines} line{section.mainLines > 1 ? 's' : ''}
                               </p>
                               <Badge variant="outline" className={cn(
                                 "text-[10px]",
@@ -801,16 +1110,15 @@ export function InfrastructureImpactSimulator() {
                                 isSemiAT && "border-blue-500/50 text-blue-400",
                                 !isAT && !isSemiAT && "border-amber-500/50 text-amber-400"
                               )}>
-                                {isAT ? 'Automatic Block' : isSemiAT ? 'Semi-Automatic' : 'Absolute Block'}
+                                {isAT ? 'AT' : isSemiAT ? 'Semi-AT' : 'AB'}
                               </Badge>
                             </div>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                       
-                      {/* Distance label */}
                       {showDetails && (
-                        <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[9px] text-muted-foreground font-mono">
+                        <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 text-[8px] text-muted-foreground font-mono">
                           {section.distanceKm}km
                         </div>
                       )}
@@ -830,17 +1138,17 @@ export function InfrastructureImpactSimulator() {
                       className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 z-10"
                       style={{ left: `${posPercent}%` }}
                     >
-                      {/* Loop lines above station */}
+                      {/* Loop lines */}
                       {station.loops.map((loop, loopIdx) => (
                         <div
                           key={loop.id}
                           className="absolute left-1/2 -translate-x-1/2 group"
-                          style={{ top: `${-25 - loopIdx * 20}px` }}
+                          style={{ top: `${-22 - loopIdx * 18}px` }}
                         >
                           <div className="relative">
-                            <div className="w-12 h-3 border-2 border-purple-500/60 rounded-full bg-purple-500/10" />
+                            <div className="w-10 h-2.5 border-2 border-purple-500/60 rounded-full bg-purple-500/10" />
                             <button
-                              className="absolute -right-1 -top-1 w-3 h-3 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center text-[8px] opacity-0 group-hover:opacity-100 transition-opacity"
+                              className="absolute -right-1 -top-1 w-3 h-3 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
                               onClick={() => handleRemoveLoop(station.id, loop.id)}
                             >
                               <Minus className="h-2 w-2" />
@@ -856,7 +1164,7 @@ export function InfrastructureImpactSimulator() {
                             <button
                               className={cn(
                                 "relative flex items-center justify-center transition-all",
-                                isJunction ? "w-6 h-6" : "w-4 h-4",
+                                isJunction ? "w-5 h-5" : "w-3.5 h-3.5",
                                 isSelected && "ring-2 ring-primary ring-offset-1 ring-offset-background rounded-full"
                               )}
                               onClick={() => setSelectedStation(isSelected ? null : station.id)}
@@ -865,23 +1173,23 @@ export function InfrastructureImpactSimulator() {
                                 "absolute inset-0 rounded-full",
                                 isJunction 
                                   ? "bg-primary border-2 border-primary-foreground shadow-lg shadow-primary/50" 
-                                  : "bg-foreground border-2 border-background"
+                                  : "bg-foreground border border-background"
                               )} />
                             </button>
                           </TooltipTrigger>
                           <TooltipContent>
                             <p className="font-medium">{station.name} ({station.code})</p>
                             <p className="text-xs text-muted-foreground">
-                              {station.platforms} platforms • {station.loops.length} loop{station.loops.length !== 1 ? 's' : ''}
+                              {station.tracks} tracks • {station.loops.length} loops
                             </p>
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
                       
                       {/* Station label */}
-                      <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 flex flex-col items-center">
+                      <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 flex flex-col items-center">
                         <span className={cn(
-                          "text-[10px] font-bold whitespace-nowrap",
+                          "text-[8px] font-bold whitespace-nowrap",
                           isJunction ? "text-primary" : "text-foreground"
                         )}>
                           {station.code}
@@ -895,7 +1203,7 @@ export function InfrastructureImpactSimulator() {
             </ScrollArea>
             
             {/* Legend */}
-            <div className="flex flex-wrap gap-3 mt-2 text-[10px]">
+            <div className="flex flex-wrap gap-3 mt-2 text-[9px]">
               <div className="flex items-center gap-1">
                 <div className="w-4 h-1.5 bg-gradient-to-r from-green-600 to-green-500 rounded" />
                 <span className="text-muted-foreground">AT</span>
@@ -916,11 +1224,12 @@ export function InfrastructureImpactSimulator() {
           </CardContent>
         </Card>
         
-        {/* Time-Distance Chart */}
-        <SimpleTimeDistanceChart 
+        {/* Real Time-Distance Chart */}
+        <RealTimeDistanceChart 
           infra={infra} 
-          simulatedTrains={simulatedTrains}
+          trainPaths={trainPaths}
           isSimulating={isSimulating}
+          infraModifications={infraModifications}
         />
       </div>
       
@@ -1043,11 +1352,6 @@ export function InfrastructureImpactSimulator() {
                                 step={5}
                               />
                             </div>
-                            <div className="p-3 bg-muted/50 rounded-lg">
-                              <p className="text-sm text-muted-foreground">
-                                <span className="text-cyan-400 font-medium">+3 trains/day</span> capacity increase expected
-                              </p>
-                            </div>
                           </div>
                           <DialogFooter>
                             <Button onClick={handleAddCrossover}>Install Crossover</Button>
@@ -1072,20 +1376,7 @@ export function InfrastructureImpactSimulator() {
                             </DialogHeader>
                             <div className="py-4 space-y-3">
                               <div className="p-3 bg-green-500/10 rounded-lg border border-green-500/20">
-                                <p className="text-sm">
-                                  <span className="text-green-400 font-medium">Automatic Block (AT)</span>
-                                </p>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  Multiple trains can operate in the section with safe spacing. ~100% capacity increase.
-                                </p>
-                              </div>
-                              <div className="p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
-                                <p className="text-sm">
-                                  <span className="text-blue-400 font-medium">Semi-Automatic Block</span>
-                                </p>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                  Intermediate upgrade with partial automation. ~50% capacity increase.
-                                </p>
+                                <p className="text-sm text-green-400 font-medium">~100% capacity increase</p>
                               </div>
                             </div>
                             <DialogFooter className="gap-2">
