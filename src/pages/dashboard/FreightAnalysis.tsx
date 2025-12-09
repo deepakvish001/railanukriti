@@ -7,6 +7,7 @@ import { RouteVisualization } from '@/components/dashboard/RouteVisualization';
 import { RailwayDataImporter } from '@/components/dashboard/RailwayDataImporter';
 import { FreightGanttChart } from '@/components/dashboard/FreightGanttChart';
 import { StoppageAnalysis } from '@/components/dashboard/StoppageAnalysis';
+import { FreightPathComparison } from '@/components/dashboard/FreightPathComparison';
 
 const FreightAnalysis = () => {
   return (
@@ -23,10 +24,15 @@ const FreightAnalysis = () => {
           <Tabs defaultValue="gantt">
             <TabsList>
               <TabsTrigger value="gantt">Time-Distance Chart</TabsTrigger>
+              <TabsTrigger value="comparison">Path Comparison</TabsTrigger>
               <TabsTrigger value="stoppage">Stoppage Analysis</TabsTrigger>
               <TabsTrigger value="throughput">Throughput Dashboard</TabsTrigger>
               <TabsTrigger value="import">Data Import</TabsTrigger>
             </TabsList>
+            
+            <TabsContent value="comparison">
+              <FreightPathComparison />
+            </TabsContent>
             
             <TabsContent value="gantt">
               <FreightGanttChart />
