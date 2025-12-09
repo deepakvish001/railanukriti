@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,13 +14,30 @@ import {
   Train, Gauge, Clock, TrendingUp, TrendingDown, AlertTriangle,
   Plus, Minus, RotateCcw, Play, Pause, Settings2, GitBranch,
   Repeat, Zap, ArrowLeftRight, Activity, Target, ChevronDown,
-  ChevronUp, Timer, Route, Layers, Database, RefreshCw
+  ChevronUp, Timer, Route, Layers, Database, RefreshCw, FastForward
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
+
+// ===========================================
+// Animated Train Type
+// ===========================================
+
+interface AnimatedTrain {
+  id: string;
+  loadId: string;
+  color: string;
+  currentPositionKm: number;
+  targetPositionKm: number;
+  speed: number;
+  status: 'moving' | 'stopped' | 'waiting';
+  currentStationIdx: number;
+  direction: 'up' | 'down';
+  waitTimeRemaining: number;
+}
 
 // ===========================================
 // Types
@@ -622,6 +639,12 @@ export function InfrastructureImpactSimulator() {
   const [selectedSection, setSelectedSection] = useState<string | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
   const [showDetails, setShowDetails] = useState(true);
+  const [simulationSpeed, setSimulationSpeed] = useState(1);
+  
+  // Animated trains state
+  const [animatedTrains, setAnimatedTrains] = useState<AnimatedTrain[]>([]);
+  const animationFrameRef = useRef<number | null>(null);
+  const lastUpdateRef = useRef<number>(0);
   
   // Dialogs
   const [addLoopDialog, setAddLoopDialog] = useState(false);
@@ -855,6 +878,175 @@ export function InfrastructureImpactSimulator() {
   // Get station by id
   const getStation = (id: string) => infra.stations.find(s => s.id === id);
   
+  // Initialize animated trains when simulation starts
+  const initializeAnimatedTrains = useCallback(() => {
+    if (trainPaths.length === 0 || infra.stations.length === 0) return;
+    
+    const trains: AnimatedTrain[] = trainPaths.slice(0, 10).map((path, idx) => {
+      const startStation = infra.stations.find(s => s.code === path.movements[0]?.stationCode);
+      const isUpDirection = Math.random() > 0.5;
+      const startStationIdx = isUpDirection ? 0 : infra.stations.length - 1;
+      const startPos = infra.stations[startStationIdx]?.positionKm || 0;
+      
+      return {
+        id: `train-${idx}`,
+        loadId: path.loadId,
+        color: path.color,
+        currentPositionKm: startPos,
+        targetPositionKm: startPos,
+        speed: 40 + Math.random() * 40, // 40-80 km/h
+        status: 'moving' as const,
+        currentStationIdx: startStationIdx,
+        direction: isUpDirection ? 'up' as const : 'down' as const,
+        waitTimeRemaining: 0,
+      };
+    });
+    
+    setAnimatedTrains(trains);
+  }, [trainPaths, infra.stations]);
+  
+  // Calculate section speed based on infrastructure
+  const getSectionSpeed = useCallback((fromKm: number, toKm: number): number => {
+    const section = infra.sections.find(s => {
+      const from = getStation(s.fromStation);
+      const to = getStation(s.toStation);
+      if (!from || !to) return false;
+      return (fromKm >= from.positionKm && toKm <= to.positionKm) ||
+             (fromKm <= to.positionKm && toKm >= from.positionKm);
+    });
+    
+    if (!section) return 60;
+    
+    // AT sections are faster
+    let speed = section.signallingType === 'automatic' ? 100 : 
+                section.signallingType === 'semi-automatic' ? 80 : 60;
+    
+    // Multi-line sections reduce delays
+    if (section.mainLines > 1) speed *= 1.1;
+    
+    return speed;
+  }, [infra.sections, getStation]);
+  
+  // Check if station has loop (for waiting)
+  const stationHasLoop = useCallback((stationId: string): boolean => {
+    const station = infra.stations.find(s => s.id === stationId);
+    return station ? station.loops.length > 0 : false;
+  }, [infra.stations]);
+  
+  // Animation loop
+  useEffect(() => {
+    if (!isSimulating) {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
+      }
+      return;
+    }
+    
+    // Initialize trains if not done
+    if (animatedTrains.length === 0) {
+      initializeAnimatedTrains();
+    }
+    
+    const animate = (timestamp: number) => {
+      if (!lastUpdateRef.current) lastUpdateRef.current = timestamp;
+      const deltaTime = (timestamp - lastUpdateRef.current) / 1000; // seconds
+      lastUpdateRef.current = timestamp;
+      
+      setAnimatedTrains(prevTrains => {
+        return prevTrains.map(train => {
+          // Handle waiting
+          if (train.status === 'waiting' && train.waitTimeRemaining > 0) {
+            const newWaitTime = train.waitTimeRemaining - deltaTime * simulationSpeed * 10;
+            if (newWaitTime <= 0) {
+              return { ...train, status: 'moving' as const, waitTimeRemaining: 0 };
+            }
+            return { ...train, waitTimeRemaining: newWaitTime };
+          }
+          
+          // Calculate next position
+          const direction = train.direction === 'up' ? 1 : -1;
+          const currentSpeed = getSectionSpeed(train.currentPositionKm, train.currentPositionKm + direction * 5);
+          const movement = (currentSpeed / 3600) * deltaTime * simulationSpeed * 100; // km moved
+          
+          let newPosition = train.currentPositionKm + direction * movement;
+          let newStationIdx = train.currentStationIdx;
+          let newStatus = train.status;
+          let newWaitTime = train.waitTimeRemaining;
+          let newDirection = train.direction;
+          
+          // Check if reached a station
+          const nextStationIdx = train.direction === 'up' 
+            ? Math.min(train.currentStationIdx + 1, infra.stations.length - 1)
+            : Math.max(train.currentStationIdx - 1, 0);
+          
+          const nextStation = infra.stations[nextStationIdx];
+          
+          if (nextStation) {
+            const reachedStation = train.direction === 'up'
+              ? newPosition >= nextStation.positionKm
+              : newPosition <= nextStation.positionKm;
+            
+            if (reachedStation) {
+              newPosition = nextStation.positionKm;
+              newStationIdx = nextStationIdx;
+              
+              // Random wait at station (shorter if has loop)
+              const hasLoop = stationHasLoop(nextStation.id);
+              const baseWait = hasLoop ? 1 : 3;
+              const shouldWait = Math.random() > 0.6;
+              
+              if (shouldWait) {
+                newStatus = 'waiting';
+                newWaitTime = baseWait + Math.random() * (hasLoop ? 2 : 5);
+              }
+              
+              // Reverse at endpoints
+              if (nextStationIdx === 0 || nextStationIdx === infra.stations.length - 1) {
+                newDirection = newDirection === 'up' ? 'down' : 'up';
+                newStatus = 'waiting';
+                newWaitTime = 2;
+              }
+            }
+          }
+          
+          // Clamp position to track bounds
+          const minKm = infra.stations[0]?.positionKm || 0;
+          const maxKm = infra.stations[infra.stations.length - 1]?.positionKm || 180;
+          newPosition = Math.max(minKm, Math.min(maxKm, newPosition));
+          
+          return {
+            ...train,
+            currentPositionKm: newPosition,
+            currentStationIdx: newStationIdx,
+            status: newStatus,
+            waitTimeRemaining: newWaitTime,
+            direction: newDirection,
+            speed: currentSpeed,
+          };
+        });
+      });
+      
+      animationFrameRef.current = requestAnimationFrame(animate);
+    };
+    
+    animationFrameRef.current = requestAnimationFrame(animate);
+    
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [isSimulating, simulationSpeed, infra.stations, initializeAnimatedTrains, getSectionSpeed, stationHasLoop]);
+  
+  // Reset animated trains when simulation stops
+  useEffect(() => {
+    if (!isSimulating) {
+      setAnimatedTrains([]);
+      lastUpdateRef.current = 0;
+    }
+  }, [isSimulating]);
+  
   const isLoading = stationsLoading || movementsLoading;
   
   if (isLoading) {
@@ -926,6 +1118,21 @@ export function InfrastructureImpactSimulator() {
                 <RotateCcw className="h-4 w-4 mr-1" />
                 Reset
               </Button>
+              
+              {/* Simulation Speed Control */}
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/50 rounded-md">
+                <FastForward className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">{simulationSpeed}x</span>
+                <Slider
+                  value={[simulationSpeed]}
+                  onValueChange={(v) => setSimulationSpeed(v[0])}
+                  min={0.5}
+                  max={5}
+                  step={0.5}
+                  className="w-20"
+                />
+              </div>
+              
               <Button 
                 size="sm" 
                 variant={isSimulating ? "destructive" : "default"}
@@ -936,6 +1143,23 @@ export function InfrastructureImpactSimulator() {
               </Button>
             </div>
           </div>
+          
+          {/* Animated Trains Counter */}
+          {isSimulating && animatedTrains.length > 0 && (
+            <div className="flex items-center gap-4 mt-2 pt-2 border-t border-border/50">
+              <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                <Train className="h-3 w-3 mr-1" />
+                {animatedTrains.filter(t => t.status === 'moving').length} moving
+              </Badge>
+              <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">
+                <Clock className="h-3 w-3 mr-1" />
+                {animatedTrains.filter(t => t.status === 'waiting').length} waiting
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                Avg speed: {Math.round(animatedTrains.reduce((sum, t) => sum + t.speed, 0) / Math.max(1, animatedTrains.length))} km/h
+              </span>
+            </div>
+          )}
         </CardContent>
       </Card>
       
@@ -1198,6 +1422,113 @@ export function InfrastructureImpactSimulator() {
                     </div>
                   );
                 })}
+                
+                {/* Animated Trains */}
+                <AnimatePresence>
+                  {isSimulating && animatedTrains.map((train) => {
+                    const posPercent = (train.currentPositionKm / totalDistance) * 100;
+                    const isMoving = train.status === 'moving';
+                    const isWaiting = train.status === 'waiting';
+                    
+                    return (
+                      <motion.div
+                        key={train.id}
+                        className="absolute z-20"
+                        initial={{ opacity: 0, scale: 0 }}
+                        animate={{ 
+                          opacity: 1, 
+                          scale: 1,
+                          left: `${posPercent}%`,
+                        }}
+                        exit={{ opacity: 0, scale: 0 }}
+                        transition={{ 
+                          left: { type: "spring", stiffness: 100, damping: 20 },
+                          opacity: { duration: 0.3 }
+                        }}
+                        style={{ 
+                          top: train.direction === 'up' ? '35%' : '65%',
+                          transform: 'translate(-50%, -50%)'
+                        }}
+                      >
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div 
+                                className={cn(
+                                  "relative flex items-center justify-center cursor-pointer",
+                                  "transition-all duration-200"
+                                )}
+                              >
+                                {/* Train glow effect */}
+                                <div 
+                                  className={cn(
+                                    "absolute -inset-1 rounded-full blur-sm transition-opacity",
+                                    isMoving && "animate-pulse"
+                                  )}
+                                  style={{ 
+                                    backgroundColor: train.color,
+                                    opacity: isMoving ? 0.4 : 0.2
+                                  }}
+                                />
+                                
+                                {/* Train body */}
+                                <div 
+                                  className={cn(
+                                    "relative w-4 h-4 rounded-full border-2 flex items-center justify-center",
+                                    isWaiting && "ring-2 ring-amber-400/50"
+                                  )}
+                                  style={{ 
+                                    backgroundColor: train.color,
+                                    borderColor: 'hsl(var(--background))'
+                                  }}
+                                >
+                                  {/* Direction indicator */}
+                                  <div 
+                                    className={cn(
+                                      "absolute w-1.5 h-1.5 bg-white/80 rounded-full",
+                                      train.direction === 'up' ? "-right-0.5" : "-left-0.5"
+                                    )}
+                                  />
+                                </div>
+                                
+                                {/* Speed indicator */}
+                                {showDetails && isMoving && (
+                                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 text-[7px] font-mono text-muted-foreground whitespace-nowrap">
+                                    {Math.round(train.speed)}
+                                  </div>
+                                )}
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <div className="space-y-1">
+                                <p className="font-medium text-xs">{train.loadId}</p>
+                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                  <span>{Math.round(train.speed)} km/h</span>
+                                  <span>•</span>
+                                  <span>{train.direction === 'up' ? '↑ UP' : '↓ DN'}</span>
+                                  <span>•</span>
+                                  <Badge 
+                                    variant="outline" 
+                                    className={cn(
+                                      "text-[9px] h-4",
+                                      isMoving && "border-green-500/50 text-green-400",
+                                      isWaiting && "border-amber-500/50 text-amber-400"
+                                    )}
+                                  >
+                                    {train.status}
+                                  </Badge>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  Position: {train.currentPositionKm.toFixed(1)} km
+                                </p>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
               </div>
               <ScrollBar orientation="horizontal" />
             </ScrollArea>
@@ -1220,6 +1551,18 @@ export function InfrastructureImpactSimulator() {
                 <Repeat className="h-3 w-3 text-cyan-400" />
                 <span className="text-muted-foreground">Crossover</span>
               </div>
+              {isSimulating && (
+                <>
+                  <div className="flex items-center gap-1">
+                    <div className="w-3 h-3 rounded-full bg-green-500" />
+                    <span className="text-muted-foreground">Train Moving</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-3 h-3 rounded-full bg-amber-500 ring-2 ring-amber-400/50" />
+                    <span className="text-muted-foreground">Train Waiting</span>
+                  </div>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
