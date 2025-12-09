@@ -1,4 +1,5 @@
 import { Helmet } from 'react-helmet-async';
+import { useNavigate } from 'react-router-dom';
 import { MinimalDashboardLayout } from '@/components/dashboard/MinimalDashboardLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FreightThroughputDashboard } from '@/components/dashboard/FreightThroughputDashboard';
@@ -12,9 +13,12 @@ import { RealTimeBlockDiagram } from '@/components/dashboard/RealTimeBlockDiagra
 import { ScenarioSimulation } from '@/components/dashboard/ScenarioSimulation';
 import { useTrains } from '@/hooks/useRailwayData';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Map } from 'lucide-react';
 
 const FreightAnalysis = () => {
   const { trains } = useTrains();
+  const navigate = useNavigate();
   
   return (
     <>
@@ -26,12 +30,23 @@ const FreightAnalysis = () => {
         <div className="space-y-6">
           {/* Main Headline Section */}
           <Card className="p-6 bg-gradient-to-r from-muted/30 to-muted/10 border-border">
-            <h1 className="text-2xl lg:text-3xl font-bold text-foreground mb-2">
-              Kottavalasa <span className="text-primary">→</span> Palasa Digital Twin
-            </h1>
-            <p className="text-muted-foreground">
-              Real-time time–distance + map with 36 trains (14 Passenger, 22 Freight) and live KPIs.
-            </p>
+            <div className="flex items-start justify-between flex-wrap gap-4">
+              <div>
+                <h1 className="text-2xl lg:text-3xl font-bold text-foreground mb-2">
+                  Kottavalasa <span className="text-primary">→</span> Palasa Digital Twin
+                </h1>
+                <p className="text-muted-foreground">
+                  Real-time time–distance + map with 36 trains (14 Passenger, 22 Freight) and live KPIs.
+                </p>
+              </div>
+              <Button 
+                onClick={() => navigate('/map')}
+                className="gap-2"
+              >
+                <Map className="w-4 h-4" />
+                View Route Map
+              </Button>
+            </div>
           </Card>
           
           <RouteVisualization />

@@ -12,6 +12,7 @@ import { SplashScreen } from "@/components/SplashScreen";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
+import Map from "./pages/Map";
 
 // Dashboard pages
 import Dashboard from "./pages/dashboard/Dashboard";
@@ -57,6 +58,9 @@ const App = () => {
                   <Route path="/audit" element={<ProtectedRoute><Audit /></ProtectedRoute>} />
                   <Route path="/export" element={<ProtectedRoute><Export /></ProtectedRoute>} />
                   <Route path="/data-import" element={<ProtectedRoute><DataImport /></ProtectedRoute>} />
+                  
+                  {/* Map Route */}
+                  <Route path="/map" element={<ProtectedRoute><Map /></ProtectedRoute>} />
                   
                   {/* Auth Route */}
                   <Route path="/auth" element={<Auth />} />
