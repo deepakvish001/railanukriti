@@ -79,7 +79,7 @@ const FreightAnalysis = () => {
             </TabsContent>
             
             <TabsContent value="simulation" className="mt-4">
-              <ScenarioSimulation trains={trains} />
+              <ScenarioSimulation />
             </TabsContent>
             
             <TabsContent value="comparison" className="mt-4">
