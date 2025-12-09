@@ -32,6 +32,17 @@ interface TrainTrailPoint {
   status: 'moving' | 'stopped' | 'waiting';
 }
 
+interface CollisionWarning {
+  id: string;
+  trainA: { id: string; loadId: string; color: string };
+  trainB: { id: string; loadId: string; color: string };
+  positionKm: number;
+  distance: number;
+  severity: 'critical' | 'warning';
+  sectionName: string;
+  timestamp: number;
+}
+
 interface AnimatedTrain {
   id: string;
   loadId: string;
@@ -666,6 +677,11 @@ export function InfrastructureImpactSimulator() {
   });
   const simulationStartRef = useRef<number>(0);
   
+  // Collision detection state
+  const [collisionWarnings, setCollisionWarnings] = useState<CollisionWarning[]>([]);
+  const COLLISION_CRITICAL_DISTANCE = 2; // km - critical collision risk
+  const COLLISION_WARNING_DISTANCE = 5; // km - warning zone
+  
   // Dialogs
   const [addLoopDialog, setAddLoopDialog] = useState(false);
   const [addMainLineDialog, setAddMainLineDialog] = useState(false);
@@ -1095,6 +1111,66 @@ export function InfrastructureImpactSimulator() {
         };
       });
       
+      // Collision detection - check for trains too close in same direction
+      setCollisionWarnings(() => {
+        const warnings: CollisionWarning[] = [];
+        const now = Date.now();
+        
+        for (let i = 0; i < animatedTrains.length; i++) {
+          for (let j = i + 1; j < animatedTrains.length; j++) {
+            const trainA = animatedTrains[i];
+            const trainB = animatedTrains[j];
+            
+            // Only check trains in same direction (head-on collisions are less relevant for block systems)
+            // But also check for same block section conflicts
+            const distance = Math.abs(trainA.currentPositionKm - trainB.currentPositionKm);
+            
+            // Determine which section they're in
+            const avgPosition = (trainA.currentPositionKm + trainB.currentPositionKm) / 2;
+            let sectionName = 'Unknown Section';
+            
+            for (const section of infra.sections) {
+              const fromStation = infra.stations.find(s => s.id === section.fromStation);
+              const toStation = infra.stations.find(s => s.id === section.toStation);
+              if (fromStation && toStation) {
+                const minKm = Math.min(fromStation.positionKm, toStation.positionKm);
+                const maxKm = Math.max(fromStation.positionKm, toStation.positionKm);
+                if (avgPosition >= minKm && avgPosition <= maxKm) {
+                  sectionName = `${fromStation.code}-${toStation.code}`;
+                  break;
+                }
+              }
+            }
+            
+            if (distance < COLLISION_CRITICAL_DISTANCE) {
+              warnings.push({
+                id: `collision-${trainA.id}-${trainB.id}`,
+                trainA: { id: trainA.id, loadId: trainA.loadId, color: trainA.color },
+                trainB: { id: trainB.id, loadId: trainB.loadId, color: trainB.color },
+                positionKm: avgPosition,
+                distance: Math.round(distance * 100) / 100,
+                severity: 'critical',
+                sectionName,
+                timestamp: now,
+              });
+            } else if (distance < COLLISION_WARNING_DISTANCE && trainA.direction === trainB.direction) {
+              warnings.push({
+                id: `collision-${trainA.id}-${trainB.id}`,
+                trainA: { id: trainA.id, loadId: trainA.loadId, color: trainA.color },
+                trainB: { id: trainB.id, loadId: trainB.loadId, color: trainB.color },
+                positionKm: avgPosition,
+                distance: Math.round(distance * 100) / 100,
+                severity: 'warning',
+                sectionName,
+                timestamp: now,
+              });
+            }
+          }
+        }
+        
+        return warnings;
+      });
+      
       animationFrameRef.current = requestAnimationFrame(animate);
     };
     
@@ -1126,6 +1202,7 @@ export function InfrastructureImpactSimulator() {
         avgSpeed: 0,
         simulationTime: 0,
       });
+      setCollisionWarnings([]);
     }
   }, [isSimulating]);
   
@@ -1237,11 +1314,94 @@ export function InfrastructureImpactSimulator() {
                 <Clock className="h-3 w-3 mr-1" />
                 {animatedTrains.filter(t => t.status === 'waiting').length} waiting
               </Badge>
+              {collisionWarnings.length > 0 && (
+                <Badge className={cn(
+                  "animate-pulse",
+                  collisionWarnings.some(w => w.severity === 'critical') 
+                    ? "bg-destructive/20 text-destructive border-destructive/30" 
+                    : "bg-amber-500/20 text-amber-400 border-amber-500/30"
+                )}>
+                  <AlertTriangle className="h-3 w-3 mr-1" />
+                  {collisionWarnings.length} collision {collisionWarnings.length === 1 ? 'warning' : 'warnings'}
+                </Badge>
+              )}
               <span className="text-xs text-muted-foreground">
                 Avg speed: {Math.round(animatedTrains.reduce((sum, t) => sum + t.speed, 0) / Math.max(1, animatedTrains.length))} km/h
               </span>
             </div>
           )}
+          
+          {/* Collision Warnings Panel */}
+          <AnimatePresence>
+            {isSimulating && collisionWarnings.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mt-2 pt-2 border-t border-destructive/30"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
+                  <span className="text-sm font-medium text-destructive">Collision Risk Detected</span>
+                </div>
+                <div className="grid gap-2 max-h-32 overflow-y-auto">
+                  {collisionWarnings.map((warning) => (
+                    <div
+                      key={warning.id}
+                      className={cn(
+                        "flex items-center justify-between p-2 rounded-md text-xs",
+                        warning.severity === 'critical' 
+                          ? "bg-destructive/10 border border-destructive/30" 
+                          : "bg-amber-500/10 border border-amber-500/30"
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1">
+                          <div 
+                            className="w-2.5 h-2.5 rounded-full" 
+                            style={{ backgroundColor: warning.trainA.color }}
+                          />
+                          <span className="font-medium">{warning.trainA.loadId}</span>
+                        </div>
+                        <span className="text-muted-foreground">↔</span>
+                        <div className="flex items-center gap-1">
+                          <div 
+                            className="w-2.5 h-2.5 rounded-full" 
+                            style={{ backgroundColor: warning.trainB.color }}
+                          />
+                          <span className="font-medium">{warning.trainB.loadId}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-muted-foreground">{warning.sectionName}</span>
+                        <Badge 
+                          variant="outline" 
+                          className={cn(
+                            "text-[10px]",
+                            warning.severity === 'critical' 
+                              ? "border-destructive/50 text-destructive" 
+                              : "border-amber-500/50 text-amber-400"
+                          )}
+                        >
+                          {warning.distance} km apart
+                        </Badge>
+                        <Badge 
+                          className={cn(
+                            "text-[10px]",
+                            warning.severity === 'critical' 
+                              ? "bg-destructive text-destructive-foreground" 
+                              : "bg-amber-500 text-amber-950"
+                          )}
+                        >
+                          {warning.severity === 'critical' ? 'CRITICAL' : 'WARNING'}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </CardContent>
       </Card>
       
@@ -1670,6 +1830,67 @@ export function InfrastructureImpactSimulator() {
                     );
                   })}
                 </AnimatePresence>
+                
+                {/* Collision Warning Markers */}
+                <AnimatePresence>
+                  {isSimulating && collisionWarnings.map((warning) => {
+                    const posPercent = (warning.positionKm / totalDistance) * 100;
+                    
+                    return (
+                      <motion.div
+                        key={warning.id}
+                        className="absolute z-30"
+                        initial={{ opacity: 0, scale: 0 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0 }}
+                        style={{ 
+                          left: `${posPercent}%`,
+                          top: '50%',
+                          transform: 'translate(-50%, -50%)'
+                        }}
+                      >
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div className={cn(
+                                "relative flex items-center justify-center animate-pulse",
+                                warning.severity === 'critical' ? "text-destructive" : "text-amber-400"
+                              )}>
+                                {/* Pulsing ring */}
+                                <div className={cn(
+                                  "absolute inset-0 rounded-full animate-ping",
+                                  warning.severity === 'critical' ? "bg-destructive/30" : "bg-amber-500/30"
+                                )} style={{ width: 24, height: 24, margin: -4 }} />
+                                <AlertTriangle className="h-4 w-4 relative z-10" />
+                              </div>
+                            </TooltipTrigger>
+                            <TooltipContent className={cn(
+                              "border",
+                              warning.severity === 'critical' 
+                                ? "bg-destructive/90 border-destructive text-destructive-foreground" 
+                                : "bg-amber-500/90 border-amber-500 text-amber-950"
+                            )}>
+                              <div className="space-y-1">
+                                <p className="font-bold text-xs">
+                                  {warning.severity === 'critical' ? 'CRITICAL COLLISION RISK!' : 'Collision Warning'}
+                                </p>
+                                <p className="text-xs">
+                                  {warning.trainA.loadId} ↔ {warning.trainB.loadId}
+                                </p>
+                                <p className="text-xs opacity-80">
+                                  Distance: {warning.distance} km apart
+                                </p>
+                                <p className="text-xs opacity-80">
+                                  Section: {warning.sectionName}
+                                </p>
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </motion.div>
+                    );
+                  })}
+                </AnimatePresence>
               </div>
               <ScrollBar orientation="horizontal" />
             </ScrollArea>
@@ -1706,6 +1927,12 @@ export function InfrastructureImpactSimulator() {
                     <div className="w-6 h-0.5 bg-gradient-to-r from-transparent via-blue-400/50 to-blue-400 rounded" />
                     <span className="text-muted-foreground">Trail</span>
                   </div>
+                  {collisionWarnings.length > 0 && (
+                    <div className="flex items-center gap-1">
+                      <div className="w-3 h-3 rounded-full bg-destructive animate-pulse" />
+                      <span className="text-destructive">Collision Risk</span>
+                    </div>
+                  )}
                 </>
               )}
             </div>
