@@ -1,18 +1,32 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { AlertTriangle, Train, MapPin } from 'lucide-react';
+import { AlertTriangle, Train, Play, Pause, RefreshCw } from 'lucide-react';
 import { useRouteStations, useRouteBlockSections, useDisruptions } from '@/hooks/useFreightData';
+import { useTrainPositions } from '@/hooks/useTrainPositions';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export function RouteVisualization() {
   const { stations, loading: stationsLoading } = useRouteStations();
   const { sections } = useRouteBlockSections();
   const { disruptions } = useDisruptions();
-
+  
   const orderedStations = useMemo(() => {
     return [...stations].sort((a, b) => a.seq_no - b.seq_no);
   }, [stations]);
+
+  const { trainPositions, isSimulating, startSimulation, stopSimulation, refetch } = useTrainPositions(orderedStations);
+  
+  const [selectedTrain, setSelectedTrain] = useState<string | null>(null);
+
+  // Calculate total route distance for positioning
+  const totalDistance = useMemo(() => {
+    if (orderedStations.length === 0) return 100;
+    const maxDist = Math.max(...orderedStations.map(s => s.cumulative_distance_km || 0));
+    return maxDist || 100;
+  }, [orderedStations]);
 
   const getStationDisruption = (stationCode: string) => {
     return disruptions.find(d => 
@@ -32,6 +46,11 @@ export function RouteVisualization() {
     return disruptions.find(d => d.block_section_code === sectionCode);
   };
 
+  // Get train position as percentage of total route
+  const getTrainPositionPercent = (positionKm: number) => {
+    return (positionKm / totalDistance) * 100;
+  };
+
   if (stationsLoading || stations.length === 0) {
     return (
       <Card>
@@ -45,124 +64,272 @@ export function RouteVisualization() {
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-base flex items-center gap-2">
-          <Train className="h-5 w-5" />
-          KTV-PSA Route Visualization
-          {disruptions.length > 0 && (
-            <Badge variant="destructive" className="ml-2">
-              {disruptions.length} Active Disruption{disruptions.length > 1 ? 's' : ''}
-            </Badge>
-          )}
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Train className="h-5 w-5" />
+            KTV-PSA Route Visualization
+            {disruptions.length > 0 && (
+              <Badge variant="destructive" className="ml-2">
+                {disruptions.length} Disruption{disruptions.length > 1 ? 's' : ''}
+              </Badge>
+            )}
+            {trainPositions.length > 0 && (
+              <Badge variant="secondary" className="ml-2">
+                {trainPositions.length} Active Trains
+              </Badge>
+            )}
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={refetch}
+              className="gap-1"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh
+            </Button>
+            <Button
+              size="sm"
+              variant={isSimulating ? 'destructive' : 'default'}
+              onClick={isSimulating ? stopSimulation : startSimulation}
+              className="gap-1"
+            >
+              {isSimulating ? (
+                <>
+                  <Pause className="h-3.5 w-3.5" />
+                  Stop
+                </>
+              ) : (
+                <>
+                  <Play className="h-3.5 w-3.5" />
+                  Simulate
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="overflow-x-auto pb-4">
           <TooltipProvider>
-            <div className="flex items-center min-w-max py-4">
-              {orderedStations.map((station, index) => {
-                const disruption = getStationDisruption(station.station_code);
-                const nextStation = orderedStations[index + 1];
-                const section = nextStation ? getSectionBetween(station.station_code, nextStation.station_code) : null;
-                const sectionDisruption = section ? getSectionDisruption(section.block_section_code) : null;
-
-                return (
-                  <div key={station.id} className="flex items-center">
-                    {/* Station marker */}
-                    <Tooltip>
-                      <TooltipTrigger>
-                        <div className="flex flex-col items-center">
-                          <div
-                            className={`
-                              w-4 h-4 rounded-full border-2 relative
-                              ${disruption 
-                                ? 'bg-red-500 border-red-600 animate-pulse' 
-                                : station.is_junction 
-                                  ? 'bg-blue-500 border-blue-600' 
-                                  : station.is_halt
-                                    ? 'bg-amber-400 border-amber-500'
-                                    : 'bg-green-500 border-green-600'
-                              }
-                            `}
-                          >
-                            {disruption && (
-                              <AlertTriangle className="h-3 w-3 text-white absolute -top-4 left-1/2 -translate-x-1/2" />
-                            )}
-                          </div>
-                          <span className="text-[10px] font-mono mt-1 max-w-[50px] truncate">
-                            {station.station_code}
-                          </span>
-                          <span className="text-[8px] text-muted-foreground">
-                            {Math.round(station.cumulative_distance_km || 0)} km
-                          </span>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <div className="text-sm">
-                          <p className="font-semibold">{station.station_name}</p>
-                          <p className="text-muted-foreground">{station.station_code}</p>
-                          <div className="flex gap-2 mt-1">
-                            {station.is_junction && <Badge variant="outline">Junction</Badge>}
-                            {station.is_halt && <Badge variant="outline">Halt</Badge>}
-                            {station.signal_type && <Badge>{station.signal_type}</Badge>}
-                          </div>
-                          {disruption && (
-                            <p className="text-red-500 mt-1">
-                              ⚠️ {disruption.disruption_type}: {disruption.description}
-                            </p>
-                          )}
-                        </div>
-                      </TooltipContent>
-                    </Tooltip>
-
-                    {/* Track section between stations */}
-                    {nextStation && (
+            {/* Route Track with Trains */}
+            <div className="relative min-w-max py-8">
+              {/* Train Markers Layer */}
+              <div className="absolute top-0 left-0 right-0 h-8 z-10">
+                <AnimatePresence>
+                  {trainPositions.map((train) => (
+                    <motion.div
+                      key={train.id}
+                      initial={{ opacity: 0, scale: 0 }}
+                      animate={{ 
+                        opacity: 1, 
+                        scale: selectedTrain === train.load_id ? 1.3 : 1,
+                        left: `${getTrainPositionPercent(train.position_km)}%`
+                      }}
+                      exit={{ opacity: 0, scale: 0 }}
+                      transition={{ type: 'spring', stiffness: 100, damping: 15 }}
+                      className="absolute -translate-x-1/2 cursor-pointer"
+                      onClick={() => setSelectedTrain(selectedTrain === train.load_id ? null : train.load_id)}
+                    >
                       <Tooltip>
                         <TooltipTrigger>
-                          <div className="flex flex-col items-center mx-1">
+                          <div className={`
+                            flex flex-col items-center
+                            ${selectedTrain === train.load_id ? 'z-20' : 'z-10'}
+                          `}>
+                            <div className={`
+                              w-6 h-6 rounded-sm flex items-center justify-center text-white text-[10px] font-bold
+                              ${train.status === 'moving' 
+                                ? 'bg-green-600 shadow-lg shadow-green-500/30' 
+                                : train.status === 'halted' 
+                                  ? 'bg-red-600 animate-pulse shadow-lg shadow-red-500/30'
+                                  : 'bg-amber-600 shadow-lg shadow-amber-500/30'
+                              }
+                              ${train.direction === 'UP' ? '' : 'rotate-180'}
+                            `}>
+                              <Train className="h-4 w-4" />
+                            </div>
+                            <div className={`
+                              text-[8px] font-mono mt-0.5 px-1 rounded
+                              ${train.status === 'moving' 
+                                ? 'bg-green-500/20 text-green-600' 
+                                : train.status === 'halted'
+                                  ? 'bg-red-500/20 text-red-600'
+                                  : 'bg-amber-500/20 text-amber-600'
+                              }
+                            `}>
+                              {train.speed} km/h
+                            </div>
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="max-w-xs">
+                          <div className="text-sm space-y-1">
+                            <p className="font-semibold">{train.load_id}</p>
+                            <div className="flex gap-2">
+                              <Badge variant={train.status === 'moving' ? 'default' : train.status === 'halted' ? 'destructive' : 'secondary'}>
+                                {train.status.toUpperCase()}
+                              </Badge>
+                              <Badge variant="outline">{train.direction}</Badge>
+                            </div>
+                            {train.commodity && (
+                              <p className="text-muted-foreground">Commodity: {train.commodity}</p>
+                            )}
+                            <p className="text-muted-foreground">
+                              {train.source_station} → {train.destination_station}
+                            </p>
+                            <p>At: {train.current_station} ({train.position_km.toFixed(1)} km)</p>
+                            {train.next_station && (
+                              <p>Next: {train.next_station}</p>
+                            )}
+                          </div>
+                        </TooltipContent>
+                      </Tooltip>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+
+              {/* Stations and Track Sections */}
+              <div className="flex items-center min-w-max py-4 mt-4">
+                {orderedStations.map((station, index) => {
+                  const disruption = getStationDisruption(station.station_code);
+                  const nextStation = orderedStations[index + 1];
+                  const section = nextStation ? getSectionBetween(station.station_code, nextStation.station_code) : null;
+                  const sectionDisruption = section ? getSectionDisruption(section.block_section_code) : null;
+
+                  return (
+                    <div key={station.id} className="flex items-center">
+                      {/* Station marker */}
+                      <Tooltip>
+                        <TooltipTrigger>
+                          <div className="flex flex-col items-center">
                             <div
                               className={`
-                                h-1 rounded transition-all
-                                ${sectionDisruption 
-                                  ? 'bg-red-500 animate-pulse' 
-                                  : section?.signal_type === 'AT' 
-                                    ? 'bg-green-500' 
-                                    : 'bg-amber-500'
+                                w-4 h-4 rounded-full border-2 relative
+                                ${disruption 
+                                  ? 'bg-red-500 border-red-600 animate-pulse' 
+                                  : station.is_junction 
+                                    ? 'bg-blue-500 border-blue-600' 
+                                    : station.is_halt
+                                      ? 'bg-amber-400 border-amber-500'
+                                      : 'bg-green-500 border-green-600'
                                 }
                               `}
-                              style={{ width: `${Math.max(30, (section?.distance_km || 5) * 4)}px` }}
-                            />
-                            <span className="text-[8px] text-muted-foreground mt-0.5">
-                              {section?.distance_km?.toFixed(1) || '?'} km
+                            >
+                              {disruption && (
+                                <AlertTriangle className="h-3 w-3 text-white absolute -top-4 left-1/2 -translate-x-1/2" />
+                              )}
+                            </div>
+                            <span className="text-[10px] font-mono mt-1 max-w-[50px] truncate">
+                              {station.station_code}
                             </span>
-                            <span className={`text-[8px] ${section?.signal_type === 'AT' ? 'text-green-600' : 'text-amber-600'}`}>
-                              {section?.signal_type || '?'}
+                            <span className="text-[8px] text-muted-foreground">
+                              {Math.round(station.cumulative_distance_km || 0)} km
                             </span>
                           </div>
                         </TooltipTrigger>
                         <TooltipContent>
                           <div className="text-sm">
-                            <p className="font-semibold">{section?.block_section_code}</p>
-                            <p>{station.station_code} → {nextStation.station_code}</p>
+                            <p className="font-semibold">{station.station_name}</p>
+                            <p className="text-muted-foreground">{station.station_code}</p>
                             <div className="flex gap-2 mt-1">
-                              <Badge>{section?.signal_type}</Badge>
-                              <Badge variant="outline">{section?.max_speed} km/h</Badge>
-                              <Badge variant="outline">{section?.no_of_lines} lines</Badge>
+                              {station.is_junction && <Badge variant="outline">Junction</Badge>}
+                              {station.is_halt && <Badge variant="outline">Halt</Badge>}
+                              {station.signal_type && <Badge>{station.signal_type}</Badge>}
                             </div>
-                            {sectionDisruption && (
+                            {disruption && (
                               <p className="text-red-500 mt-1">
-                                ⚠️ BLOCKED: {sectionDisruption.description}
+                                ⚠️ {disruption.disruption_type}: {disruption.description}
                               </p>
                             )}
                           </div>
                         </TooltipContent>
                       </Tooltip>
-                    )}
-                  </div>
-                );
-              })}
+
+                      {/* Track section between stations */}
+                      {nextStation && (
+                        <Tooltip>
+                          <TooltipTrigger>
+                            <div className="flex flex-col items-center mx-1">
+                              <div
+                                className={`
+                                  h-1 rounded transition-all
+                                  ${sectionDisruption 
+                                    ? 'bg-red-500 animate-pulse' 
+                                    : section?.signal_type === 'AT' 
+                                      ? 'bg-green-500' 
+                                      : 'bg-amber-500'
+                                  }
+                                `}
+                                style={{ width: `${Math.max(30, (section?.distance_km || 5) * 4)}px` }}
+                              />
+                              <span className="text-[8px] text-muted-foreground mt-0.5">
+                                {section?.distance_km?.toFixed(1) || '?'} km
+                              </span>
+                              <span className={`text-[8px] ${section?.signal_type === 'AT' ? 'text-green-600' : 'text-amber-600'}`}>
+                                {section?.signal_type || '?'}
+                              </span>
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <div className="text-sm">
+                              <p className="font-semibold">{section?.block_section_code}</p>
+                              <p>{station.station_code} → {nextStation.station_code}</p>
+                              <div className="flex gap-2 mt-1">
+                                <Badge>{section?.signal_type}</Badge>
+                                <Badge variant="outline">{section?.max_speed} km/h</Badge>
+                                <Badge variant="outline">{section?.no_of_lines} lines</Badge>
+                              </div>
+                              {sectionDisruption && (
+                                <p className="text-red-500 mt-1">
+                                  ⚠️ BLOCKED: {sectionDisruption.description}
+                                </p>
+                              )}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </TooltipProvider>
         </div>
+
+        {/* Train List Panel */}
+        {trainPositions.length > 0 && (
+          <div className="mt-4 pt-4 border-t">
+            <h4 className="text-sm font-medium mb-2">Active Freight Trains</h4>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+              {trainPositions.map((train) => (
+                <button
+                  key={train.id}
+                  onClick={() => setSelectedTrain(selectedTrain === train.load_id ? null : train.load_id)}
+                  className={`
+                    p-2 rounded-lg border text-left text-xs transition-all
+                    ${selectedTrain === train.load_id 
+                      ? 'border-primary bg-primary/10' 
+                      : 'border-border hover:border-primary/50'
+                    }
+                  `}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <div className={`
+                      w-2 h-2 rounded-full
+                      ${train.status === 'moving' ? 'bg-green-500' : train.status === 'halted' ? 'bg-red-500' : 'bg-amber-500'}
+                    `} />
+                    <span className="font-mono truncate flex-1">{train.load_id.slice(0, 12)}</span>
+                  </div>
+                  <div className="text-muted-foreground mt-1">
+                    {train.current_station} • {train.speed} km/h
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Legend */}
         <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t text-xs">
@@ -189,6 +356,18 @@ export function RouteVisualization() {
           <div className="flex items-center gap-1.5">
             <div className="w-6 h-1 rounded bg-amber-500" />
             <span>AB Section</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-5 h-5 rounded-sm bg-green-600 flex items-center justify-center">
+              <Train className="h-3 w-3 text-white" />
+            </div>
+            <span>Moving Train</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-5 h-5 rounded-sm bg-red-600 flex items-center justify-center">
+              <Train className="h-3 w-3 text-white" />
+            </div>
+            <span>Halted Train</span>
           </div>
         </div>
       </CardContent>
