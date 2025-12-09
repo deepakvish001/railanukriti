@@ -2,12 +2,31 @@ import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
-import { ZoomIn, ZoomOut, RotateCcw, Download, Loader2 } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { ZoomIn, ZoomOut, RotateCcw, Download, Loader2, Train, MapPin, Clock, ArrowRight, Package, Users, X } from 'lucide-react';
 import { useRouteStations } from '@/hooks/useFreightData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { format, parseISO, addHours, startOfDay, addSeconds } from 'date-fns';
+import { format, parseISO, addHours, startOfDay, addSeconds, differenceInMinutes } from 'date-fns';
 import { toast } from 'sonner';
+
+interface SelectedTrainInfo {
+  path: TrainPath;
+  freightDetails?: {
+    source_station: string;
+    destination_station: string;
+    commodity: string | null;
+    load_type: string | null;
+    total_km: number | null;
+  };
+  passengerDetails?: {
+    train_name: string | null;
+    source_station: string;
+    destination_station: string;
+    train_type: string | null;
+  };
+}
 
 interface FreightMovement {
   load_id: string;
@@ -82,6 +101,8 @@ export function DistanceTimeChart() {
   const { stations, loading: stationsLoading } = useRouteStations();
   const [zoomLevel, setZoomLevel] = useState(1);
   const [hoveredTrain, setHoveredTrain] = useState<string | null>(null);
+  const [selectedTrain, setSelectedTrain] = useState<SelectedTrainInfo | null>(null);
+  const [isLoadingDetails, setIsLoadingDetails] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const queryClient = useQueryClient();
 
@@ -392,10 +413,57 @@ export function DistanceTimeChart() {
 
   const reset = () => {
     setZoomLevel(1);
+    setSelectedTrain(null);
     refetchFreight();
     refetchPassenger();
     refetchDisruptions();
     toast.success('Chart reset');
+  };
+
+  // Handle train click to show details
+  const handleTrainClick = async (path: TrainPath) => {
+    setIsLoadingDetails(true);
+    try {
+      if (path.type === 'freight') {
+        const { data, error } = await supabase
+          .from('freight_trains')
+          .select('source_station, destination_station, commodity, load_type, total_km')
+          .eq('load_id', path.id)
+          .single();
+        
+        setSelectedTrain({
+          path,
+          freightDetails: data ? {
+            source_station: data.source_station,
+            destination_station: data.destination_station,
+            commodity: data.commodity,
+            load_type: data.load_type,
+            total_km: data.total_km,
+          } : undefined,
+        });
+      } else {
+        const { data, error } = await supabase
+          .from('passenger_trains')
+          .select('train_name, source_station, destination_station, train_type')
+          .eq('train_number', path.id)
+          .single();
+        
+        setSelectedTrain({
+          path,
+          passengerDetails: data ? {
+            train_name: data.train_name,
+            source_station: data.source_station,
+            destination_station: data.destination_station,
+            train_type: data.train_type,
+          } : undefined,
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching train details:', error);
+      setSelectedTrain({ path });
+    } finally {
+      setIsLoadingDetails(false);
+    }
   };
 
   const activeDisruptions = disruptions?.filter(d => d.is_active) ?? [];
@@ -625,30 +693,32 @@ export function DistanceTimeChart() {
             {/* Train Paths */}
             {allPaths.map((path) => {
               const isHovered = hoveredTrain === `${path.type}-${path.id}`;
-              const strokeWidth = isHovered ? 2.5 : 1.5;
-              const opacity = isHovered ? 1 : 0.8;
+              const isSelected = selectedTrain?.path.id === path.id && selectedTrain?.path.type === path.type;
+              const strokeWidth = isSelected ? 3 : isHovered ? 2.5 : 1.5;
+              const opacity = isSelected ? 1 : isHovered ? 1 : 0.8;
               
               return (
                 <g key={`${path.type}-${path.id}`}>
                   <path
                     d={generatePath(path)}
                     fill="none"
-                    stroke={path.color}
+                    stroke={isSelected ? '#8B5CF6' : path.color}
                     strokeWidth={strokeWidth}
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeDasharray={path.isDashed ? "5,3" : "0"}
                     opacity={opacity}
-                    style={{ cursor: 'pointer', transition: 'stroke-width 0.2s, opacity 0.2s' }}
+                    style={{ cursor: 'pointer', transition: 'stroke-width 0.2s, opacity 0.2s, stroke 0.2s' }}
                     onMouseEnter={() => setHoveredTrain(`${path.type}-${path.id}`)}
                     onMouseLeave={() => setHoveredTrain(null)}
+                    onClick={() => handleTrainClick(path)}
                   />
-                  {/* Show train ID on hover */}
-                  {isHovered && path.movements.length > 0 && (
+                  {/* Show train ID on hover or when selected */}
+                  {(isHovered || isSelected) && path.movements.length > 0 && (
                     <text
                       x={xScale(path.movements[0].arrival) + 5}
                       y={yScale(path.movements[0].distance_km) - 10}
-                      fill={path.color}
+                      fill={isSelected ? '#8B5CF6' : path.color}
                       fontSize="10"
                       fontWeight="600"
                       fontFamily="system-ui, -apple-system, sans-serif"
@@ -710,6 +780,153 @@ export function DistanceTimeChart() {
           </div>
         </div>
       </CardContent>
+
+      {/* Train Details Dialog */}
+      <Dialog open={!!selectedTrain} onOpenChange={() => setSelectedTrain(null)}>
+        <DialogContent className="max-w-lg bg-white border-gray-200">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3">
+              {selectedTrain?.path.type === 'freight' ? (
+                <Package className="w-5 h-5 text-gray-600" />
+              ) : (
+                <Users className="w-5 h-5 text-blue-600" />
+              )}
+              <span>Train {selectedTrain?.path.id}</span>
+              <Badge 
+                variant="outline" 
+                className={selectedTrain?.path.type === 'freight' 
+                  ? 'bg-gray-100 text-gray-700 border-gray-300' 
+                  : 'bg-blue-100 text-blue-700 border-blue-300'}
+              >
+                {selectedTrain?.path.type === 'freight' ? 'Freight' : 'Passenger'}
+              </Badge>
+              <Badge 
+                variant="outline" 
+                className={selectedTrain?.path.direction === 'UP' 
+                  ? 'bg-cyan-100 text-cyan-700 border-cyan-300' 
+                  : 'bg-red-100 text-red-700 border-red-300'}
+              >
+                {selectedTrain?.path.direction === 'UP' ? '↑ UP' : '↓ DN'}
+              </Badge>
+            </DialogTitle>
+          </DialogHeader>
+
+          {isLoadingDetails ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+              <span className="ml-2 text-gray-600">Loading details...</span>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Route Info */}
+              {selectedTrain?.freightDetails && (
+                <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                    <MapPin className="w-4 h-4" /> Route Information
+                  </h4>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="font-medium text-gray-700">{selectedTrain.freightDetails.source_station}</span>
+                    <ArrowRight className="w-4 h-4 text-gray-400" />
+                    <span className="font-medium text-gray-700">{selectedTrain.freightDetails.destination_station}</span>
+                  </div>
+                  {selectedTrain.freightDetails.total_km && (
+                    <p className="text-sm text-gray-500 mt-1">Total: {selectedTrain.freightDetails.total_km} km</p>
+                  )}
+                  {selectedTrain.freightDetails.commodity && (
+                    <p className="text-sm text-gray-600 mt-2">
+                      <span className="font-medium">Commodity:</span> {selectedTrain.freightDetails.commodity}
+                    </p>
+                  )}
+                  {selectedTrain.freightDetails.load_type && (
+                    <p className="text-sm text-gray-600">
+                      <span className="font-medium">Load Type:</span> {selectedTrain.freightDetails.load_type}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {selectedTrain?.passengerDetails && (
+                <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <h4 className="font-medium text-blue-900 mb-3 flex items-center gap-2">
+                    <Train className="w-4 h-4" /> Train Information
+                  </h4>
+                  {selectedTrain.passengerDetails.train_name && (
+                    <p className="font-semibold text-blue-800 mb-2">{selectedTrain.passengerDetails.train_name}</p>
+                  )}
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="font-medium text-blue-700">{selectedTrain.passengerDetails.source_station}</span>
+                    <ArrowRight className="w-4 h-4 text-blue-400" />
+                    <span className="font-medium text-blue-700">{selectedTrain.passengerDetails.destination_station}</span>
+                  </div>
+                  {selectedTrain.passengerDetails.train_type && (
+                    <p className="text-sm text-blue-600 mt-2">
+                      <span className="font-medium">Type:</span> {selectedTrain.passengerDetails.train_type}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Movement Timeline */}
+              {selectedTrain?.path.movements && selectedTrain.path.movements.length > 0 && (
+                <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                    <Clock className="w-4 h-4" /> Movement Timeline ({selectedTrain.path.movements.length} stops)
+                  </h4>
+                  <div className="max-h-48 overflow-y-auto space-y-2">
+                    {selectedTrain.path.movements.map((m, idx) => {
+                      const stationName = stationNameMap.get(m.station_code) || m.station_code;
+                      const dwellTime = m.departure ? differenceInMinutes(m.departure, m.arrival) : 0;
+                      
+                      return (
+                        <div key={idx} className="flex items-center justify-between text-sm py-1 border-b border-gray-100 last:border-0">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full ${m.is_halt ? 'bg-amber-500' : 'bg-green-500'}`} />
+                            <span className="font-medium text-gray-700">{stationName}</span>
+                            <span className="text-gray-400 text-xs">({m.distance_km.toFixed(1)} km)</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-gray-600">{format(m.arrival, 'HH:mm')}</span>
+                            {dwellTime > 0 && (
+                              <span className="text-amber-600 text-xs ml-2">(+{dwellTime}m)</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Stats Summary */}
+              {selectedTrain?.path.movements && selectedTrain.path.movements.length >= 2 && (
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="p-3 bg-green-50 rounded-lg border border-green-200 text-center">
+                    <p className="text-xs text-green-600 font-medium">Start</p>
+                    <p className="text-sm font-bold text-green-800">
+                      {format(selectedTrain.path.movements[0].arrival, 'HH:mm')}
+                    </p>
+                  </div>
+                  <div className="p-3 bg-red-50 rounded-lg border border-red-200 text-center">
+                    <p className="text-xs text-red-600 font-medium">End</p>
+                    <p className="text-sm font-bold text-red-800">
+                      {format(selectedTrain.path.movements[selectedTrain.path.movements.length - 1].arrival, 'HH:mm')}
+                    </p>
+                  </div>
+                  <div className="p-3 bg-purple-50 rounded-lg border border-purple-200 text-center">
+                    <p className="text-xs text-purple-600 font-medium">Duration</p>
+                    <p className="text-sm font-bold text-purple-800">
+                      {differenceInMinutes(
+                        selectedTrain.path.movements[selectedTrain.path.movements.length - 1].arrival,
+                        selectedTrain.path.movements[0].arrival
+                      )} min
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
