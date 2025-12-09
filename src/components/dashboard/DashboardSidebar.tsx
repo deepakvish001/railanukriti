@@ -1,7 +1,7 @@
 import {
   Sparkles, Bell, FlaskConical, History, BarChart3, AlertTriangle,
   GanttChart, Download, TrendingUp, Target, Brain, Train, ChevronLeft, ChevronRight,
-  LayoutDashboard, Upload, Settings2
+  LayoutDashboard, Upload, Settings2, Container
 } from 'lucide-react';
 import {
   Sidebar,
@@ -39,6 +39,7 @@ const operationsItems = [
 ];
 
 const analyticsItems = [
+  { id: 'freight-analysis', title: 'Freight Analysis', icon: Container, path: '/freight-analysis' },
   { id: 'kpis', title: 'KPI Dashboard', icon: Target, path: '/kpis' },
   { id: 'charts', title: 'Performance', icon: BarChart3, path: '/charts' },
   { id: 'analytics', title: 'Analytics', icon: TrendingUp, path: '/analytics' },
