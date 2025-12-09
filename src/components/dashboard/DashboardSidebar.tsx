@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { NavLink, useLocation } from 'react-router-dom';
+import railanukritiLogo from '@/assets/railanukriti-logo.png';
 
 const mainItems = [
   { id: 'dashboard', title: 'Dashboard', icon: LayoutDashboard, path: '/' },
@@ -110,7 +111,7 @@ export const DashboardSidebar = () => {
         collapsed ? "w-[60px]" : "w-[220px]"
       )}
     >
-      {/* Header with Logo and Toggle */}
+      {/* Header with IRCTC-style Logo */}
       <SidebarHeader className={cn(
         "border-b border-border p-3",
         collapsed && "px-2"
@@ -123,11 +124,11 @@ export const DashboardSidebar = () => {
             "flex items-center gap-2",
             collapsed && "justify-center"
           )}>
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center border border-primary/20">
-              <Train className="w-4 h-4 text-primary" />
+            <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-primary/30 bg-card flex items-center justify-center">
+              <img src={railanukritiLogo} alt="IRCTC" className="w-6 h-6 object-contain" />
             </div>
             {!collapsed && (
-              <span className="text-sm font-semibold text-foreground">RailAnukriti</span>
+              <span className="text-sm font-bold text-primary">RailAnukriti</span>
             )}
           </div>
           {!collapsed && (
