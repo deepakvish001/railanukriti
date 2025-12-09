@@ -7,7 +7,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { Clock, Train, ZoomIn, ZoomOut, GitCompare, Timer, TrendingUp, AlertTriangle, Users, AlertCircle } from 'lucide-react';
+import { Clock, Train, ZoomIn, ZoomOut, GitCompare, Timer, TrendingUp, AlertTriangle, Users, AlertCircle, Lightbulb, Route, CheckCircle2, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { useRouteStations, useDisruptions, Disruption } from '@/hooks/useFreightData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
@@ -74,6 +74,26 @@ const TRAIN_COLORS = [
 const COMPARE_COLORS = ['#22d3ee', '#f472b6']; // Cyan and Pink for comparison
 const PASSENGER_COLOR = '#a78bfa'; // Purple for passenger trains
 
+// Rescheduling suggestion types
+interface ReschedulingSuggestion {
+  id: string;
+  trainId: string;
+  trainColor: string;
+  type: 'delay_departure' | 'speed_adjustment' | 'alternate_route' | 'hold_at_station' | 'priority_change';
+  priority: 'high' | 'medium' | 'low';
+  description: string;
+  details: string;
+  estimatedBenefit: string;
+  affectedDisruption: Disruption;
+  originalDelay: number;
+  suggestedAction: {
+    delayMinutes?: number;
+    holdStation?: string;
+    speedReduction?: number;
+    alternateRoute?: string[];
+  };
+}
+
 export function FreightGanttChart() {
   const { stations } = useRouteStations();
   const { disruptions } = useDisruptions();
@@ -85,6 +105,9 @@ export function FreightGanttChart() {
   const [compareTrain2, setCompareTrain2] = useState<string | null>(null);
   const [showPassengerTrains, setShowPassengerTrains] = useState(false);
   const [showDisruptions, setShowDisruptions] = useState(true);
+  const [showSuggestions, setShowSuggestions] = useState(true);
+  const [appliedSuggestions, setAppliedSuggestions] = useState<Set<string>>(new Set());
+  const [dismissedSuggestions, setDismissedSuggestions] = useState<Set<string>>(new Set());
 
   // Fetch movements data
   const { data: movements, isLoading } = useQuery({
@@ -402,6 +425,193 @@ export function FreightGanttChart() {
     
     return map;
   }, [disruptionImpacts]);
+
+  // Generate automatic rescheduling suggestions for affected trains
+  const reschedulingSuggestions = useMemo((): ReschedulingSuggestion[] => {
+    if (!showDisruptions || disruptionImpacts.length === 0) return [];
+    
+    const suggestions: ReschedulingSuggestion[] = [];
+    
+    disruptionImpacts.forEach(impact => {
+      if (impact.totalTrainsAffected === 0) return;
+      
+      const disruption = impact.disruption;
+      
+      impact.affectedTrains.forEach((train, trainIndex) => {
+        // Skip if already applied or dismissed
+        const baseId = `${train.loadId}-${disruption.id}`;
+        if (appliedSuggestions.has(baseId) || dismissedSuggestions.has(baseId)) return;
+        
+        // Find train path for more context
+        const trainPath = trainPaths.find(tp => tp.load_id === train.loadId);
+        if (!trainPath) return;
+        
+        // Find the first station before the disruption
+        const affectedStationSeqs = train.stationsAffected
+          .map(s => stationSeqMap.get(s))
+          .filter(s => s !== undefined) as number[];
+        const minAffectedSeq = Math.min(...affectedStationSeqs);
+        
+        const stationsBeforeDisruption = trainPath.movements
+          .filter(m => m.station_seq < minAffectedSeq)
+          .sort((a, b) => b.station_seq - a.station_seq);
+        
+        const holdStation = stationsBeforeDisruption[0]?.station_code;
+        
+        // Generate different types of suggestions based on disruption type and severity
+        switch (disruption.disruption_type) {
+          case 'block':
+          case 'accident':
+            // High severity - suggest holding at previous station
+            if (holdStation) {
+              suggestions.push({
+                id: `${baseId}-hold`,
+                trainId: train.loadId,
+                trainColor: train.color,
+                type: 'hold_at_station',
+                priority: 'high',
+                description: `Hold at ${holdStation} until disruption clears`,
+                details: `Train ${train.loadId} is approaching a ${disruption.disruption_type} at ${disruption.block_section_code || disruption.station_code}. Recommend holding at ${holdStation} to avoid congestion.`,
+                estimatedBenefit: `Avoids ${train.estimatedDelayMinutes}min delay cascade`,
+                affectedDisruption: disruption,
+                originalDelay: train.estimatedDelayMinutes,
+                suggestedAction: {
+                  holdStation,
+                  delayMinutes: Math.max(30, train.estimatedDelayMinutes),
+                },
+              });
+            }
+            break;
+            
+          case 'signal_failure':
+            // Suggest speed reduction
+            suggestions.push({
+              id: `${baseId}-speed`,
+              trainId: train.loadId,
+              trainColor: train.color,
+              type: 'speed_adjustment',
+              priority: 'medium',
+              description: `Reduce speed through ${disruption.station_code || disruption.block_section_code}`,
+              details: `Signal failure requires cautious approach. Reduce speed to ${disruption.max_speed_allowed || 30} km/h through affected section.`,
+              estimatedBenefit: `Safe passage, reduces delay to ~${Math.round(train.estimatedDelayMinutes * 0.6)}min`,
+              affectedDisruption: disruption,
+              originalDelay: train.estimatedDelayMinutes,
+              suggestedAction: {
+                speedReduction: disruption.max_speed_allowed || 30,
+              },
+            });
+            break;
+            
+          case 'speed_restriction':
+            // Suggest delay departure to avoid bunching
+            const delayMinutes = Math.max(15, Math.round(train.estimatedDelayMinutes * 0.5));
+            suggestions.push({
+              id: `${baseId}-delay`,
+              trainId: train.loadId,
+              trainColor: train.color,
+              type: 'delay_departure',
+              priority: 'low',
+              description: `Delay departure by ${delayMinutes} minutes`,
+              details: `Speed restriction in effect. Delaying departure spreads out traffic and reduces overall congestion through the restricted zone.`,
+              estimatedBenefit: `Reduces total delay from ${train.estimatedDelayMinutes}min to ~${Math.round(train.estimatedDelayMinutes * 0.7)}min`,
+              affectedDisruption: disruption,
+              originalDelay: train.estimatedDelayMinutes,
+              suggestedAction: {
+                delayMinutes,
+              },
+            });
+            break;
+            
+          case 'maintenance':
+            // Suggest alternate timing
+            suggestions.push({
+              id: `${baseId}-timing`,
+              trainId: train.loadId,
+              trainColor: train.color,
+              type: 'delay_departure',
+              priority: 'medium',
+              description: `Reschedule departure by ${Math.round(train.estimatedDelayMinutes * 1.5)} minutes`,
+              details: `Planned maintenance window active. Recommend rescheduling to avoid overlap with maintenance period.`,
+              estimatedBenefit: `Avoids maintenance conflict entirely`,
+              affectedDisruption: disruption,
+              originalDelay: train.estimatedDelayMinutes,
+              suggestedAction: {
+                delayMinutes: Math.round(train.estimatedDelayMinutes * 1.5),
+              },
+            });
+            break;
+            
+          default:
+            // Generic suggestion
+            if (holdStation && train.estimatedDelayMinutes > 20) {
+              suggestions.push({
+                id: `${baseId}-generic`,
+                trainId: train.loadId,
+                trainColor: train.color,
+                type: 'hold_at_station',
+                priority: 'medium',
+                description: `Consider holding at ${holdStation}`,
+                details: `Disruption ahead may cause significant delays. Pre-emptive holding could prevent congestion buildup.`,
+                estimatedBenefit: `Reduces network-wide delay impact`,
+                affectedDisruption: disruption,
+                originalDelay: train.estimatedDelayMinutes,
+                suggestedAction: {
+                  holdStation,
+                },
+              });
+            }
+        }
+        
+        // For high-delay situations, also suggest alternate routes if junctions exist
+        if (train.estimatedDelayMinutes > 45) {
+          const junctions = orderedStations.filter(s => s.is_junction);
+          const nearbyJunction = junctions.find(j => {
+            const jSeq = j.seq_no;
+            return jSeq < minAffectedSeq && jSeq > (trainPath.movements[0]?.station_seq || 0);
+          });
+          
+          if (nearbyJunction) {
+            suggestions.push({
+              id: `${baseId}-route`,
+              trainId: train.loadId,
+              trainColor: train.color,
+              type: 'alternate_route',
+              priority: 'high',
+              description: `Consider alternate route via ${nearbyJunction.station_code}`,
+              details: `Junction at ${nearbyJunction.station_name} (${nearbyJunction.station_code}) may allow rerouting to bypass the disruption. Check track availability and clearance.`,
+              estimatedBenefit: `Could save up to ${Math.round(train.estimatedDelayMinutes * 0.8)}min`,
+              affectedDisruption: disruption,
+              originalDelay: train.estimatedDelayMinutes,
+              suggestedAction: {
+                alternateRoute: [nearbyJunction.station_code],
+              },
+            });
+          }
+        }
+      });
+    });
+    
+    // Sort by priority and estimated delay impact
+    return suggestions.sort((a, b) => {
+      const priorityOrder = { high: 0, medium: 1, low: 2 };
+      if (priorityOrder[a.priority] !== priorityOrder[b.priority]) {
+        return priorityOrder[a.priority] - priorityOrder[b.priority];
+      }
+      return b.originalDelay - a.originalDelay;
+    });
+  }, [disruptionImpacts, showDisruptions, trainPaths, stationSeqMap, orderedStations, appliedSuggestions, dismissedSuggestions]);
+
+  // Handle applying a suggestion
+  const handleApplySuggestion = (suggestion: ReschedulingSuggestion) => {
+    setAppliedSuggestions(prev => new Set([...prev, suggestion.id]));
+    // In a real system, this would send the action to the backend
+    console.log('Applied suggestion:', suggestion);
+  };
+
+  // Handle dismissing a suggestion
+  const handleDismissSuggestion = (suggestion: ReschedulingSuggestion) => {
+    setDismissedSuggestions(prev => new Set([...prev, suggestion.id]));
+  };
 
   const getCompareTrains = useMemo(() => {
     if (!compareMode) return [];
@@ -807,6 +1017,138 @@ export function FreightGanttChart() {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* Rescheduling Suggestions Panel */}
+          {showDisruptions && reschedulingSuggestions.length > 0 && (
+            <div className="p-3 bg-primary/10 rounded-lg border border-primary/30">
+              <div 
+                className="flex items-center justify-between cursor-pointer"
+                onClick={() => setShowSuggestions(!showSuggestions)}
+              >
+                <div className="flex items-center gap-2">
+                  <Lightbulb className="h-4 w-4 text-primary" />
+                  <span className="font-medium text-primary">Rescheduling Suggestions</span>
+                  <Badge variant="secondary" className="text-xs bg-primary/20 text-primary">
+                    {reschedulingSuggestions.length} recommendations
+                  </Badge>
+                  {appliedSuggestions.size > 0 && (
+                    <Badge variant="outline" className="text-xs text-green-500 border-green-500">
+                      {appliedSuggestions.size} applied
+                    </Badge>
+                  )}
+                </div>
+                <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                  {showSuggestions ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </Button>
+              </div>
+              
+              {showSuggestions && (
+                <div className="mt-3 space-y-2 max-h-80 overflow-y-auto">
+                  {reschedulingSuggestions.slice(0, 10).map((suggestion) => {
+                    const priorityColors: Record<string, string> = {
+                      high: 'border-red-500 bg-red-500/10',
+                      medium: 'border-amber-500 bg-amber-500/10',
+                      low: 'border-green-500 bg-green-500/10',
+                    };
+                    const typeIcons: Record<string, React.ReactNode> = {
+                      delay_departure: <Timer className="h-3.5 w-3.5" />,
+                      speed_adjustment: <TrendingUp className="h-3.5 w-3.5" />,
+                      alternate_route: <Route className="h-3.5 w-3.5" />,
+                      hold_at_station: <AlertCircle className="h-3.5 w-3.5" />,
+                      priority_change: <Train className="h-3.5 w-3.5" />,
+                    };
+                    
+                    return (
+                      <div 
+                        key={suggestion.id}
+                        className={`p-3 rounded-lg border ${priorityColors[suggestion.priority] || 'border-border'}`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <div 
+                                className="w-3 h-3 rounded-full flex-shrink-0" 
+                                style={{ backgroundColor: suggestion.trainColor }}
+                              />
+                              <span className="font-medium text-sm truncate">{suggestion.trainId}</span>
+                              <Badge variant="outline" className="text-[10px] flex-shrink-0">
+                                {suggestion.priority.toUpperCase()}
+                              </Badge>
+                              <span className="text-muted-foreground flex items-center gap-1 text-xs flex-shrink-0">
+                                {typeIcons[suggestion.type]}
+                                {suggestion.type.replace(/_/g, ' ')}
+                              </span>
+                            </div>
+                            <p className="text-sm font-medium mb-1">{suggestion.description}</p>
+                            <p className="text-xs text-muted-foreground mb-2">{suggestion.details}</p>
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="text-green-500 font-medium flex items-center gap-1">
+                                <TrendingUp className="h-3 w-3" />
+                                {suggestion.estimatedBenefit}
+                              </span>
+                              <span className="text-muted-foreground">|</span>
+                              <span className="text-amber-500">
+                                Original delay: {suggestion.originalDelay}min
+                              </span>
+                            </div>
+                            {suggestion.suggestedAction.delayMinutes && (
+                              <div className="mt-2 text-xs text-muted-foreground">
+                                <span className="font-medium">Action: </span>
+                                Delay by {suggestion.suggestedAction.delayMinutes} minutes
+                              </div>
+                            )}
+                            {suggestion.suggestedAction.holdStation && (
+                              <div className="mt-2 text-xs text-muted-foreground">
+                                <span className="font-medium">Action: </span>
+                                Hold at {suggestion.suggestedAction.holdStation}
+                              </div>
+                            )}
+                            {suggestion.suggestedAction.speedReduction && (
+                              <div className="mt-2 text-xs text-muted-foreground">
+                                <span className="font-medium">Action: </span>
+                                Reduce speed to {suggestion.suggestedAction.speedReduction} km/h
+                              </div>
+                            )}
+                            {suggestion.suggestedAction.alternateRoute && (
+                              <div className="mt-2 text-xs text-muted-foreground">
+                                <span className="font-medium">Action: </span>
+                                Reroute via {suggestion.suggestedAction.alternateRoute.join(' → ')}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex flex-col gap-1 flex-shrink-0">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs gap-1 text-green-500 border-green-500 hover:bg-green-500/10"
+                              onClick={() => handleApplySuggestion(suggestion)}
+                            >
+                              <CheckCircle2 className="h-3 w-3" />
+                              Apply
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-xs gap-1 text-muted-foreground hover:text-destructive"
+                              onClick={() => handleDismissSuggestion(suggestion)}
+                            >
+                              <X className="h-3 w-3" />
+                              Dismiss
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {reschedulingSuggestions.length > 10 && (
+                    <p className="text-xs text-muted-foreground text-center py-2">
+                      +{reschedulingSuggestions.length - 10} more suggestions...
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
