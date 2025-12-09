@@ -1,12 +1,11 @@
-import { useMemo, useState, useRef } from 'react';
+import { useMemo, useState, useRef, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { ZoomIn, ZoomOut, RefreshCw, Loader2, Download } from 'lucide-react';
+import { ZoomIn, ZoomOut, RefreshCw, Loader2, Download, Train, ArrowUpDown } from 'lucide-react';
 import { useRouteStations } from '@/hooks/useFreightData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
@@ -47,13 +46,14 @@ interface TrainPath {
   }[];
 }
 
-// Colors based on reference image
-const COLORS = {
-  passengerDN: '#dc2626', // Red - Downline Passenger (solid)
-  passengerUP: '#2563eb', // Blue - Upline Passenger (solid)
-  freightDN: '#059669',   // Green - Downline Freight (dashed)
-  freightUP: '#7c3aed',   // Purple - Upline Freight (dashed)
-  halt: '#94a3b8',        // Gray - Waiting/dwell
+// Theme-aware colors using CSS variables mapped to HSL
+const THEME_COLORS = {
+  passengerDN: 'hsl(0, 84%, 60%)',      // Red - Downline Passenger
+  passengerUP: 'hsl(221, 83%, 53%)',    // Blue - Upline Passenger  
+  freightDN: 'hsl(142, 76%, 36%)',      // Green - Downline Freight
+  freightUP: 'hsl(280, 70%, 50%)',      // Purple - Upline Freight
+  halt: 'hsl(215, 16%, 47%)',           // Muted - Waiting/dwell
+  stationMarker: 'hsl(38, 92%, 50%)',   // Accent - Station markers
 };
 
 export function DistanceTimeChart() {
@@ -63,6 +63,8 @@ export function DistanceTimeChart() {
   const [showPassenger, setShowPassenger] = useState(true);
   const [showUpline, setShowUpline] = useState(true);
   const [showDownline, setShowDownline] = useState(true);
+  const [hoveredTrain, setHoveredTrain] = useState<string | null>(null);
+  const [selectedTrain, setSelectedTrain] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   // Fetch freight movements
@@ -109,9 +111,9 @@ export function DistanceTimeChart() {
     return map;
   }, [stations]);
 
-  // Ordered stations for Y-axis (PSA at top, KTV at bottom like reference)
+  // Ordered stations for Y-axis (PSA at top, KTV at bottom)
   const orderedStations = useMemo(() => {
-    return [...stations].sort((a, b) => b.seq_no - a.seq_no); // Reverse order
+    return [...stations].sort((a, b) => b.seq_no - a.seq_no);
   }, [stations]);
 
   const maxDistance = useMemo(() => {
@@ -137,8 +139,8 @@ export function DistanceTimeChart() {
         pathMap.set(m.load_id, {
           id: m.load_id,
           type: 'freight',
-          direction: 'DN', // Will determine from movement pattern
-          color: COLORS.freightDN,
+          direction: 'DN',
+          color: THEME_COLORS.freightDN,
           movements: [],
         });
       }
@@ -160,9 +162,8 @@ export function DistanceTimeChart() {
       if (path.movements.length >= 2) {
         const first = path.movements[0];
         const last = path.movements[path.movements.length - 1];
-        // If distance increases, it's DN (KTV→PSA), else UP (PSA→KTV)
         path.direction = first.distance_km < last.distance_km ? 'DN' : 'UP';
-        path.color = path.direction === 'DN' ? COLORS.freightDN : COLORS.freightUP;
+        path.color = path.direction === 'DN' ? THEME_COLORS.freightDN : THEME_COLORS.freightUP;
       }
     });
 
@@ -187,7 +188,7 @@ export function DistanceTimeChart() {
           id: s.train_number,
           type: 'passenger',
           direction: dir,
-          color: dir === 'DN' ? COLORS.passengerDN : COLORS.passengerUP,
+          color: dir === 'DN' ? THEME_COLORS.passengerDN : THEME_COLORS.passengerUP,
           movements: [],
         });
       }
@@ -231,38 +232,35 @@ export function DistanceTimeChart() {
     });
   }, [freightPaths, passengerPaths, showFreight, showPassenger, showUpline, showDownline]);
 
-  // Time range (0:00 to 24:00 for a full day)
-  const timeRange = useMemo(() => {
-    return {
-      start: baseDate,
-      end: addHours(baseDate, 24),
-      hours: 24,
-    };
-  }, [baseDate]);
+  // Time range (0:00 to 24:00)
+  const timeRange = useMemo(() => ({
+    start: baseDate,
+    end: addHours(baseDate, 24),
+    hours: 24,
+  }), [baseDate]);
 
   // Chart dimensions
-  const MARGIN = { top: 60, right: 80, bottom: 100, left: 140 };
-  const BASE_WIDTH = 1400;
-  const BASE_HEIGHT = 700;
+  const MARGIN = { top: 80, right: 100, bottom: 80, left: 160 };
+  const BASE_WIDTH = 1600;
+  const BASE_HEIGHT = 800;
   const chartWidth = BASE_WIDTH * zoomLevel;
   const chartHeight = BASE_HEIGHT;
   const innerWidth = chartWidth - MARGIN.left - MARGIN.right;
   const innerHeight = chartHeight - MARGIN.top - MARGIN.bottom;
 
   // Scale functions
-  const xScale = (time: Date) => {
+  const xScale = useCallback((time: Date) => {
     const elapsed = time.getTime() - timeRange.start.getTime();
     const totalRange = timeRange.end.getTime() - timeRange.start.getTime();
     return MARGIN.left + (elapsed / totalRange) * innerWidth;
-  };
+  }, [timeRange, innerWidth, MARGIN.left]);
 
-  const yScale = (distance: number) => {
-    // Inverted so PSA (max distance) is at top
+  const yScale = useCallback((distance: number) => {
     return MARGIN.top + ((maxDistance - distance) / maxDistance) * innerHeight;
-  };
+  }, [maxDistance, innerHeight, MARGIN.top]);
 
-  // Generate path with dwell times
-  const generatePath = (path: TrainPath) => {
+  // Generate smooth path
+  const generatePath = useCallback((path: TrainPath) => {
     if (path.movements.length === 0) return '';
     
     let d = '';
@@ -284,21 +282,21 @@ export function DistanceTimeChart() {
     });
 
     return d;
-  };
+  }, [xScale, yScale]);
 
   // Hour labels
   const hourLabels = useMemo(() => {
     const labels = [];
-    for (let i = 0; i <= 12; i++) {
-      const time = addHours(timeRange.start, i * 2);
+    for (let i = 0; i <= 24; i += 2) {
+      const time = addHours(timeRange.start, i);
       labels.push({
         time,
         x: xScale(time),
-        label: format(time, 'H:mm'),
+        label: format(time, 'HH:mm'),
       });
     }
     return labels;
-  }, [timeRange, innerWidth]);
+  }, [timeRange, xScale]);
 
   // Export SVG
   const exportSVG = () => {
@@ -318,246 +316,421 @@ export function DistanceTimeChart() {
     refetchPassenger();
   };
 
+  // Stats
+  const stats = useMemo(() => ({
+    totalTrains: allPaths.length,
+    passenger: allPaths.filter(p => p.type === 'passenger').length,
+    freight: allPaths.filter(p => p.type === 'freight').length,
+    upline: allPaths.filter(p => p.direction === 'UP').length,
+    downline: allPaths.filter(p => p.direction === 'DN').length,
+  }), [allPaths]);
+
   if (freightLoading || passengerLoading || stationsLoading) {
     return (
       <Card className="border-border bg-card">
-        <CardContent className="flex items-center justify-center h-[700px]">
+        <CardContent className="flex items-center justify-center h-[800px]">
           <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <span className="ml-2 text-muted-foreground">Loading chart data...</span>
+          <span className="ml-3 text-muted-foreground">Loading Marey chart data...</span>
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <Card className="border-border bg-card">
-      <CardContent className="p-4">
+    <Card className="border-border bg-card overflow-hidden">
+      <CardContent className="p-0">
         {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-4 mb-4">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span>Live Marey diagram · KTV → PSA</span>
+        <div className="p-4 border-b border-border bg-muted/30">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-primary/10 rounded-lg">
+                <ArrowUpDown className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground">Distance-Time (Marey) Chart</h3>
+                <p className="text-sm text-muted-foreground">KTV → PSA Section · Real-time train movements</p>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setZoomLevel(z => Math.min(3, z + 0.25))}>
+                <ZoomIn className="w-4 h-4" />
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setZoomLevel(z => Math.max(0.5, z - 0.25))}>
+                <ZoomOut className="w-4 h-4" />
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setZoomLevel(1)}>
+                {Math.round(zoomLevel * 100)}%
+              </Button>
+              <Button variant="outline" size="sm" onClick={refetch}>
+                <RefreshCw className="w-4 h-4" />
+              </Button>
+              <Button variant="outline" size="sm" onClick={exportSVG}>
+                <Download className="w-4 h-4 mr-1" /> Export
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        {/* Filters & Stats */}
+        <div className="p-4 border-b border-border flex flex-wrap items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center gap-6">
+            <div className="flex items-center gap-2">
+              <Switch id="passenger" checked={showPassenger} onCheckedChange={setShowPassenger} />
+              <Label htmlFor="passenger" className="text-sm flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: THEME_COLORS.passengerDN }} />
+                Passenger
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch id="freight" checked={showFreight} onCheckedChange={setShowFreight} />
+              <Label htmlFor="freight" className="text-sm flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: THEME_COLORS.freightDN }} />
+                Freight
+              </Label>
+            </div>
+            <div className="h-6 w-px bg-border" />
+            <div className="flex items-center gap-2">
+              <Switch id="upline" checked={showUpline} onCheckedChange={setShowUpline} />
+              <Label htmlFor="upline" className="text-sm">↑ Upline</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch id="downline" checked={showDownline} onCheckedChange={setShowDownline} />
+              <Label htmlFor="downline" className="text-sm">↓ Downline</Label>
+            </div>
           </div>
           
-          <div className="flex items-center gap-4">
-            <Button variant="outline" size="sm" onClick={() => setZoomLevel(z => Math.min(3, z + 0.25))}>
-              <ZoomIn className="w-4 h-4 mr-1" /> Zoom in
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setZoomLevel(z => Math.max(0.5, z - 0.25))}>
-              <ZoomOut className="w-4 h-4 mr-1" /> Zoom out
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setZoomLevel(1)}>Reset</Button>
-            <Button variant="outline" size="sm" onClick={exportSVG}>
-              <Download className="w-4 h-4 mr-1" /> Export SVG
-            </Button>
+          <div className="flex items-center gap-3">
+            <Badge variant="secondary" className="gap-1">
+              <Train className="w-3 h-3" /> {stats.totalTrains} trains
+            </Badge>
+            <Badge variant="outline" className="text-xs">
+              P: {stats.passenger} | F: {stats.freight}
+            </Badge>
+            <Badge variant="outline" className="text-xs">
+              ↑{stats.upline} | ↓{stats.downline}
+            </Badge>
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap gap-6 mb-4 p-3 bg-muted/30 rounded-lg">
-          <div className="flex items-center gap-2">
-            <Switch id="passenger" checked={showPassenger} onCheckedChange={setShowPassenger} />
-            <Label htmlFor="passenger" className="text-sm">Passenger</Label>
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch id="freight" checked={showFreight} onCheckedChange={setShowFreight} />
-            <Label htmlFor="freight" className="text-sm">Freight</Label>
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch id="upline" checked={showUpline} onCheckedChange={setShowUpline} />
-            <Label htmlFor="upline" className="text-sm">Upline (PSA→KTV)</Label>
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch id="downline" checked={showDownline} onCheckedChange={setShowDownline} />
-            <Label htmlFor="downline" className="text-sm">Downline (KTV→PSA)</Label>
-          </div>
-          <Badge variant="secondary">{allPaths.length} trains</Badge>
-        </div>
+        {/* Chart */}
+        <ScrollArea className="w-full" style={{ height: chartHeight + 40 }}>
+          <svg 
+            ref={svgRef}
+            width={chartWidth} 
+            height={chartHeight}
+            className="bg-background"
+            style={{ fontFamily: "'Inter', system-ui, sans-serif" }}
+          >
+            {/* Definitions for gradients and effects */}
+            <defs>
+              <linearGradient id="chartBg" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stopColor="hsl(var(--muted))" stopOpacity="0.1" />
+                <stop offset="100%" stopColor="hsl(var(--background))" stopOpacity="0" />
+              </linearGradient>
+              <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="2" result="coloredBlur" />
+                <feMerge>
+                  <feMergeNode in="coloredBlur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
 
-        <ScrollArea className="w-full" style={{ height: chartHeight + 20 }}>
-          <TooltipProvider>
-            <svg 
-              ref={svgRef}
-              width={chartWidth} 
-              height={chartHeight}
-              className="bg-background rounded-lg"
-              style={{ fontFamily: 'system-ui, sans-serif' }}
+            {/* Background */}
+            <rect x={MARGIN.left} y={MARGIN.top} width={innerWidth} height={innerHeight} fill="url(#chartBg)" />
+
+            {/* Title */}
+            <text
+              x={chartWidth / 2}
+              y={35}
+              textAnchor="middle"
+              fill="hsl(var(--foreground))"
+              fontSize="18"
+              fontWeight="600"
             >
-              {/* Title */}
-              <text
-                x={chartWidth / 2}
-                y={30}
-                textAnchor="middle"
-                fill="hsl(var(--foreground))"
-                fontSize="16"
-                fontWeight="600"
-              >
-                Kottavalasa (KTV) → Palasa (PSA) — Time vs Distance Simulation
-              </text>
+              Kottavalasa (KTV) → Palasa (PSA) Section
+            </text>
+            <text
+              x={chartWidth / 2}
+              y={55}
+              textAnchor="middle"
+              fill="hsl(var(--muted-foreground))"
+              fontSize="13"
+            >
+              Time vs Distance Simulation · {format(new Date(), 'dd MMM yyyy')}
+            </text>
 
-              {/* Grid */}
-              <g>
-                {/* Horizontal grid lines (stations) */}
-                {orderedStations.map((station) => {
-                  const y = yScale(station.cumulative_distance_km ?? 0);
-                  return (
-                    <g key={station.station_code}>
-                      <line
-                        x1={MARGIN.left}
-                        y1={y}
-                        x2={chartWidth - MARGIN.right}
-                        y2={y}
-                        stroke="hsl(var(--border))"
-                        strokeWidth="1"
-                        opacity="0.5"
-                      />
-                      {/* Station name on left */}
-                      <text
-                        x={MARGIN.left - 8}
-                        y={y}
-                        textAnchor="end"
-                        dominantBaseline="middle"
-                        fill="hsl(var(--foreground))"
-                        fontSize="11"
-                      >
-                        {station.station_name}
-                      </text>
-                      {/* Distance on right */}
-                      <text
-                        x={chartWidth - MARGIN.right + 8}
-                        y={y}
-                        textAnchor="start"
-                        dominantBaseline="middle"
-                        fill="hsl(var(--muted-foreground))"
-                        fontSize="10"
-                      >
-                        {(station.cumulative_distance_km ?? 0).toFixed(2)} km
-                      </text>
-                    </g>
-                  );
-                })}
+            {/* Horizontal grid lines (stations) */}
+            {orderedStations.map((station, idx) => {
+              const y = yScale(station.cumulative_distance_km ?? 0);
+              const isJunction = station.is_junction;
+              return (
+                <g key={station.station_code}>
+                  <line
+                    x1={MARGIN.left}
+                    y1={y}
+                    x2={chartWidth - MARGIN.right}
+                    y2={y}
+                    stroke="hsl(var(--border))"
+                    strokeWidth={isJunction ? 1.5 : 0.5}
+                    opacity={isJunction ? 0.8 : 0.4}
+                  />
+                  {/* Station marker circle */}
+                  <circle
+                    cx={MARGIN.left - 12}
+                    cy={y}
+                    r={isJunction ? 5 : 3}
+                    fill={isJunction ? THEME_COLORS.stationMarker : 'hsl(var(--muted-foreground))'}
+                    stroke="hsl(var(--background))"
+                    strokeWidth={1}
+                  />
+                  {/* Station name */}
+                  <text
+                    x={MARGIN.left - 22}
+                    y={y}
+                    textAnchor="end"
+                    dominantBaseline="middle"
+                    fill="hsl(var(--foreground))"
+                    fontSize={isJunction ? 12 : 10}
+                    fontWeight={isJunction ? 600 : 400}
+                  >
+                    {station.station_name}
+                  </text>
+                  {/* Station code */}
+                  <text
+                    x={chartWidth - MARGIN.right + 8}
+                    y={y - 6}
+                    textAnchor="start"
+                    fill="hsl(var(--muted-foreground))"
+                    fontSize="9"
+                    fontWeight="500"
+                  >
+                    {station.station_code}
+                  </text>
+                  {/* Distance */}
+                  <text
+                    x={chartWidth - MARGIN.right + 8}
+                    y={y + 6}
+                    textAnchor="start"
+                    fill="hsl(var(--muted-foreground))"
+                    fontSize="9"
+                    opacity="0.7"
+                  >
+                    {(station.cumulative_distance_km ?? 0).toFixed(1)} km
+                  </text>
+                </g>
+              );
+            })}
 
-                {/* Vertical grid lines (time) */}
-                {hourLabels.map((label, i) => (
-                  <g key={i}>
-                    <line
-                      x1={label.x}
-                      y1={MARGIN.top}
-                      x2={label.x}
-                      y2={chartHeight - MARGIN.bottom}
-                      stroke="hsl(var(--border))"
-                      strokeWidth="1"
-                      opacity="0.3"
-                    />
-                    <text
-                      x={label.x}
-                      y={chartHeight - MARGIN.bottom + 20}
-                      textAnchor="middle"
-                      fill="hsl(var(--muted-foreground))"
-                      fontSize="11"
-                    >
-                      {label.label}
-                    </text>
-                  </g>
-                ))}
+            {/* Vertical grid lines (time) */}
+            {hourLabels.map((label, i) => (
+              <g key={i}>
+                <line
+                  x1={label.x}
+                  y1={MARGIN.top}
+                  x2={label.x}
+                  y2={chartHeight - MARGIN.bottom}
+                  stroke="hsl(var(--border))"
+                  strokeWidth={i % 2 === 0 ? 1 : 0.5}
+                  opacity={i % 2 === 0 ? 0.5 : 0.25}
+                />
+                <text
+                  x={label.x}
+                  y={chartHeight - MARGIN.bottom + 20}
+                  textAnchor="middle"
+                  fill="hsl(var(--muted-foreground))"
+                  fontSize="11"
+                  fontWeight={i % 2 === 0 ? 500 : 400}
+                >
+                  {label.label}
+                </text>
               </g>
+            ))}
 
-              {/* Axis labels */}
-              <text
-                x={20}
-                y={chartHeight / 2}
-                textAnchor="middle"
-                fill="hsl(var(--muted-foreground))"
-                fontSize="12"
-                fontWeight="500"
-                transform={`rotate(-90, 20, ${chartHeight / 2})`}
-              >
-                Distance (km) - Stations
-              </text>
-              <text
-                x={chartWidth / 2}
-                y={chartHeight - MARGIN.bottom + 45}
-                textAnchor="middle"
-                fill="hsl(var(--muted-foreground))"
-                fontSize="12"
-                fontWeight="500"
-              >
-                Time (hours)
-              </text>
+            {/* Axis borders */}
+            <rect
+              x={MARGIN.left}
+              y={MARGIN.top}
+              width={innerWidth}
+              height={innerHeight}
+              fill="none"
+              stroke="hsl(var(--border))"
+              strokeWidth="1"
+            />
 
-              {/* Train paths */}
-              {allPaths.map((path) => (
-                <g key={`${path.type}-${path.id}`}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <path
-                        d={generatePath(path)}
-                        fill="none"
-                        stroke={path.color}
-                        strokeWidth={path.type === 'passenger' ? 2.5 : 1.5}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeDasharray={path.type === 'freight' ? "6,4" : "0"}
-                        opacity={0.85}
-                        style={{ cursor: 'pointer' }}
-                      />
-                    </TooltipTrigger>
-                    <TooltipContent className="bg-popover border-border">
-                      <div className="text-sm space-y-1">
-                        <div className="font-semibold">{path.id}</div>
-                        <div className="text-muted-foreground">
-                          Type: <span className="text-foreground capitalize">{path.type}</span>
-                        </div>
-                        <div className="text-muted-foreground">
-                          Direction: <span className="text-foreground">{path.direction === 'DN' ? 'Downline (KTV→PSA)' : 'Upline (PSA→KTV)'}</span>
-                        </div>
-                        <div className="text-muted-foreground">
-                          Stops: <span className="text-foreground">{path.movements.length}</span>
-                        </div>
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
+            {/* Axis labels */}
+            <text
+              x={25}
+              y={chartHeight / 2}
+              textAnchor="middle"
+              fill="hsl(var(--muted-foreground))"
+              fontSize="13"
+              fontWeight="500"
+              transform={`rotate(-90, 25, ${chartHeight / 2})`}
+            >
+              STATIONS (Distance in km)
+            </text>
+            <text
+              x={chartWidth / 2}
+              y={chartHeight - 20}
+              textAnchor="middle"
+              fill="hsl(var(--muted-foreground))"
+              fontSize="13"
+              fontWeight="500"
+            >
+              TIME (24-hour format)
+            </text>
 
-                  {/* Halt markers */}
-                  {path.movements.filter(m => m.is_halt).map((m, i) => (
-                    <circle
-                      key={i}
-                      cx={xScale(m.arrival)}
-                      cy={yScale(m.distance_km)}
-                      r={3}
-                      fill={COLORS.halt}
-                      stroke="white"
-                      strokeWidth="1"
-                    />
-                  ))}
+            {/* Train paths - render non-hovered first, then hovered on top */}
+            {allPaths
+              .filter(p => hoveredTrain !== `${p.type}-${p.id}` && selectedTrain !== `${p.type}-${p.id}`)
+              .map((path) => (
+                <g 
+                  key={`${path.type}-${path.id}`}
+                  onMouseEnter={() => setHoveredTrain(`${path.type}-${path.id}`)}
+                  onMouseLeave={() => setHoveredTrain(null)}
+                  onClick={() => setSelectedTrain(s => s === `${path.type}-${path.id}` ? null : `${path.type}-${path.id}`)}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <path
+                    d={generatePath(path)}
+                    fill="none"
+                    stroke={path.color}
+                    strokeWidth={path.type === 'passenger' ? 2 : 1.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeDasharray={path.type === 'freight' ? "8,4" : "0"}
+                    opacity={0.7}
+                  />
                 </g>
               ))}
-            </svg>
-          </TooltipProvider>
+
+            {/* Hovered/Selected paths on top */}
+            {allPaths
+              .filter(p => hoveredTrain === `${p.type}-${p.id}` || selectedTrain === `${p.type}-${p.id}`)
+              .map((path) => {
+                const isSelected = selectedTrain === `${path.type}-${path.id}`;
+                return (
+                  <g 
+                    key={`highlighted-${path.type}-${path.id}`}
+                    onMouseEnter={() => setHoveredTrain(`${path.type}-${path.id}`)}
+                    onMouseLeave={() => setHoveredTrain(null)}
+                    onClick={() => setSelectedTrain(s => s === `${path.type}-${path.id}` ? null : `${path.type}-${path.id}`)}
+                    style={{ cursor: 'pointer' }}
+                    filter="url(#glow)"
+                  >
+                    {/* Glow effect */}
+                    <path
+                      d={generatePath(path)}
+                      fill="none"
+                      stroke={path.color}
+                      strokeWidth={path.type === 'passenger' ? 6 : 5}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeDasharray={path.type === 'freight' ? "8,4" : "0"}
+                      opacity={0.3}
+                    />
+                    {/* Main line */}
+                    <path
+                      d={generatePath(path)}
+                      fill="none"
+                      stroke={path.color}
+                      strokeWidth={path.type === 'passenger' ? 3 : 2.5}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeDasharray={path.type === 'freight' ? "8,4" : "0"}
+                      opacity={1}
+                    />
+                    
+                    {/* Station markers for highlighted train */}
+                    {path.movements.map((m, i) => (
+                      <g key={i}>
+                        <circle
+                          cx={xScale(m.arrival)}
+                          cy={yScale(m.distance_km)}
+                          r={m.is_halt ? 5 : 3}
+                          fill={m.is_halt ? THEME_COLORS.halt : path.color}
+                          stroke="hsl(var(--background))"
+                          strokeWidth={1.5}
+                        />
+                        {/* Dwell time marker */}
+                        {m.departure && m.departure.getTime() > m.arrival.getTime() && (
+                          <circle
+                            cx={xScale(m.departure)}
+                            cy={yScale(m.distance_km)}
+                            r={3}
+                            fill={path.color}
+                            stroke="hsl(var(--background))"
+                            strokeWidth={1}
+                          />
+                        )}
+                      </g>
+                    ))}
+
+                    {/* Train label */}
+                    {path.movements.length > 0 && (
+                      <g>
+                        <rect
+                          x={xScale(path.movements[0].arrival) - 30}
+                          y={yScale(path.movements[0].distance_km) - 20}
+                          width={60}
+                          height={16}
+                          rx={3}
+                          fill="hsl(var(--popover))"
+                          stroke={path.color}
+                          strokeWidth={1}
+                        />
+                        <text
+                          x={xScale(path.movements[0].arrival)}
+                          y={yScale(path.movements[0].distance_km) - 9}
+                          textAnchor="middle"
+                          fill={path.color}
+                          fontSize="10"
+                          fontWeight="600"
+                        >
+                          {path.id.length > 8 ? path.id.slice(0, 8) + '…' : path.id}
+                        </text>
+                      </g>
+                    )}
+                  </g>
+                );
+              })}
+          </svg>
           <ScrollBar orientation="horizontal" />
         </ScrollArea>
 
         {/* Legend */}
-        <div className="mt-4 flex flex-wrap items-center gap-6 pt-4 border-t border-border text-sm">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-0.5" style={{ backgroundColor: COLORS.passengerDN }} />
-            <span>Downline Passenger (solid)</span>
+        <div className="p-4 border-t border-border bg-muted/20">
+          <div className="flex flex-wrap items-center justify-center gap-8 text-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-0.5 rounded" style={{ backgroundColor: THEME_COLORS.passengerDN }} />
+              <span className="text-muted-foreground">DN Passenger</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-0.5 rounded" style={{ backgroundColor: THEME_COLORS.passengerUP }} />
+              <span className="text-muted-foreground">UP Passenger</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-0.5 border-t-2 border-dashed" style={{ borderColor: THEME_COLORS.freightDN }} />
+              <span className="text-muted-foreground">DN Freight</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-0.5 border-t-2 border-dashed" style={{ borderColor: THEME_COLORS.freightUP }} />
+              <span className="text-muted-foreground">UP Freight</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-4 h-4 rounded-full" style={{ backgroundColor: THEME_COLORS.halt }} />
+              <span className="text-muted-foreground">Halt/Stoppage</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-4 h-4 rounded-full" style={{ backgroundColor: THEME_COLORS.stationMarker }} />
+              <span className="text-muted-foreground">Junction</span>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-0.5" style={{ backgroundColor: COLORS.passengerUP }} />
-            <span>Upline Passenger (solid)</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-0.5 border-t-2 border-dashed" style={{ borderColor: COLORS.freightDN }} />
-            <span>Downline Freight (dashed)</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-0.5 border-t-2 border-dashed" style={{ borderColor: COLORS.freightUP }} />
-            <span>Upline Freight (dashed)</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS.halt }} />
-            <span>Waiting / dwell</span>
-          </div>
+          <p className="text-center text-xs text-muted-foreground mt-3">
+            Click on any train path to highlight · Hover for details · Use scroll to pan horizontally
+          </p>
         </div>
       </CardContent>
     </Card>
