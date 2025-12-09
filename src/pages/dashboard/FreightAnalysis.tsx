@@ -6,6 +6,7 @@ import { DisruptionManager } from '@/components/dashboard/DisruptionManager';
 import { RouteVisualization } from '@/components/dashboard/RouteVisualization';
 import { RailwayDataImporter } from '@/components/dashboard/RailwayDataImporter';
 import { FreightGanttChart } from '@/components/dashboard/FreightGanttChart';
+import { StoppageAnalysis } from '@/components/dashboard/StoppageAnalysis';
 
 const FreightAnalysis = () => {
   return (
@@ -22,12 +23,17 @@ const FreightAnalysis = () => {
           <Tabs defaultValue="gantt">
             <TabsList>
               <TabsTrigger value="gantt">Time-Distance Chart</TabsTrigger>
+              <TabsTrigger value="stoppage">Stoppage Analysis</TabsTrigger>
               <TabsTrigger value="throughput">Throughput Dashboard</TabsTrigger>
               <TabsTrigger value="import">Data Import</TabsTrigger>
             </TabsList>
             
             <TabsContent value="gantt">
               <FreightGanttChart />
+            </TabsContent>
+            
+            <TabsContent value="stoppage">
+              <StoppageAnalysis />
             </TabsContent>
             
             <TabsContent value="throughput">
