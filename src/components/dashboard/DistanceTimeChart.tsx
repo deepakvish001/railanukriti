@@ -570,26 +570,92 @@ export function DistanceTimeChart() {
               {routeTitle}
             </text>
 
-            {/* Disruption zones (yellow bands) */}
+            {/* Disruption zones (time-bounded yellow bands) */}
             {activeDisruptions.map((disruption) => {
-              const stationCode = disruption.station_code;
+              const stationCode = disruption.station_code || disruption.block_section_code;
               if (!stationCode) return null;
-              const distance = stationDistanceMap.get(stationCode);
-              if (distance === undefined) return null;
               
-              const y = yScale(distance);
-              const bandHeight = 20;
+              // For station-based disruptions
+              let yPos: number | null = null;
+              let bandHeight = 25;
+              
+              const distance = stationDistanceMap.get(stationCode);
+              if (distance !== undefined) {
+                yPos = yScale(distance);
+              } else {
+                // Try to find block section (format: "STA1-STA2")
+                const parts = stationCode.split('-');
+                if (parts.length === 2) {
+                  const d1 = stationDistanceMap.get(parts[0]);
+                  const d2 = stationDistanceMap.get(parts[1]);
+                  if (d1 !== undefined && d2 !== undefined) {
+                    const minDist = Math.min(d1, d2);
+                    const maxDist = Math.max(d1, d2);
+                    yPos = yScale(maxDist);
+                    bandHeight = Math.abs(yScale(minDist) - yScale(maxDist));
+                  }
+                }
+              }
+              
+              if (yPos === null) return null;
+              
+              // Calculate time bounds
+              const startTime = parseISO(disruption.start_time);
+              const endTime = disruption.end_time ? parseISO(disruption.end_time) : addHours(startTime, 4); // Default 4 hour duration
+              
+              // Check if disruption overlaps with chart time range
+              if (endTime < timeRange.start || startTime > timeRange.end) return null;
+              
+              const x1 = Math.max(xScale(startTime), MARGIN.left);
+              const x2 = Math.min(xScale(endTime), chartWidth - MARGIN.right);
+              const rectWidth = x2 - x1;
+              
+              if (rectWidth <= 0) return null;
+              
+              const severityColor = disruption.severity === 'critical' ? '#EF4444' : 
+                                   disruption.severity === 'major' ? '#F97316' : COLORS.disruption;
 
               return (
-                <rect
-                  key={disruption.id}
-                  x={MARGIN.left}
-                  y={y - bandHeight / 2}
-                  width={innerWidth}
-                  height={bandHeight}
-                  fill={COLORS.disruption}
-                  opacity={0.3}
-                />
+                <g key={disruption.id}>
+                  {/* Disruption rectangle */}
+                  <rect
+                    x={x1}
+                    y={yPos - bandHeight / 2}
+                    width={rectWidth}
+                    height={bandHeight}
+                    fill={severityColor}
+                    opacity={0.4}
+                    stroke={severityColor}
+                    strokeWidth={1}
+                    strokeDasharray="4,2"
+                  />
+                  {/* Disruption pattern overlay */}
+                  <pattern id={`diag-${disruption.id}`} patternUnits="userSpaceOnUse" width="8" height="8">
+                    <path d="M-2,2 l4,-4 M0,8 l8,-8 M6,10 l4,-4" stroke={severityColor} strokeWidth="1" opacity="0.5"/>
+                  </pattern>
+                  <rect
+                    x={x1}
+                    y={yPos - bandHeight / 2}
+                    width={rectWidth}
+                    height={bandHeight}
+                    fill={`url(#diag-${disruption.id})`}
+                  />
+                  {/* Disruption label */}
+                  {rectWidth > 80 && (
+                    <text
+                      x={x1 + rectWidth / 2}
+                      y={yPos}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fill={disruption.severity === 'critical' ? '#7F1D1D' : '#92400E'}
+                      fontSize="9"
+                      fontWeight="600"
+                      fontFamily="system-ui, -apple-system, sans-serif"
+                    >
+                      {disruption.disruption_type.toUpperCase()}
+                    </text>
+                  )}
+                </g>
               );
             })}
 
