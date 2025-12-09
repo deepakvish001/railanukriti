@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
-import { ChevronLeft, ChevronRight, Clock, Train, ZoomIn, ZoomOut } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Clock, Train, ZoomIn, ZoomOut, GitCompare, Timer, TrendingUp, AlertTriangle } from 'lucide-react';
 import { useRouteStations } from '@/hooks/useFreightData';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
@@ -43,11 +45,16 @@ const TRAIN_COLORS = [
   '#14b8a6', '#a855f7', '#eab308', '#0ea5e9', '#d946ef',
 ];
 
+const COMPARE_COLORS = ['#22d3ee', '#f472b6']; // Cyan and Pink for comparison
+
 export function FreightGanttChart() {
   const { stations } = useRouteStations();
   const [zoomLevel, setZoomLevel] = useState(1);
   const [timeOffset, setTimeOffset] = useState(0);
   const [selectedTrain, setSelectedTrain] = useState<string | null>(null);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareTrain1, setCompareTrain1] = useState<string | null>(null);
+  const [compareTrain2, setCompareTrain2] = useState<string | null>(null);
 
   // Fetch movements data
   const { data: movements, isLoading } = useQuery({
@@ -115,6 +122,55 @@ export function FreightGanttChart() {
 
     return Array.from(pathMap.values());
   }, [movements, stationSeqMap]);
+
+  // Get comparison train data
+  const getCompareTrains = useMemo(() => {
+    if (!compareMode) return [];
+    return trainPaths.filter(tp => 
+      tp.load_id === compareTrain1 || tp.load_id === compareTrain2
+    ).map((tp, idx) => ({
+      ...tp,
+      color: COMPARE_COLORS[idx % 2],
+      compareIndex: idx
+    }));
+  }, [compareMode, compareTrain1, compareTrain2, trainPaths]);
+
+  // Comparison stats
+  const comparisonStats = useMemo(() => {
+    if (!compareMode || getCompareTrains.length !== 2) return null;
+    
+    const [train1, train2] = getCompareTrains;
+    
+    const calcStats = (tp: TrainPath) => {
+      const movements = tp.movements.filter(m => m.arrival && m.departure);
+      if (movements.length < 2) return null;
+      
+      const first = movements[0];
+      const last = movements[movements.length - 1];
+      const totalTime = first.arrival && last.departure 
+        ? differenceInMinutes(last.departure, first.arrival) 
+        : 0;
+      const totalHalts = movements.reduce((sum, m) => sum + m.halt_minutes, 0);
+      const stoppages = movements.filter(m => m.is_stoppage).length;
+      const speeds = movements.filter(m => m.speed > 0).map(m => m.speed);
+      const avgSpeed = speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0;
+      
+      return { totalTime, totalHalts, stoppages, avgSpeed, stationCount: movements.length };
+    };
+    
+    const stats1 = calcStats(train1);
+    const stats2 = calcStats(train2);
+    
+    if (!stats1 || !stats2) return null;
+    
+    return {
+      train1: { loadId: train1.load_id, ...stats1 },
+      train2: { loadId: train2.load_id, ...stats2 },
+      timeDiff: stats1.totalTime - stats2.totalTime,
+      haltDiff: stats1.totalHalts - stats2.totalHalts,
+      speedDiff: stats1.avgSpeed - stats2.avgSpeed
+    };
+  }, [compareMode, getCompareTrains]);
 
   // Calculate time range
   const timeRange = useMemo(() => {
@@ -196,51 +252,182 @@ export function FreightGanttChart() {
     );
   }
 
+  // Determine which trains to display
+  const displayTrains = useMemo(() => {
+    if (compareMode) {
+      return getCompareTrains;
+    }
+    if (selectedTrain) {
+      return trainPaths.filter(tp => tp.load_id === selectedTrain);
+    }
+    return trainPaths;
+  }, [compareMode, getCompareTrains, selectedTrain, trainPaths]);
+
   return (
     <Card>
       <CardHeader className="pb-2">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Clock className="h-5 w-5" />
-            Freight Train Time-Distance Chart
-            <Badge variant="secondary">{trainPaths.length} trains</Badge>
-          </CardTitle>
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Freight Train Time-Distance Chart
+              <Badge variant="secondary">{trainPaths.length} trains</Badge>
+            </CardTitle>
+            <div className="flex items-center gap-4">
+              {/* Compare Mode Toggle */}
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="compare-mode"
+                  checked={compareMode}
+                  onCheckedChange={(checked) => {
+                    setCompareMode(checked);
+                    if (!checked) {
+                      setCompareTrain1(null);
+                      setCompareTrain2(null);
+                    }
+                  }}
+                />
+                <Label htmlFor="compare-mode" className="text-sm flex items-center gap-1">
+                  <GitCompare className="h-4 w-4" />
+                  Compare
+                </Label>
+              </div>
+              
+              {/* Zoom controls */}
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setZoomLevel(Math.max(0.5, zoomLevel - 0.25))}
+                >
+                  <ZoomOut className="h-4 w-4" />
+                </Button>
+                <span className="text-sm text-muted-foreground">{Math.round(zoomLevel * 100)}%</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setZoomLevel(Math.min(3, zoomLevel + 0.25))}
+                >
+                  <ZoomIn className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Compare mode selectors */}
+          {compareMode ? (
+            <div className="flex items-center gap-4 p-3 bg-muted/30 rounded-lg">
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded-full" style={{ backgroundColor: COMPARE_COLORS[0] }} />
+                <Select value={compareTrain1 || ""} onValueChange={setCompareTrain1}>
+                  <SelectTrigger className="w-[200px] h-8 bg-background/50">
+                    <SelectValue placeholder="Select Train 1" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {trainPaths.map(tp => (
+                      <SelectItem 
+                        key={tp.load_id} 
+                        value={tp.load_id}
+                        disabled={tp.load_id === compareTrain2}
+                      >
+                        {tp.load_id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <span className="text-muted-foreground">vs</span>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded-full" style={{ backgroundColor: COMPARE_COLORS[1] }} />
+                <Select value={compareTrain2 || ""} onValueChange={setCompareTrain2}>
+                  <SelectTrigger className="w-[200px] h-8 bg-background/50">
+                    <SelectValue placeholder="Select Train 2" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {trainPaths.map(tp => (
+                      <SelectItem 
+                        key={tp.load_id} 
+                        value={tp.load_id}
+                        disabled={tp.load_id === compareTrain1}
+                      >
+                        {tp.load_id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          ) : (
             <Select
               value={selectedTrain || "all"}
               onValueChange={(v) => setSelectedTrain(v === "all" ? null : v)}
             >
-              <SelectTrigger className="w-[180px] h-8">
+              <SelectTrigger className="w-[200px] h-8">
                 <SelectValue placeholder="All trains" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Trains</SelectItem>
-                {trainPaths.slice(0, 20).map(tp => (
+                {trainPaths.slice(0, 30).map(tp => (
                   <SelectItem key={tp.load_id} value={tp.load_id}>
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: tp.color }} />
-                      <span className="truncate">{tp.load_id.slice(0, 15)}</span>
+                      <span className="truncate">{tp.load_id.slice(0, 20)}</span>
                     </div>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setZoomLevel(Math.max(0.5, zoomLevel - 0.25))}
-            >
-              <ZoomOut className="h-4 w-4" />
-            </Button>
-            <span className="text-sm text-muted-foreground">{Math.round(zoomLevel * 100)}%</span>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setZoomLevel(Math.min(3, zoomLevel + 0.25))}
-            >
-              <ZoomIn className="h-4 w-4" />
-            </Button>
-          </div>
+          )}
+
+          {/* Comparison Stats Panel */}
+          {compareMode && comparisonStats && (
+            <div className="grid grid-cols-4 gap-3 p-3 bg-background/50 rounded-lg border border-border/50">
+              <div className="text-center">
+                <div className="text-xs text-muted-foreground mb-1">Time Difference</div>
+                <div className={`font-bold flex items-center justify-center gap-1 ${
+                  comparisonStats.timeDiff > 0 ? 'text-destructive' : 'text-green-500'
+                }`}>
+                  <Timer className="h-4 w-4" />
+                  {Math.abs(comparisonStats.timeDiff)}m
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {comparisonStats.timeDiff > 0 ? 'Train 1 slower' : comparisonStats.timeDiff < 0 ? 'Train 1 faster' : 'Equal'}
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-xs text-muted-foreground mb-1">Halt Difference</div>
+                <div className={`font-bold flex items-center justify-center gap-1 ${
+                  comparisonStats.haltDiff > 0 ? 'text-warning' : 'text-green-500'
+                }`}>
+                  <AlertTriangle className="h-4 w-4" />
+                  {Math.abs(comparisonStats.haltDiff)}m
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {comparisonStats.haltDiff > 0 ? 'Train 1 more halts' : comparisonStats.haltDiff < 0 ? 'Train 1 fewer' : 'Equal'}
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-xs text-muted-foreground mb-1">Avg Speed Diff</div>
+                <div className={`font-bold flex items-center justify-center gap-1 ${
+                  comparisonStats.speedDiff > 0 ? 'text-green-500' : 'text-destructive'
+                }`}>
+                  <TrendingUp className="h-4 w-4" />
+                  {Math.abs(Math.round(comparisonStats.speedDiff))} km/h
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {comparisonStats.speedDiff > 0 ? 'Train 1 faster' : comparisonStats.speedDiff < 0 ? 'Train 1 slower' : 'Equal'}
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="text-xs text-muted-foreground mb-1">Station Stops</div>
+                <div className="font-bold flex items-center justify-center gap-2">
+                  <span style={{ color: COMPARE_COLORS[0] }}>{comparisonStats.train1.stationCount}</span>
+                  <span className="text-muted-foreground">vs</span>
+                  <span style={{ color: COMPARE_COLORS[1] }}>{comparisonStats.train2.stationCount}</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -319,9 +506,7 @@ export function FreightGanttChart() {
 
               {/* Train paths */}
               <g className="train-paths">
-                {trainPaths
-                  .filter(tp => !selectedTrain || tp.load_id === selectedTrain)
-                  .map((train) => (
+                {displayTrains.map((train) => (
                     <g key={train.load_id}>
                       {/* Draw lines between consecutive movements */}
                       {train.movements.map((movement, idx) => {
@@ -344,15 +529,15 @@ export function FreightGanttChart() {
                                 x2={x2}
                                 y2={y2}
                                 stroke={train.color}
-                                strokeWidth={selectedTrain === train.load_id ? 3 : 2}
-                                strokeOpacity={selectedTrain && selectedTrain !== train.load_id ? 0.2 : 0.8}
-                                className="cursor-pointer hover:stroke-[4px] transition-all"
-                                onClick={() => setSelectedTrain(train.load_id)}
+                                strokeWidth={compareMode ? 4 : (selectedTrain === train.load_id ? 3 : 2)}
+                                strokeOpacity={0.9}
+                                className="cursor-pointer hover:stroke-[5px] transition-all"
+                                onClick={() => !compareMode && setSelectedTrain(train.load_id)}
                               />
                             </TooltipTrigger>
                             <TooltipContent>
                               <div className="text-sm">
-                                <p className="font-semibold">{train.load_id}</p>
+                                <p className="font-semibold" style={{ color: train.color }}>{train.load_id}</p>
                                 <p>{prev.station_code} → {movement.station_code}</p>
                                 <p>Speed: {movement.speed} km/h</p>
                               </div>
@@ -374,18 +559,17 @@ export function FreightGanttChart() {
                               <circle
                                 cx={x}
                                 cy={y}
-                                r={movement.is_stoppage ? 5 : movement.halt_minutes > 10 ? 4 : 3}
+                                r={compareMode ? 6 : (movement.is_stoppage ? 5 : movement.halt_minutes > 10 ? 4 : 3)}
                                 fill={movement.is_stoppage ? '#ef4444' : movement.halt_minutes > 10 ? '#f59e0b' : train.color}
-                                stroke="white"
-                                strokeWidth={1}
-                                opacity={selectedTrain && selectedTrain !== train.load_id ? 0.2 : 1}
+                                stroke={compareMode ? train.color : "white"}
+                                strokeWidth={compareMode ? 2 : 1}
                                 className="cursor-pointer"
-                                onClick={() => setSelectedTrain(train.load_id)}
+                                onClick={() => !compareMode && setSelectedTrain(train.load_id)}
                               />
                             </TooltipTrigger>
                             <TooltipContent>
                               <div className="text-sm">
-                                <p className="font-semibold">{train.load_id}</p>
+                                <p className="font-semibold" style={{ color: train.color }}>{train.load_id}</p>
                                 <p>Station: {movement.station_code}</p>
                                 <p>Arrival: {movement.arrival ? format(movement.arrival, 'HH:mm') : '-'}</p>
                                 <p>Departure: {movement.departure ? format(movement.departure, 'HH:mm') : '-'}</p>
@@ -428,10 +612,23 @@ export function FreightGanttChart() {
 
         {/* Legend */}
         <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t text-xs">
-          <div className="flex items-center gap-1.5">
-            <div className="w-6 h-0.5 bg-green-500" />
-            <span>Train Path</span>
-          </div>
+          {compareMode ? (
+            <>
+              <div className="flex items-center gap-1.5">
+                <div className="w-6 h-1 rounded" style={{ backgroundColor: COMPARE_COLORS[0] }} />
+                <span>{compareTrain1 || 'Train 1'}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-6 h-1 rounded" style={{ backgroundColor: COMPARE_COLORS[1] }} />
+                <span>{compareTrain2 || 'Train 2'}</span>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <div className="w-6 h-0.5 bg-green-500" />
+              <span>Train Path</span>
+            </div>
+          )}
           <div className="flex items-center gap-1.5">
             <div className="w-3 h-3 rounded-full bg-green-500" />
             <span>Station Stop</span>
@@ -446,8 +643,8 @@ export function FreightGanttChart() {
           </div>
         </div>
 
-        {/* Selected train details */}
-        {selectedTrain && (
+        {/* Selected train details - only show when not in compare mode */}
+        {!compareMode && selectedTrain && (
           <div className="mt-4 p-3 border rounded-lg bg-muted/30">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
