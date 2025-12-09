@@ -328,21 +328,40 @@ export async function importFreightData(file: File): Promise<ImportResult> {
         });
       }
 
-      // Add movement record
+      // Parse times
       const arrivalTime = parseDate(row['Arrival Time']);
       const departTime = parseDate(row['Depart Time']);
+      
+      // Calculate halt time (difference between departure and arrival at same station)
+      let haltMinutes = 0;
+      if (arrivalTime && departTime && departTime > arrivalTime) {
+        haltMinutes = Math.round((departTime.getTime() - arrivalTime.getTime()) / 60000);
+      }
+      
+      // Determine if this is a stoppage (halt > 30 minutes indicates unscheduled stoppage)
+      const isStoppage = haltMinutes > 30;
+      
+      // Calculate speed from block_km and block_hrs
+      let speed = parseFloat(row.Speed) || null;
+      const blockKm = parseFloat(row['Block Km']) || 0;
+      const blockHrs = parseFloat(row['Block Hrs']) || 0;
+      if (!speed && blockKm > 0 && blockHrs > 0) {
+        speed = Math.round(blockKm / blockHrs);
+      }
 
       movements.push({
         load_id: row.LoadId,
         station_code: row.Sttn || '',
         block_section: row['Block Section'] || null,
-        block_km: parseFloat(row['Block Km']) || null,
-        block_hours: parseFloat(row['Block Hrs']) || null,
-        speed: parseFloat(row.Speed) || null,
+        block_km: blockKm || null,
+        block_hours: blockHrs || null,
+        speed: speed,
         arrival_time: arrivalTime?.toISOString() || null,
         departure_time: departTime?.toISOString() || null,
-        delay_minutes: 0,
-        is_stoppage: false,
+        halt_minutes: haltMinutes > 0 ? haltMinutes : null,
+        delay_minutes: 0, // Will be calculated based on expected vs actual times
+        is_stoppage: isStoppage,
+        stoppage_reason: isStoppage ? 'Unscheduled halt' : null,
       });
     }
 
@@ -365,7 +384,7 @@ export async function importFreightData(file: File): Promise<ImportResult> {
     }
 
     // Insert movements
-    const movementBatchSize = 1000;
+    const movementBatchSize = 500;
     for (let i = 0; i < movements.length; i += movementBatchSize) {
       const batch = movements.slice(i, i + movementBatchSize);
       const { error } = await supabase.from('freight_movements').insert(batch);
