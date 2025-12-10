@@ -8,7 +8,10 @@ import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useLogAction } from '@/hooks/useAuditLog';
-import { useAIRecommendations } from '@/hooks/useRailwayData';
+
+interface AIRecommendationsProps {
+  recommendations: AIRecommendation[];
+}
 
 const typeConfig = {
   precedence: { icon: Zap, label: 'Precedence', color: 'text-primary', bgColor: 'bg-primary/20' },
@@ -54,6 +57,7 @@ const RecommendationCard = ({
         variant: "destructive",
       });
     } else {
+      // Log the action
       await logAction(
         'recommendation',
         'ai_recommendation',
@@ -91,6 +95,7 @@ const RecommendationCard = ({
         variant: "destructive",
       });
     } else {
+      // Log the action
       await logAction(
         'resolve',
         'ai_recommendation',
@@ -197,7 +202,7 @@ const RecommendationCard = ({
               <div className="flex gap-2">
                 <Button
                   size="sm"
-                  className="flex-1 gap-2 bg-success hover:bg-success/90 text-success-foreground h-10"
+                  className="flex-1 gap-2 bg-success hover:bg-success/90 text-white h-10"
                   onClick={handleApprove}
                   disabled={isActioning}
                 >
@@ -223,14 +228,16 @@ const RecommendationCard = ({
   );
 };
 
-export const AIRecommendations = () => {
-  const { recommendations } = useAIRecommendations();
-  const [resolvedIds, setResolvedIds] = useState<string[]>([]);
+export const AIRecommendations = ({ recommendations }: AIRecommendationsProps) => {
+  const [localRecs, setLocalRecs] = useState(recommendations);
 
-  const activeRecs = recommendations.filter(r => !resolvedIds.includes(r.id));
+  // Update local state when props change
+  if (recommendations !== localRecs && recommendations.length !== localRecs.length) {
+    setLocalRecs(recommendations);
+  }
 
   const handleResolve = (id: string) => {
-    setResolvedIds(prev => [...prev, id]);
+    setLocalRecs(prev => prev.filter(r => r.id !== id));
   };
 
   return (
@@ -246,7 +253,7 @@ export const AIRecommendations = () => {
           </div>
           <div>
             <h2 className="text-base font-semibold text-foreground">AI Recommendations</h2>
-            <p className="text-xs text-muted-foreground">{activeRecs.length} pending actions</p>
+            <p className="text-xs text-muted-foreground">{localRecs.length} pending actions</p>
           </div>
         </div>
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-primary/10 border border-primary/20">
@@ -257,8 +264,8 @@ export const AIRecommendations = () => {
 
       <div className="flex-1 overflow-y-auto space-y-3 pr-1">
         <AnimatePresence mode="popLayout">
-          {activeRecs.length > 0 ? (
-            activeRecs.map((rec, index) => (
+          {localRecs.length > 0 ? (
+            localRecs.map((rec, index) => (
               <RecommendationCard
                 key={rec.id}
                 recommendation={rec}

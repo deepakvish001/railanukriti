@@ -17,7 +17,7 @@ import {
   Timer
 } from 'lucide-react';
 import { format, differenceInMinutes, parseISO } from 'date-fns';
-import { useRouteStations } from '@/hooks/useFreightData';
+import { useRouteStations, useFreightTrains } from '@/hooks/useFreightData';
 
 interface MovementData {
   id: string;
@@ -59,21 +59,7 @@ export function FreightPathComparison() {
   const [selectedTrain2, setSelectedTrain2] = useState<string>('');
   
   const { stations } = useRouteStations();
-
-  // Fetch unique load IDs that have movements (real data)
-  const { data: availableLoadIds = [] } = useQuery({
-    queryKey: ['freight-load-ids-with-movements'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('freight_movements')
-        .select('load_id')
-        .not('arrival_time', 'is', null);
-      if (error) throw error;
-      // Get unique load_ids
-      const uniqueIds = [...new Set(data.map(d => d.load_id))];
-      return uniqueIds.sort();
-    },
-  });
+  const { trains } = useFreightTrains();
 
   // Fetch movements for selected trains
   const { data: movements1 } = useQuery({
@@ -106,6 +92,11 @@ export function FreightPathComparison() {
     enabled: !!selectedTrain2
   });
 
+  // Get unique load IDs with movements
+  const availableLoadIds = useMemo(() => {
+    return trains.map(t => t.load_id).filter(Boolean);
+  }, [trains]);
+
   // Station lookup
   const stationMap = useMemo(() => {
     const map: Record<string, { name: string; seq: number; distance: number }> = {};
@@ -123,6 +114,7 @@ export function FreightPathComparison() {
   const processJourney = (loadId: string, movements: MovementData[]): TrainJourney | null => {
     if (!movements || movements.length === 0) return null;
 
+    const train = trains.find(t => t.load_id === loadId);
     const sortedMovements = [...movements].sort((a, b) => {
       const seqA = stationMap[a.station_code]?.seq || 0;
       const seqB = stationMap[b.station_code]?.seq || 0;
@@ -132,19 +124,10 @@ export function FreightPathComparison() {
     const firstMovement = sortedMovements[0];
     const lastMovement = sortedMovements[sortedMovements.length - 1];
     
-    // Get source and destination from first/last stations
-    const sourceStation = stationMap[firstMovement.station_code]?.name || firstMovement.station_code;
-    const destStation = stationMap[lastMovement.station_code]?.name || lastMovement.station_code;
-    
     let totalTime = 0;
     if (firstMovement.arrival_time && lastMovement.departure_time) {
       totalTime = differenceInMinutes(
         parseISO(lastMovement.departure_time),
-        parseISO(firstMovement.arrival_time)
-      );
-    } else if (firstMovement.arrival_time && lastMovement.arrival_time) {
-      totalTime = differenceInMinutes(
-        parseISO(lastMovement.arrival_time),
         parseISO(firstMovement.arrival_time)
       );
     }
@@ -154,17 +137,14 @@ export function FreightPathComparison() {
     const stoppageCount = movements.filter(m => m.is_stoppage).length;
     const speeds = movements.filter(m => m.speed && m.speed > 0).map(m => m.speed!);
     const avgSpeed = speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0;
-    
-    // Calculate total distance from block_km
-    const totalKm = movements.reduce((sum, m) => sum + (m.block_km || 0), 0);
 
     return {
       loadId,
       trainInfo: {
-        source: sourceStation,
-        destination: destStation,
-        commodity: null,
-        totalKm: totalKm > 0 ? totalKm : null
+        source: train?.source_station || 'Unknown',
+        destination: train?.destination_station || 'Unknown',
+        commodity: train?.commodity || null,
+        totalKm: train?.total_km || null
       },
       movements: sortedMovements,
       totalTime,
@@ -177,12 +157,12 @@ export function FreightPathComparison() {
 
   const journey1 = useMemo(() => 
     selectedTrain1 && movements1 ? processJourney(selectedTrain1, movements1) : null,
-    [selectedTrain1, movements1, stationMap]
+    [selectedTrain1, movements1, trains, stationMap]
   );
 
   const journey2 = useMemo(() => 
     selectedTrain2 && movements2 ? processJourney(selectedTrain2, movements2) : null,
-    [selectedTrain2, movements2, stationMap]
+    [selectedTrain2, movements2, trains, stationMap]
   );
 
   const formatTime = (timeStr: string | null) => {

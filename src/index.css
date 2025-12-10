@@ -12,67 +12,73 @@
 
 @layer base {
   :root {
-    /* Light theme for railway control */
-    --background: 210 40% 98%;
-    --foreground: 222 47% 11%;
+    /* Industrial dark theme for railway control */
+    --background: 222 47% 6%;
+    --foreground: 210 20% 95%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card: 222 47% 8%;
+    --card-foreground: 210 20% 95%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover: 222 47% 10%;
+    --popover-foreground: 210 20% 95%;
 
-    /* Primary blue for interactive elements */
-    --primary: 221 83% 53%;
-    --primary-foreground: 0 0% 100%;
+    /* Electric cyan for AI/interactive elements */
+    --primary: 192 95% 55%;
+    --primary-foreground: 222 47% 6%;
 
-    /* Secondary for muted elements */
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 20%;
+    /* Muted steel for secondary elements */
+    --secondary: 220 20% 18%;
+    --secondary-foreground: 210 15% 75%;
 
-    --muted: 210 40% 94%;
-    --muted-foreground: 215 16% 47%;
+    --muted: 220 20% 14%;
+    --muted-foreground: 215 15% 55%;
 
-    /* Accent color */
-    --accent: 38 92% 50%;
-    --accent-foreground: 0 0% 100%;
+    /* Amber accent for warnings and highlights */
+    --accent: 38 95% 55%;
+    --accent-foreground: 222 47% 6%;
 
     /* Status colors */
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
+    --destructive: 0 75% 55%;
+    --destructive-foreground: 210 20% 95%;
 
-    --success: 142 76% 36%;
-    --success-foreground: 0 0% 100%;
+    --success: 142 70% 45%;
+    --success-foreground: 222 47% 6%;
 
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 100%;
+    --warning: 38 95% 55%;
+    --warning-foreground: 222 47% 6%;
 
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 221 83% 53%;
+    --border: 220 20% 18%;
+    --input: 220 20% 14%;
+    --ring: 192 95% 55%;
 
     --radius: 0.5rem;
 
     /* Railway-specific colors */
-    --train-express: 221 83% 53%;
+    --train-express: 192 95% 55%;
     --train-freight: 38 80% 50%;
-    --train-local: 142 76% 36%;
-    --train-special: 280 70% 50%;
+    --train-local: 142 70% 45%;
+    --train-special: 280 70% 60%;
     
-    --track-active: 221 83% 53%;
-    --track-blocked: 0 84% 60%;
-    --track-clear: 142 76% 36%;
-    --track-occupied: 38 92% 50%;
+    --track-active: 192 95% 55%;
+    --track-blocked: 0 75% 55%;
+    --track-clear: 142 70% 45%;
+    --track-occupied: 38 95% 55%;
 
-    /* Sidebar */
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 222 47% 11%;
-    --sidebar-primary: 221 83% 53%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 210 40% 96%;
-    --sidebar-accent-foreground: 222 47% 11%;
-    --sidebar-border: 214 32% 91%;
-    --sidebar-ring: 221 83% 53%;
+    /* Glow effects */
+    --glow-primary: 192 95% 55%;
+    --glow-success: 142 70% 45%;
+    --glow-warning: 38 95% 55%;
+    --glow-danger: 0 75% 55%;
+
+    /* Sidebar (keeping for compatibility) */
+    --sidebar-background: 222 47% 8%;
+    --sidebar-foreground: 210 20% 95%;
+    --sidebar-primary: 192 95% 55%;
+    --sidebar-primary-foreground: 222 47% 6%;
+    --sidebar-accent: 220 20% 14%;
+    --sidebar-accent-foreground: 210 20% 95%;
+    --sidebar-border: 220 20% 18%;
+    --sidebar-ring: 192 95% 55%;
   }
 }
 
@@ -85,7 +91,7 @@
     @apply bg-background text-foreground font-sans antialiased;
   }
 
-  /* Custom scrollbar */
+  /* Custom scrollbar for industrial feel */
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -116,15 +122,30 @@
   }
 
   .status-dot-active {
-    @apply bg-[hsl(var(--success))];
+    @apply bg-[hsl(var(--success))] shadow-[0_0_8px_hsl(var(--glow-success)/0.6)];
   }
 
   .status-dot-warning {
-    @apply bg-[hsl(var(--warning))];
+    @apply bg-[hsl(var(--warning))] shadow-[0_0_8px_hsl(var(--glow-warning)/0.6)];
   }
 
   .status-dot-danger {
-    @apply bg-[hsl(var(--destructive))];
+    @apply bg-[hsl(var(--destructive))] shadow-[0_0_8px_hsl(var(--glow-danger)/0.6)];
+  }
+
+  /* Card glow effects */
+  .card-glow {
+    @apply relative overflow-hidden;
+  }
+
+  .card-glow::before {
+    content: '';
+    @apply absolute inset-0 opacity-0 transition-opacity duration-300;
+    background: radial-gradient(600px circle at var(--mouse-x, 50%) var(--mouse-y, 50%), hsl(var(--primary) / 0.06), transparent 40%);
+  }
+
+  .card-glow:hover::before {
+    @apply opacity-100;
   }
 
   /* Track segment styles */
@@ -133,15 +154,15 @@
   }
 
   .track-clear {
-    @apply bg-[hsl(var(--track-clear))];
+    @apply bg-[hsl(var(--track-clear))] shadow-[0_0_12px_hsl(var(--glow-success)/0.4)];
   }
 
   .track-occupied {
-    @apply bg-[hsl(var(--track-occupied))];
+    @apply bg-[hsl(var(--track-occupied))] shadow-[0_0_12px_hsl(var(--glow-warning)/0.4)];
   }
 
   .track-blocked {
-    @apply bg-[hsl(var(--track-blocked))];
+    @apply bg-[hsl(var(--track-blocked))] shadow-[0_0_12px_hsl(var(--glow-danger)/0.4)];
   }
 
   /* Pulse animation for live indicators */
@@ -152,9 +173,11 @@
   @keyframes pulse-glow {
     0%, 100% {
       opacity: 1;
+      box-shadow: 0 0 8px hsl(var(--glow-success) / 0.6);
     }
     50% {
       opacity: 0.7;
+      box-shadow: 0 0 16px hsl(var(--glow-success) / 0.8);
     }
   }
 
@@ -175,9 +198,27 @@
   /* Grid pattern background */
   .grid-pattern {
     background-image: 
-      linear-gradient(hsl(var(--border) / 0.5) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--border) / 0.5) 1px, transparent 1px);
+      linear-gradient(hsl(var(--border) / 0.3) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border) / 0.3) 1px, transparent 1px);
     background-size: 20px 20px;
+  }
+
+  /* Scanline effect */
+  .scanline {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .scanline::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      transparent 50%,
+      hsl(var(--background) / 0.03) 50%
+    );
+    background-size: 100% 4px;
+    pointer-events: none;
   }
 }
 
@@ -188,5 +229,23 @@
 
   .font-sans {
     font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  }
+
+  /* Glow text effects */
+  .text-glow-primary {
+    text-shadow: 0 0 20px hsl(var(--glow-primary) / 0.5);
+  }
+
+  .text-glow-success {
+    text-shadow: 0 0 20px hsl(var(--glow-success) / 0.5);
+  }
+
+  .text-glow-warning {
+    text-shadow: 0 0 20px hsl(var(--glow-warning) / 0.5);
+  }
+
+  /* Border glow */
+  .border-glow-primary {
+    box-shadow: 0 0 0 1px hsl(var(--primary) / 0.3), 0 0 20px hsl(var(--glow-primary) / 0.2);
   }
 }

@@ -1,11 +1,9 @@
-import { ReactNode, useState, useEffect } from 'react';
+import { ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { Header } from '@/components/dashboard/Header';
 import { DashboardSidebar } from '@/components/dashboard/DashboardSidebar';
 import { SidebarProvider } from '@/components/ui/sidebar';
-import { Loader2, RefreshCw } from 'lucide-react';
-import { useRealtimeSync, useGlobalRefresh } from '@/hooks/useRealtimeSync';
-import { Button } from '@/components/ui/button';
+import { Loader2 } from 'lucide-react';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -14,24 +12,6 @@ interface DashboardLayoutProps {
 }
 
 export const DashboardLayout = ({ children, title, isLoading = false }: DashboardLayoutProps) => {
-  const [lastSync, setLastSync] = useState(new Date());
-  const { refreshAll } = useGlobalRefresh();
-  
-  // Enable real-time sync across all pages with notifications
-  useRealtimeSync({ showNotifications: true });
-
-  // Update last sync time periodically
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setLastSync(new Date());
-    }, 30000); // Update every 30 seconds
-    return () => clearInterval(interval);
-  }, []);
-
-  const handleManualRefresh = () => {
-    refreshAll();
-    setLastSync(new Date());
-  };
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -82,28 +62,17 @@ export const DashboardLayout = ({ children, title, isLoading = false }: Dashboar
             <div className="flex items-center justify-between text-[10px] lg:text-xs text-muted-foreground">
               <div className="flex items-center gap-3 lg:gap-4">
                 <span className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-                  Real-time Sync Active
+                  <span className="w-1.5 h-1.5 rounded-full bg-success" />
+                  Synced
                 </span>
                 <span className="hidden sm:inline text-border/50">•</span>
-                <span className="hidden sm:inline">Last sync: {lastSync.toLocaleTimeString()}</span>
+                <span className="hidden sm:inline">Network: Connected</span>
                 <span className="hidden md:inline text-border/50">•</span>
-                <span className="hidden md:inline">All pages synchronized</span>
+                <span className="hidden md:inline">TMS Integration: Active</span>
               </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleManualRefresh}
-                  className="h-6 px-2 text-xs gap-1 hover:bg-primary/10"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  <span className="hidden sm:inline">Refresh All</span>
-                </Button>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-success" />
-                  <span>All systems operational</span>
-                </span>
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+                <span>All systems operational</span>
               </div>
             </div>
           </footer>

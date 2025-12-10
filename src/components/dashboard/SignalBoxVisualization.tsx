@@ -91,9 +91,9 @@ const Signal = ({
   const [open, setOpen] = useState(false);
 
   const colors = {
-    clear: 'bg-emerald-400 shadow-[0_0_12px_4px_rgba(52,211,153,0.7)]',
-    caution: 'bg-amber-400 shadow-[0_0_12px_4px_rgba(251,191,36,0.7)]',
-    danger: 'bg-rose-500 shadow-[0_0_12px_4px_rgba(244,63,94,0.7)]',
+    clear: 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]',
+    caution: 'bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.8)]',
+    danger: 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]',
   };
 
   const statusLabels = {
@@ -113,22 +113,22 @@ const Signal = ({
         <button
           disabled={disabled || locked}
           className={cn(
-            'flex flex-col items-center gap-0.5 cursor-pointer transition-all duration-200 hover:scale-125 focus:outline-none focus:ring-2 focus:ring-cyan-400/50 rounded relative group',
+            'flex flex-col items-center gap-0.5 cursor-pointer transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-primary/50 rounded relative',
             direction === 'down' && 'rotate-180',
             (disabled || locked) && 'opacity-50 cursor-not-allowed hover:scale-100'
           )}
         >
           <div className={cn(
-            'w-4 h-8 bg-gradient-to-b from-slate-700 to-slate-900 rounded-md flex flex-col items-center justify-center gap-1 p-0.5 border-2 transition-all shadow-lg',
-            locked ? 'border-cyan-400/70 shadow-cyan-400/30' : 'border-slate-500 group-hover:border-cyan-400/50 group-hover:shadow-cyan-400/20'
+            'w-3 h-6 bg-zinc-800 rounded-sm flex flex-col items-center justify-center gap-0.5 p-0.5 border transition-colors',
+            locked ? 'border-cyan-500/50' : 'border-zinc-600 hover:border-primary/50'
           )}>
             <motion.div 
-              className={cn('w-2.5 h-2.5 rounded-full transition-all', colors[status])}
-              animate={{ scale: [1, 1.2, 1], opacity: [0.9, 1, 0.9] }}
-              transition={{ duration: 1.5, repeat: Infinity }}
+              className={cn('w-2 h-2 rounded-full transition-all', colors[status])}
+              animate={{ scale: [1, 1.1, 1] }}
+              transition={{ duration: 2, repeat: Infinity }}
             />
           </div>
-          <div className="w-0.5 h-4 bg-gradient-to-b from-slate-500 to-slate-700 rounded-full" />
+          <div className="w-0.5 h-3 bg-zinc-600" />
           {/* Lock indicator */}
           {locked && (
             <motion.div 
@@ -232,19 +232,15 @@ const BlockIndicator = ({
       <div className="relative">
         <motion.div 
           className={cn(
-            'w-14 h-16 rounded-lg border-2 flex flex-col items-center justify-center text-xs font-mono font-bold transition-all shadow-xl',
+            'w-10 h-12 rounded-md border-2 flex items-center justify-center text-xs font-mono font-bold transition-all shadow-lg',
             occupied 
-              ? 'bg-gradient-to-br from-rose-600/30 to-rose-800/30 border-rose-400 text-rose-300 shadow-rose-500/30' 
-              : 'bg-gradient-to-br from-slate-700/50 to-slate-900/50 border-slate-500/70 text-slate-300 shadow-slate-900/50'
+              ? 'bg-red-500/20 border-red-500 text-red-400 shadow-red-500/20' 
+              : 'bg-zinc-800 border-zinc-500 text-zinc-300'
           )}
-          animate={occupied ? { 
-            borderColor: ['#fb7185', '#f43f5e', '#fb7185'],
-            boxShadow: ['0 0 15px rgba(244,63,94,0.3)', '0 0 25px rgba(244,63,94,0.5)', '0 0 15px rgba(244,63,94,0.3)']
-          } : {}}
-          transition={{ duration: 1.2, repeat: Infinity }}
+          animate={occupied ? { borderColor: ['#ef4444', '#f87171', '#ef4444'] } : {}}
+          transition={{ duration: 1, repeat: Infinity }}
         >
-          <span className="text-[10px] text-muted-foreground mb-0.5">Block</span>
-          <span className="text-lg">{String(number).padStart(2, '0')}</span>
+          {String(number).padStart(2, '0')}
         </motion.div>
         
         {/* Animated train position */}
@@ -278,89 +274,64 @@ const BlockIndicator = ({
   );
 };
 
-// Track line segment with enhanced visuals
+// Track line segment
 const TrackLine = ({ length = 'normal', status = 'clear' }: { length?: 'short' | 'normal' | 'long'; status?: 'clear' | 'occupied' }) => {
   const widths = {
-    short: 'w-8',
-    normal: 'w-16',
-    long: 'w-20',
+    short: 'w-6',
+    normal: 'w-12',
+    long: 'w-16',
   };
   
   return (
-    <div className="relative flex items-center">
-      {/* Track bed with sleepers */}
-      <div className={cn('relative flex items-center', widths[length])}>
-        {/* Sleepers/ties */}
-        <div className="absolute inset-x-0 flex justify-between px-1">
-          {[...Array(5)].map((_, i) => (
-            <div key={i} className="w-1 h-4 bg-gradient-to-b from-amber-900/60 to-amber-950/60 rounded-sm" />
-          ))}
-        </div>
-        {/* Rails */}
-        <div className={cn(
-          'w-full h-1.5 rounded-full relative overflow-hidden',
-          status === 'occupied' 
-            ? 'bg-gradient-to-r from-rose-500 via-rose-400 to-rose-500' 
-            : 'bg-gradient-to-r from-slate-500 via-slate-400 to-slate-500'
-        )}>
-          {/* Animated glow for occupied */}
-          {status === 'occupied' && (
-            <motion.div 
-              className="absolute inset-0 bg-gradient-to-r from-transparent via-rose-300/60 to-transparent"
-              animate={{ x: ['-100%', '200%'] }}
-              transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-            />
-          )}
-          {/* Rail shine */}
-          <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent h-1/2" />
-        </div>
+    <div className="relative">
+      {/* Track bed */}
+      <div className={cn(
+        'h-2 rounded-full relative overflow-hidden',
+        widths[length],
+        status === 'occupied' ? 'bg-red-500' : 'bg-zinc-600'
+      )}>
+        {/* Animated track glow for occupied */}
+        {status === 'occupied' && (
+          <motion.div 
+            className="absolute inset-0 bg-gradient-to-r from-transparent via-red-400/50 to-transparent"
+            animate={{ x: ['-100%', '100%'] }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+          />
+        )}
+      </div>
+      {/* Rail ties */}
+      <div className={cn('flex justify-between absolute -top-0.5', widths[length])}>
+        {[...Array(4)].map((_, i) => (
+          <div key={i} className="w-0.5 h-3 bg-zinc-700" />
+        ))}
       </div>
     </div>
   );
 };
 
-// Platform marker with enhanced design
+// Platform marker
 const Platform = ({ number, active }: { number: number; active?: boolean }) => (
-  <motion.div 
-    className={cn(
-      'px-5 py-3 rounded-xl text-sm font-bold border-2 shadow-xl transition-all relative overflow-hidden',
-      active 
-        ? 'bg-gradient-to-br from-cyan-500/30 to-blue-600/30 border-cyan-400 text-cyan-300 shadow-cyan-500/30' 
-        : 'bg-gradient-to-br from-slate-700/50 to-slate-800/50 border-slate-500/50 text-slate-300 shadow-slate-900/30'
-    )}
-    animate={active ? { boxShadow: ['0 0 20px rgba(34,211,238,0.3)', '0 0 30px rgba(34,211,238,0.5)', '0 0 20px rgba(34,211,238,0.3)'] } : {}}
-    transition={{ duration: 1.5, repeat: Infinity }}
-  >
-    <div className="absolute inset-0 bg-gradient-to-t from-transparent to-white/5" />
-    <div className="relative flex items-center gap-2">
-      {active && <motion.div className="w-2 h-2 rounded-full bg-cyan-400" animate={{ scale: [1, 1.3, 1] }} transition={{ duration: 0.8, repeat: Infinity }} />}
-      Platform {number}
-    </div>
-  </motion.div>
+  <div className={cn(
+    'px-4 py-2 rounded-lg text-sm font-bold border-2 shadow-lg transition-all',
+    active 
+      ? 'bg-primary/20 border-primary text-primary shadow-primary/20' 
+      : 'bg-zinc-800 border-zinc-500 text-zinc-300'
+  )}>
+    Platform {number}
+  </div>
 );
 
-// Station marker with enhanced design
+// Station marker
 const StationMarker = ({ name, side }: { name: string; side: 'left' | 'right' }) => (
-  <motion.div 
-    className={cn(
-      'px-5 py-3 rounded-xl text-sm font-bold border-2 shadow-xl relative overflow-hidden',
-      'bg-gradient-to-br from-emerald-500/30 to-green-600/30 border-emerald-400/60 text-emerald-300 shadow-emerald-500/20',
-      side === 'left' ? 'mr-auto' : 'ml-auto'
-    )}
-    initial={{ opacity: 0, x: side === 'left' ? -20 : 20 }}
-    animate={{ opacity: 1, x: 0 }}
-    transition={{ duration: 0.5 }}
-  >
-    <div className="absolute inset-0 bg-gradient-to-t from-transparent to-white/5" />
-    <div className="relative flex items-center gap-2">
-      <motion.div 
-        className="w-3 h-3 rounded-full bg-emerald-400" 
-        animate={{ scale: [1, 1.2, 1], opacity: [0.7, 1, 0.7] }} 
-        transition={{ duration: 1.5, repeat: Infinity }} 
-      />
+  <div className={cn(
+    'px-4 py-2 rounded-lg text-sm font-bold bg-emerald-500/20 border-2 border-emerald-500/50 text-emerald-400 shadow-lg shadow-emerald-500/10',
+    side === 'left' ? 'mr-auto' : 'ml-auto'
+  )}>
+    <div className="flex items-center gap-2">
+      <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
       {name}
     </div>
-  </motion.div>
+  </div>
 );
 
 // Point/Switch indicator with toggle control
@@ -3028,65 +2999,55 @@ export const SignalBoxVisualization = ({
       </AnimatePresence>
 
       {/* Control hint */}
-      <div className="px-4 py-3 bg-gradient-to-r from-cyan-500/10 via-blue-500/10 to-purple-500/10 border-b border-cyan-500/20 flex items-center justify-between">
-        <p className="text-xs text-cyan-300/90 font-medium">
+      <div className="px-4 py-2 bg-primary/5 border-b border-border/30 flex items-center justify-between">
+        <p className="text-xs text-primary/80">
           💡 Click trains to select • Double-click to set routes • Locked signals/points cannot be changed
         </p>
-        <div className="flex items-center gap-6">
-          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
             <motion.div 
-              className="w-2.5 h-2.5 rounded-full bg-emerald-400"
-              animate={{ scale: [1, 1.3, 1], boxShadow: ['0 0 5px rgba(52,211,153,0.5)', '0 0 15px rgba(52,211,153,0.8)', '0 0 5px rgba(52,211,153,0.5)'] }}
+              className="w-2.5 h-2.5 rounded-full bg-green-500"
+              animate={{ scale: [1, 1.3, 1] }}
               transition={{ duration: 1, repeat: Infinity }}
             />
-            <span className="text-xs text-emerald-300 font-semibold">
-              {trains.filter(t => t.status === 'on-time' || t.status === 'delayed').length} Active
+            <span className="text-xs text-muted-foreground font-medium">
+              {trains.filter(t => t.status === 'on-time' || t.status === 'delayed').length} trains moving
             </span>
           </div>
-          <div className="text-xs text-slate-400 font-mono">
-            {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          <div className="text-xs text-muted-foreground">
+            Last update: {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
           </div>
         </div>
       </div>
 
       {/* Main visualization */}
-      <div className="flex-1 p-6 overflow-auto min-h-[400px] bg-gradient-to-b from-slate-900/50 to-slate-950/50">
-        <div className="min-w-[900px]">
+      <div className="flex-1 p-4 overflow-auto min-h-[350px]">
+        <div className="min-w-[800px]">
           {/* Station markers */}
-          <div className="flex justify-between mb-8 px-4">
+          <div className="flex justify-between mb-6 px-4">
             <StationMarker name="KANPUR JN" side="left" />
             <div className="flex-1 flex items-center justify-center">
-              <motion.div 
-                className="px-6 py-3 rounded-xl bg-gradient-to-r from-indigo-500/20 via-purple-500/20 to-pink-500/20 border border-indigo-400/30 shadow-lg shadow-indigo-500/10"
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
-                <span className="text-sm font-bold bg-gradient-to-r from-indigo-300 via-purple-300 to-pink-300 bg-clip-text text-transparent">
-                  🚆 Live Track Control Panel
-                </span>
-              </motion.div>
+              <div className="px-4 py-2 rounded-lg bg-zinc-800/50 border border-zinc-700">
+                <span className="text-sm font-semibold text-foreground">Live Track Status</span>
+              </div>
             </div>
             <StationMarker name="ALLAHABAD JN" side="right" />
           </div>
 
           {/* Main Line (UP) */}
-          <div className="relative mb-10">
-            <div className="flex items-center justify-between px-4 mb-4">
+          <div className="relative mb-8">
+            <div className="flex items-center justify-between px-4 mb-3">
               <div className="flex items-center gap-3">
-                <motion.div 
-                  className="w-4 h-4 rounded-full bg-gradient-to-br from-emerald-400 to-green-600" 
-                  animate={{ scale: [1, 1.2, 1], boxShadow: ['0 0 8px rgba(52,211,153,0.4)', '0 0 16px rgba(52,211,153,0.7)', '0 0 8px rgba(52,211,153,0.4)'] }}
-                  transition={{ duration: 1.5, repeat: Infinity }}
-                />
-                <span className="text-base font-bold bg-gradient-to-r from-emerald-300 to-green-400 bg-clip-text text-transparent">UP LINE</span>
-                <span className="text-xs text-emerald-400/70 font-medium">→ Allahabad Direction</span>
+                <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-sm font-bold text-foreground">UP LINE</span>
+                <span className="text-xs text-muted-foreground">→ Allahabad Direction</span>
               </div>
-              <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/80 border border-slate-600/50">
-                <span className="text-xs text-slate-400">{sections.filter(s => s.status === 'occupied').length} occupied</span>
+              <div className="text-xs text-muted-foreground">
+                {sections.filter(s => s.status === 'occupied').length} sections occupied
               </div>
             </div>
-            <div className="flex items-center gap-3 bg-gradient-to-r from-emerald-900/20 via-slate-800/40 to-emerald-900/20 rounded-2xl p-5 border border-emerald-500/20 shadow-xl shadow-emerald-500/5">
-              <div className="w-8 h-1.5 bg-gradient-to-r from-transparent to-slate-500 rounded-full" />
+            <div className="flex items-center gap-2 bg-gradient-to-r from-zinc-800/50 via-zinc-800/30 to-zinc-800/50 rounded-xl p-4 border border-zinc-700/50 shadow-lg">
+              <div className="w-6 h-1 bg-zinc-500 rounded-full" />
               {sections.slice(0, 4).map((section, idx) => {
                 const train = getTrainAtSection(section.id);
                 const signalId = `UP-S${section.id}`;
@@ -3174,25 +3135,21 @@ export const SignalBoxVisualization = ({
                   </div>
                 );
               })}
-              <div className="w-8 h-1.5 bg-gradient-to-l from-transparent to-slate-500 rounded-full" />
+              <div className="w-6 h-1 bg-zinc-500 rounded-full" />
             </div>
           </div>
 
           {/* Main Line (DN) */}
           <div className="relative mb-6">
-            <div className="flex items-center justify-between px-4 mb-4">
+            <div className="flex items-center justify-between px-4 mb-3">
               <div className="flex items-center gap-3">
-                <motion.div 
-                  className="w-4 h-4 rounded-full bg-gradient-to-br from-amber-400 to-orange-600" 
-                  animate={{ scale: [1, 1.2, 1], boxShadow: ['0 0 8px rgba(251,191,36,0.4)', '0 0 16px rgba(251,191,36,0.7)', '0 0 8px rgba(251,191,36,0.4)'] }}
-                  transition={{ duration: 1.5, repeat: Infinity }}
-                />
-                <span className="text-base font-bold bg-gradient-to-r from-amber-300 to-orange-400 bg-clip-text text-transparent">DN LINE</span>
-                <span className="text-xs text-amber-400/70 font-medium">← Kanpur Direction</span>
+                <div className="w-3 h-3 rounded-full bg-amber-500 animate-pulse" />
+                <span className="text-sm font-bold text-foreground">DN LINE</span>
+                <span className="text-xs text-muted-foreground">← Kanpur Direction</span>
               </div>
             </div>
-            <div className="flex items-center gap-3 bg-gradient-to-r from-amber-900/20 via-slate-800/40 to-amber-900/20 rounded-2xl p-5 border border-amber-500/20 shadow-xl shadow-amber-500/5">
-              <div className="w-8 h-1.5 bg-gradient-to-r from-transparent to-slate-500 rounded-full" />
+            <div className="flex items-center gap-2 bg-gradient-to-r from-zinc-800/50 via-zinc-800/30 to-zinc-800/50 rounded-xl p-4 border border-zinc-700/50 shadow-lg">
+              <div className="w-6 h-1 bg-zinc-500 rounded-full" />
               {[...Array(3)].map((_, idx) => {
                 const blockNum = idx + 9;
                 const signalId = `DN-S${blockNum}`;
@@ -3264,83 +3221,83 @@ export const SignalBoxVisualization = ({
                   </div>
                 );
               })}
-              <div className="w-8 h-1.5 bg-gradient-to-l from-transparent to-slate-500 rounded-full" />
+              <div className="w-6 h-1 bg-zinc-500 rounded-full" />
             </div>
           </div>
 
           {/* Legend */}
-          <div className="flex flex-wrap items-center justify-center gap-8 pt-6 mt-6 border-t border-slate-700/50 bg-gradient-to-r from-slate-800/30 via-slate-700/20 to-slate-800/30 rounded-xl p-5">
+          <div className="flex flex-wrap items-center justify-center gap-6 pt-4 mt-4 border-t border-border/30 bg-zinc-800/20 rounded-lg p-4">
             {/* Signal Status */}
             <div className="flex items-center gap-4">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">Signals</span>
-              <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
-                <div className="w-3 h-3 rounded-full bg-emerald-400 shadow-lg shadow-emerald-500/40" />
-                <span className="text-xs text-emerald-300 font-medium">Clear</span>
+              <span className="text-xs font-semibold text-muted-foreground">Signals:</span>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-green-500 shadow-lg shadow-green-500/30" />
+                <span className="text-xs text-muted-foreground">Clear</span>
               </div>
-              <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30">
-                <div className="w-3 h-3 rounded-full bg-amber-400 shadow-lg shadow-amber-500/40" />
-                <span className="text-xs text-amber-300 font-medium">Caution</span>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-yellow-500 shadow-lg shadow-yellow-500/30" />
+                <span className="text-xs text-muted-foreground">Caution</span>
               </div>
-              <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-rose-500/10 border border-rose-500/30">
-                <div className="w-3 h-3 rounded-full bg-rose-500 shadow-lg shadow-rose-500/40" />
-                <span className="text-xs text-rose-300 font-medium">Danger</span>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-red-500 shadow-lg shadow-red-500/30" />
+                <span className="text-xs text-muted-foreground">Danger</span>
               </div>
             </div>
             
-            <div className="w-px h-8 bg-slate-600/50" />
+            <div className="w-px h-6 bg-border/50" />
             
             {/* Points */}
             <div className="flex items-center gap-4">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">Points</span>
-              <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30">
-                <span className="text-xs font-bold text-emerald-400">N</span>
-                <span className="text-xs text-emerald-300">Normal</span>
+              <span className="text-xs font-semibold text-muted-foreground">Points:</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-400 border border-green-500/30 font-bold">N</span>
+                <span className="text-xs text-muted-foreground">Normal</span>
               </div>
-              <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30">
-                <span className="text-xs font-bold text-amber-400">R</span>
-                <span className="text-xs text-amber-300">Reverse</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs px-2 py-1 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30 font-bold">R</span>
+                <span className="text-xs text-muted-foreground">Reverse</span>
               </div>
             </div>
             
-            <div className="w-px h-8 bg-slate-600/50" />
+            <div className="w-px h-6 bg-border/50" />
             
             {/* Train Types */}
             <div className="flex items-center gap-4">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">Trains</span>
-              <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-blue-500/10 border border-blue-500/30">
-                <div className="w-3 h-3 rounded-full bg-train-express shadow-lg shadow-blue-500/40" />
-                <span className="text-xs text-blue-300">Express</span>
+              <span className="text-xs font-semibold text-muted-foreground">Trains:</span>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded-full bg-train-express shadow-lg" />
+                <span className="text-xs text-muted-foreground">Express</span>
               </div>
-              <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-green-500/10 border border-green-500/30">
-                <div className="w-3 h-3 rounded-full bg-train-freight shadow-lg shadow-green-500/40" />
-                <span className="text-xs text-green-300">Freight</span>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded-full bg-train-freight shadow-lg" />
+                <span className="text-xs text-muted-foreground">Freight</span>
               </div>
-              <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-purple-500/10 border border-purple-500/30">
-                <div className="w-3 h-3 rounded-full bg-train-local shadow-lg shadow-purple-500/40" />
-                <span className="text-xs text-purple-300">Local</span>
+              <div className="flex items-center gap-2">
+                <div className="w-4 h-4 rounded-full bg-train-local shadow-lg" />
+                <span className="text-xs text-muted-foreground">Local</span>
               </div>
             </div>
             
-            <div className="w-px h-8 bg-slate-600/50" />
+            <div className="w-px h-6 bg-border/50" />
             
             {/* Speed indicators */}
             <div className="flex items-center gap-4">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">Speed</span>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-sm shadow-emerald-500/40" />
-                <span className="text-[10px] text-slate-400">≥80</span>
+              <span className="text-xs font-semibold text-muted-foreground">Speed:</span>
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
+                <span className="text-xs text-muted-foreground">≥80 km/h</span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-full bg-yellow-400 shadow-sm shadow-yellow-500/40" />
-                <span className="text-[10px] text-slate-400">30-79</span>
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-yellow-500" />
+                <span className="text-xs text-muted-foreground">30-79</span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-sm shadow-amber-500/40" />
-                <span className="text-[10px] text-slate-400">1-29</span>
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                <span className="text-xs text-muted-foreground">1-29</span>
               </div>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-sm shadow-rose-500/40" />
-                <span className="text-[10px] text-slate-400">Stop</span>
+              <div className="flex items-center gap-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
+                <span className="text-xs text-muted-foreground">Stopped</span>
               </div>
             </div>
           </div>

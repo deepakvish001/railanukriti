@@ -1,5 +1,5 @@
+import { useState, useCallback } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { useNavigate } from 'react-router-dom';
 import { MinimalDashboardLayout } from '@/components/dashboard/MinimalDashboardLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FreightThroughputDashboard } from '@/components/dashboard/FreightThroughputDashboard';
@@ -7,94 +7,60 @@ import { DisruptionManager } from '@/components/dashboard/DisruptionManager';
 import { RouteVisualization } from '@/components/dashboard/RouteVisualization';
 import { RailwayDataImporter } from '@/components/dashboard/RailwayDataImporter';
 import { FreightGanttChart } from '@/components/dashboard/FreightGanttChart';
-import { DistanceTimeChart } from '@/components/dashboard/DistanceTimeChart';
 import { StoppageAnalysis } from '@/components/dashboard/StoppageAnalysis';
 import { FreightPathComparison } from '@/components/dashboard/FreightPathComparison';
+import { InteractiveBlockDiagram } from '@/components/dashboard/InteractiveBlockDiagram';
+import { InfrastructureImpactSimulator } from '@/components/dashboard/InfrastructureImpactSimulator';
 import { RealTimeBlockDiagram } from '@/components/dashboard/RealTimeBlockDiagram';
-import { ScenarioSimulation } from '@/components/dashboard/ScenarioSimulation';
-import { useTrains } from '@/hooks/useRailwayData';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Map } from 'lucide-react';
 
 const FreightAnalysis = () => {
-  const { trains } = useTrains();
-  const navigate = useNavigate();
-  
   return (
     <>
       <Helmet>
-        <title>Kottavalasa → Palasa Digital Twin | RailAnukriti</title>
-        <meta name="description" content="Real-time time-distance simulation with live train tracking and KPIs for Kottavalasa to Palasa section." />
+        <title>Freight Throughput Analysis | RailAnukriti</title>
+        <meta name="description" content="Maximize freight train throughput with real-time analysis of delays, halts, and stoppages." />
       </Helmet>
-      <MinimalDashboardLayout title="Freight Analysis">
+      <MinimalDashboardLayout title="Freight Throughput Analysis">
         <div className="space-y-6">
-          {/* Main Headline Section */}
-          <Card className="p-6 bg-gradient-to-r from-muted/30 to-muted/10 border-border">
-            <div className="flex items-start justify-between flex-wrap gap-4">
-              <div>
-                <h1 className="text-2xl lg:text-3xl font-bold text-foreground mb-2">
-                  Kottavalasa <span className="text-primary">→</span> Palasa Digital Twin
-                </h1>
-                <p className="text-muted-foreground">
-                  Real-time time–distance + map with 36 trains (14 Passenger, 22 Freight) and live KPIs.
-                </p>
-              </div>
-              <Button 
-                onClick={() => navigate('/map')}
-                className="gap-2"
-              >
-                <Map className="w-4 h-4" />
-                View Route Map
-              </Button>
-            </div>
-          </Card>
-          
           <RouteVisualization />
           <DisruptionManager />
           
-          <Tabs defaultValue="time-distance">
-            <TabsList className="bg-muted/50">
-              <TabsTrigger value="time-distance">Time vs Distance Simulation</TabsTrigger>
+          <Tabs defaultValue="block-diagram">
+            <TabsList>
               <TabsTrigger value="block-diagram">Block Diagram</TabsTrigger>
-              <TabsTrigger value="simulation">Scenario Simulation</TabsTrigger>
+              <TabsTrigger value="simulator">Infrastructure Simulator</TabsTrigger>
+              <TabsTrigger value="gantt">Time-Distance Chart</TabsTrigger>
               <TabsTrigger value="comparison">Path Comparison</TabsTrigger>
               <TabsTrigger value="stoppage">Stoppage Analysis</TabsTrigger>
               <TabsTrigger value="throughput">Throughput Dashboard</TabsTrigger>
               <TabsTrigger value="import">Data Import</TabsTrigger>
             </TabsList>
             
-            <TabsContent value="time-distance" className="mt-4">
-              <div className="space-y-4">
-                <div className="mb-2">
-                  <h3 className="text-lg font-semibold text-foreground">Time vs Distance Simulation</h3>
-                  <p className="text-sm text-muted-foreground">Live Marey diagram · KTV → PSA · Real freight movement data</p>
-                </div>
-                <DistanceTimeChart />
-              </div>
-            </TabsContent>
-            
-            <TabsContent value="block-diagram" className="mt-4">
+            <TabsContent value="block-diagram">
               <RealTimeBlockDiagram />
             </TabsContent>
             
-            <TabsContent value="simulation" className="mt-4">
-              <ScenarioSimulation />
+            <TabsContent value="simulator">
+              <InfrastructureImpactSimulator />
             </TabsContent>
             
-            <TabsContent value="comparison" className="mt-4">
+            <TabsContent value="comparison">
               <FreightPathComparison />
             </TabsContent>
             
-            <TabsContent value="stoppage" className="mt-4">
+            <TabsContent value="gantt">
+              <FreightGanttChart />
+            </TabsContent>
+            
+            <TabsContent value="stoppage">
               <StoppageAnalysis />
             </TabsContent>
             
-            <TabsContent value="throughput" className="mt-4">
+            <TabsContent value="throughput">
               <FreightThroughputDashboard />
             </TabsContent>
             
-            <TabsContent value="import" className="mt-4">
+            <TabsContent value="import">
               <RailwayDataImporter />
             </TabsContent>
           </Tabs>

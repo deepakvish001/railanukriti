@@ -1,6 +1,7 @@
 import {
-  Brain, History, BarChart3, Train, ChevronLeft, ChevronRight,
-  LayoutDashboard, Upload, Download, Container
+  Sparkles, Bell, FlaskConical, History, BarChart3, AlertTriangle,
+  GanttChart, Download, TrendingUp, Target, Brain, Train, ChevronLeft, ChevronRight,
+  LayoutDashboard, Upload, Settings2, Container
 } from 'lucide-react';
 import {
   Sidebar,
@@ -19,16 +20,29 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { NavLink, useLocation } from 'react-router-dom';
-import railanukritiLogo from '@/assets/railanukriti-logo.png';
 
 const mainItems = [
   { id: 'dashboard', title: 'Dashboard', icon: LayoutDashboard, path: '/' },
-  { id: 'freight-analysis', title: 'Freight Analysis', icon: Container, path: '/freight-analysis' },
+];
+
+const aiItems = [
+  { id: 'recommendations', title: 'AI Recommendations', icon: Sparkles, path: '/recommendations' },
+  { id: 'predictions', title: 'Delay Prediction', icon: Brain, path: '/predictions' },
+  { id: 'conflicts', title: 'Conflict Detection', icon: AlertTriangle, path: '/conflicts' },
+];
+
+const operationsItems = [
+  { id: 'alerts', title: 'Active Alerts', icon: Bell, path: '/alerts' },
+  { id: 'schedule', title: 'Train Schedule', icon: GanttChart, path: '/schedule' },
+  { id: 'simulation', title: 'Scenario Sim', icon: FlaskConical, path: '/simulation' },
+  { id: 'infrastructure', title: 'Infrastructure', icon: Settings2, path: '/infrastructure' },
 ];
 
 const analyticsItems = [
-  { id: 'ai-predictions', title: 'AI Predictions', icon: Brain, path: '/ai-predictions' },
-  { id: 'kpis', title: 'KPI Dashboard', icon: BarChart3, path: '/kpis' },
+  { id: 'freight-analysis', title: 'Freight Analysis', icon: Container, path: '/freight-analysis' },
+  { id: 'kpis', title: 'KPI Dashboard', icon: Target, path: '/kpis' },
+  { id: 'charts', title: 'Performance', icon: BarChart3, path: '/charts' },
+  { id: 'analytics', title: 'Analytics', icon: TrendingUp, path: '/analytics' },
 ];
 
 const systemItems = [
@@ -54,8 +68,8 @@ export const DashboardSidebar = () => {
           "w-full gap-3 h-9 transition-all duration-200 rounded-lg",
           collapsed ? "justify-center px-2" : "justify-start px-3",
           isActive 
-            ? "bg-primary/10 text-primary border border-primary/20" 
-            : "hover:bg-muted text-muted-foreground hover:text-foreground border border-transparent"
+            ? "bg-primary/15 text-primary shadow-sm shadow-primary/10 border border-primary/20" 
+            : "hover:bg-muted/60 text-muted-foreground hover:text-foreground border border-transparent"
         )}
       >
         <NavLink to={item.path}>
@@ -88,7 +102,7 @@ export const DashboardSidebar = () => {
     );
   };
 
-  const renderGroup = (label: string, items: typeof mainItems) => (
+  const renderGroup = (label: string, items: typeof aiItems) => (
     <SidebarGroup className={cn("px-2", collapsed && "px-1")}>
       {!collapsed && (
         <SidebarGroupLabel className="text-[10px] uppercase tracking-widest text-muted-foreground/70 font-semibold px-3 mb-1">
@@ -107,13 +121,13 @@ export const DashboardSidebar = () => {
     <Sidebar 
       collapsible="icon" 
       className={cn(
-        "border-r border-border bg-card transition-all duration-300",
+        "border-r border-border/50 bg-gradient-to-b from-card via-card/98 to-card/95 transition-all duration-300",
         collapsed ? "w-[60px]" : "w-[220px]"
       )}
     >
-      {/* Header with IRCTC-style Logo */}
+      {/* Header with Logo and Toggle */}
       <SidebarHeader className={cn(
-        "border-b border-border p-3",
+        "border-b border-border/30 p-3",
         collapsed && "px-2"
       )}>
         <div className={cn(
@@ -124,11 +138,11 @@ export const DashboardSidebar = () => {
             "flex items-center gap-2",
             collapsed && "justify-center"
           )}>
-            <div className="w-8 h-8 rounded-full overflow-hidden border-2 border-primary/30 bg-card flex items-center justify-center">
-              <img src={railanukritiLogo} alt="IRCTC" className="w-6 h-6 object-contain" />
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center border border-primary/30">
+              <Train className="w-4 h-4 text-primary" />
             </div>
             {!collapsed && (
-              <span className="text-sm font-bold text-primary">RailAnukriti</span>
+              <span className="text-sm font-semibold text-foreground">Control</span>
             )}
           </div>
           {!collapsed && (
@@ -136,7 +150,7 @@ export const DashboardSidebar = () => {
               variant="ghost"
               size="icon"
               onClick={toggleSidebar}
-              className="h-7 w-7 rounded-md hover:bg-muted"
+              className="h-7 w-7 rounded-md hover:bg-muted/50"
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -147,7 +161,7 @@ export const DashboardSidebar = () => {
             variant="ghost"
             size="icon"
             onClick={toggleSidebar}
-            className="h-7 w-7 rounded-md hover:bg-muted mt-2 mx-auto"
+            className="h-7 w-7 rounded-md hover:bg-muted/50 mt-2 mx-auto"
           >
             <ChevronRight className="h-4 w-4" />
           </Button>
@@ -157,18 +171,26 @@ export const DashboardSidebar = () => {
       <SidebarContent className="pt-3 gap-3">
         {renderGroup('Main', mainItems)}
         
-        <div className={cn("h-px bg-border", collapsed ? "mx-2" : "mx-4")} />
+        <div className={cn("h-px bg-border/30", collapsed ? "mx-2" : "mx-4")} />
+        
+        {renderGroup('AI Intelligence', aiItems)}
+        
+        <div className={cn("h-px bg-border/30", collapsed ? "mx-2" : "mx-4")} />
+        
+        {renderGroup('Operations', operationsItems)}
+        
+        <div className={cn("h-px bg-border/30", collapsed ? "mx-2" : "mx-4")} />
         
         {renderGroup('Analytics', analyticsItems)}
         
-        <div className={cn("h-px bg-border", collapsed ? "mx-2" : "mx-4")} />
+        <div className={cn("h-px bg-border/30", collapsed ? "mx-2" : "mx-4")} />
         
         {renderGroup('System', systemItems)}
       </SidebarContent>
 
-      <SidebarFooter className="border-t border-border p-2">
+      <SidebarFooter className="border-t border-border/30 p-2">
         <div className={cn(
-          "flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50",
+          "flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/30",
           collapsed && "justify-center px-2"
         )}>
           <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
