@@ -61,8 +61,22 @@ export function FreightPathComparison() {
   const { stations } = useRouteStations();
   const { trains } = useFreightTrains();
 
+  // Fetch all unique load_ids from freight_movements (the actual trains with data)
+  const { data: availableLoadIds = [] } = useQuery({
+    queryKey: ['freight-movements-load-ids'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('freight_movements')
+        .select('load_id')
+        .not('arrival_time', 'is', null);
+      if (error) throw error;
+      const uniqueIds = [...new Set(data?.map(d => d.load_id) || [])];
+      return uniqueIds.filter(Boolean) as string[];
+    },
+  });
+
   // Fetch movements for selected trains
-  const { data: movements1 } = useQuery({
+  const { data: movements1, isLoading: loading1 } = useQuery({
     queryKey: ['freight-movements-compare', selectedTrain1],
     queryFn: async () => {
       if (!selectedTrain1) return [];
@@ -77,7 +91,7 @@ export function FreightPathComparison() {
     enabled: !!selectedTrain1
   });
 
-  const { data: movements2 } = useQuery({
+  const { data: movements2, isLoading: loading2 } = useQuery({
     queryKey: ['freight-movements-compare', selectedTrain2],
     queryFn: async () => {
       if (!selectedTrain2) return [];
@@ -91,11 +105,6 @@ export function FreightPathComparison() {
     },
     enabled: !!selectedTrain2
   });
-
-  // Get unique load IDs with movements
-  const availableLoadIds = useMemo(() => {
-    return trains.map(t => t.load_id).filter(Boolean);
-  }, [trains]);
 
   // Station lookup
   const stationMap = useMemo(() => {
@@ -116,9 +125,15 @@ export function FreightPathComparison() {
 
     const train = trains.find(t => t.load_id === loadId);
     const sortedMovements = [...movements].sort((a, b) => {
+      // First try by station sequence
       const seqA = stationMap[a.station_code]?.seq || 0;
       const seqB = stationMap[b.station_code]?.seq || 0;
-      return seqA - seqB;
+      if (seqA !== seqB) return seqA - seqB;
+      // Fallback to arrival time
+      if (a.arrival_time && b.arrival_time) {
+        return new Date(a.arrival_time).getTime() - new Date(b.arrival_time).getTime();
+      }
+      return 0;
     });
 
     const firstMovement = sortedMovements[0];
@@ -130,6 +145,11 @@ export function FreightPathComparison() {
         parseISO(lastMovement.departure_time),
         parseISO(firstMovement.arrival_time)
       );
+    } else if (firstMovement.arrival_time && lastMovement.arrival_time) {
+      totalTime = differenceInMinutes(
+        parseISO(lastMovement.arrival_time),
+        parseISO(firstMovement.arrival_time)
+      );
     }
 
     const totalDelay = movements.reduce((sum, m) => sum + (m.delay_minutes || 0), 0);
@@ -138,13 +158,17 @@ export function FreightPathComparison() {
     const speeds = movements.filter(m => m.speed && m.speed > 0).map(m => m.speed!);
     const avgSpeed = speeds.length > 0 ? speeds.reduce((a, b) => a + b, 0) / speeds.length : 0;
 
+    // Get source and destination from movements if train data not found
+    const sourceStation = train?.source_station || sortedMovements[0]?.station_code || 'Unknown';
+    const destStation = train?.destination_station || sortedMovements[sortedMovements.length - 1]?.station_code || 'Unknown';
+
     return {
       loadId,
       trainInfo: {
-        source: train?.source_station || 'Unknown',
-        destination: train?.destination_station || 'Unknown',
+        source: sourceStation,
+        destination: destStation,
         commodity: train?.commodity || null,
-        totalKm: train?.total_km || null
+        totalKm: train?.total_km || movements.reduce((sum, m) => sum + (m.block_km || 0), 0)
       },
       movements: sortedMovements,
       totalTime,
@@ -189,7 +213,11 @@ export function FreightPathComparison() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {!journey ? (
+          {loading1 || loading2 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              Loading journey data...
+            </div>
+          ) : !journey ? (
             <div className="text-center py-8 text-muted-foreground">
               Select a train to view journey
             </div>

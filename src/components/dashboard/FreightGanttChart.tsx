@@ -135,7 +135,7 @@ export function FreightGanttChart() {
   const [showProposedPaths, setShowProposedPaths] = useState(true);
   const [hoveredSuggestion, setHoveredSuggestion] = useState<string | null>(null);
 
-  // Fetch movements data
+  // Fetch ALL movements data - no limit per project requirements
   const { data: movements, isLoading } = useQuery({
     queryKey: ['freight-movements-gantt'],
     queryFn: async () => {
@@ -143,15 +143,14 @@ export function FreightGanttChart() {
         .from('freight_movements')
         .select('id, load_id, station_code, arrival_time, departure_time, speed, is_stoppage, halt_minutes, freight_train_id')
         .not('arrival_time', 'is', null)
-        .order('arrival_time', { ascending: true })
-        .limit(2000);
+        .order('arrival_time', { ascending: true });
       
       if (error) throw error;
       return data as MovementData[];
     },
   });
 
-  // Fetch passenger schedule data
+  // Fetch ALL passenger schedule data - no limit per project requirements
   const { data: passengerSchedule } = useQuery({
     queryKey: ['passenger-schedule-gantt'],
     queryFn: async () => {
@@ -159,8 +158,7 @@ export function FreightGanttChart() {
         .from('passenger_schedule')
         .select('id, train_number, train_id, station_code, arrival_seconds, departure_seconds, route_seq_no, direction, is_halt')
         .order('train_id', { ascending: true })
-        .order('route_seq_no', { ascending: true })
-        .limit(5000);
+        .order('route_seq_no', { ascending: true });
       
       if (error) throw error;
       return data as PassengerScheduleData[];
