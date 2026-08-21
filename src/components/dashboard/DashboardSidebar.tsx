@@ -149,6 +149,7 @@ export const DashboardSidebar = () => {
             <Button
               variant="ghost"
               size="icon"
+              aria-label="Collapse sidebar"
               onClick={toggleSidebar}
               className="h-7 w-7 rounded-md hover:bg-muted/50"
             >
@@ -160,6 +161,7 @@ export const DashboardSidebar = () => {
           <Button
             variant="ghost"
             size="icon"
+            aria-label="Expand sidebar"
             onClick={toggleSidebar}
             className="h-7 w-7 rounded-md hover:bg-muted/50 mt-2 mx-auto"
           >

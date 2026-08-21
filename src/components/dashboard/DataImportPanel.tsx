@@ -725,10 +725,10 @@ export const DataImportPanel = () => {
                                     if (e.key === 'Escape') handleCellCancel();
                                   }}
                                 />
-                                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={handleCellSave}>
+                                <Button size="icon" variant="ghost" aria-label="Save cell edit" className="h-6 w-6" onClick={handleCellSave}>
                                   <Check className="h-3 w-3 text-green-500" />
                                 </Button>
-                                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={handleCellCancel}>
+                                <Button size="icon" variant="ghost" aria-label="Cancel cell edit" className="h-6 w-6" onClick={handleCellCancel}>
                                   <X className="h-3 w-3 text-red-500" />
                                 </Button>
                               </div>
@@ -743,6 +743,7 @@ export const DataImportPanel = () => {
                                 <Button
                                   size="icon"
                                   variant="ghost"
+                                  aria-label="Edit cell"
                                   className="h-5 w-5 opacity-0 group-hover:opacity-100"
                                   onClick={() => handleCellEdit(row.index, field)}
                                 >
@@ -757,6 +758,7 @@ export const DataImportPanel = () => {
                         <Button
                           size="icon"
                           variant="ghost"
+                          aria-label="Delete row"
                           className="h-6 w-6 text-red-400 hover:text-red-500"
                           onClick={() => handleDeleteRow(row.index)}
                         >

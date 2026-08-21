@@ -166,7 +166,7 @@ export const TrainDetails = ({ train, onClose }: TrainDetailsProps) => {
                 </span>
               </div>
             </div>
-            <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 rounded-full">
+            <Button variant="ghost" size="icon" aria-label="Close train details" onClick={onClose} className="h-8 w-8 rounded-full">
               <X className="w-4 h-4" />
             </Button>
           </div>

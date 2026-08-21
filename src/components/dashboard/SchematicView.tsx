@@ -205,11 +205,11 @@ export const SchematicView = () => {
               <Switch checked={showDistances} onCheckedChange={setShowDistances} />
             </div>
             <div className="flex items-center gap-2 border-l border-border pl-4">
-              <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setZoom(z => Math.max(50, z - 25))}>
+              <Button variant="outline" size="icon" aria-label="Zoom out" className="h-7 w-7" onClick={() => setZoom(z => Math.max(50, z - 25))}>
                 <ZoomOut className="h-3 w-3" />
               </Button>
               <span className="text-xs font-mono w-10 text-center">{zoom}%</span>
-              <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setZoom(z => Math.min(200, z + 25))}>
+              <Button variant="outline" size="icon" aria-label="Zoom in" className="h-7 w-7" onClick={() => setZoom(z => Math.min(200, z + 25))}>
                 <ZoomIn className="h-3 w-3" />
               </Button>
             </div>

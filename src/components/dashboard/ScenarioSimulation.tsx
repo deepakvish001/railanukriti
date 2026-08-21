@@ -149,7 +149,7 @@ export const ScenarioSimulation = ({ trains, onClose }: ScenarioSimulationProps)
           </div>
         </div>
         {onClose && (
-          <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
+          <Button variant="ghost" size="icon" aria-label="Close scenario simulation" onClick={onClose} className="h-8 w-8">
             <X className="w-4 h-4" />
           </Button>
         )}
