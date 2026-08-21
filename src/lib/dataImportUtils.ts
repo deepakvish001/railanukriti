@@ -8,6 +8,39 @@ export interface ImportResult {
   errors: string[];
 }
 
+// Split one CSV line into fields, respecting RFC4180 double-quoting so a
+// quoted field can contain a literal comma (e.g. a freight Description like
+// "Iron Ore, Grade B") without shifting every column after it.
+function parseCsvLine(line: string): string[] {
+  const values: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        current += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      values.push(current);
+      current = '';
+    } else {
+      current += ch;
+    }
+  }
+  values.push(current);
+  return values;
+}
+
 // Parse date from various formats
 function parseDate(dateStr: string): Date | null {
   if (!dateStr) return null;
@@ -288,7 +321,7 @@ export async function importFreightData(file: File): Promise<ImportResult> {
   try {
     const text = await file.text();
     const lines = text.split('\n');
-    const headers = lines[0].split(',').map(h => h.trim());
+    const headers = parseCsvLine(lines[0]).map(h => h.trim());
     
     // First, get existing freight trains to link movements
     const { data: existingTrains } = await supabase
@@ -306,7 +339,7 @@ export async function importFreightData(file: File): Promise<ImportResult> {
       const line = lines[i].trim();
       if (!line) continue;
       
-      const values = line.split(',');
+      const values = parseCsvLine(line);
       const row: any = {};
       headers.forEach((h, idx) => {
         row[h] = values[idx]?.trim() || null;
