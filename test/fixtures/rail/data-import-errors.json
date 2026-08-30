@@ -1,0 +1,17 @@
+{
+  "scenario": "data-import-errors",
+  "rows": [
+    {
+      "row": 2,
+      "error": "train number is required"
+    },
+    {
+      "row": 5,
+      "error": "end time must be after start time"
+    }
+  ],
+  "expected": {
+    "accepted": 0,
+    "rejected": 2
+  }
+}
