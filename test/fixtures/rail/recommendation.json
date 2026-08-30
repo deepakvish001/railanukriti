@@ -1,0 +1,16 @@
+{
+  "scenario": "recommendation",
+  "recommendation": {
+    "id": "REC-001",
+    "action": "hold",
+    "trainId": "TRAIN-12999",
+    "confidence": 0.84,
+    "reasons": [
+      "protect passenger priority",
+      "avoid section overlap"
+    ]
+  },
+  "expected": {
+    "humanReviewRequired": true
+  }
+}
