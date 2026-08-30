@@ -1,0 +1,13 @@
+{
+  "scenario": "valid-train",
+  "train": {
+    "id": "TRAIN-12001",
+    "number": "12001",
+    "name": "Example Express",
+    "category": "passenger",
+    "priority": 3
+  },
+  "expected": {
+    "valid": true
+  }
+}
