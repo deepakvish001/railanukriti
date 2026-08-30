@@ -1,0 +1,13 @@
+{
+  "scenario": "map-position",
+  "position": {
+    "trainId": "TRAIN-12001",
+    "latitude": 28.6139,
+    "longitude": 77.209,
+    "headingDegrees": 90,
+    "observedAt": "2026-01-10T08:00:00Z"
+  },
+  "expected": {
+    "validCoordinate": true
+  }
+}
