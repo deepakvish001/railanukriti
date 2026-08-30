@@ -1,0 +1,11 @@
+{
+  "scenario": "audit-event",
+  "event": {
+    "id": "AUD-001",
+    "actorId": "USER-EXAMPLE",
+    "action": "recommendation_overridden",
+    "recordId": "REC-001",
+    "occurredAt": "2026-01-10T08:05:00Z",
+    "correlationId": "CORR-001"
+  }
+}
