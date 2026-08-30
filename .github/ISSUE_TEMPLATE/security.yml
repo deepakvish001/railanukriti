@@ -1,0 +1,14 @@
+name: Security question
+description: Use only for non-sensitive security improvement proposals
+title: "[Security]: "
+labels: ["security", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: "Do not disclose exploitable vulnerabilities, secrets or personal data in a public issue. Use GitHub private vulnerability reporting."
+  - type: textarea
+    id: improvement
+    attributes:
+      label: Non-sensitive improvement
+    validations:
+      required: true
