@@ -1,0 +1,13 @@
+{
+  "scenario": "freight-path",
+  "path": {
+    "id": "FP-001",
+    "trainId": "FREIGHT-001",
+    "criticalCargo": false,
+    "stoppageMinutes": 35,
+    "congestionScore": 0.6
+  },
+  "expected": {
+    "requiresReview": true
+  }
+}
