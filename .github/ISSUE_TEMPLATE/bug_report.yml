@@ -1,0 +1,28 @@
+name: Bug report
+description: Report reproducible incorrect behaviour
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What happened and what was expected?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      placeholder: "1. Open...\n2. Select...\n3. Observe..."
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Browser and environment
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence
+      description: Remove secrets and sensitive data before posting.
