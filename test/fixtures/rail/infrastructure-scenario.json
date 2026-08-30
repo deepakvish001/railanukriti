@@ -1,0 +1,12 @@
+{
+  "scenario": "infrastructure-scenario",
+  "changes": [
+    {
+      "type": "add-loop-line",
+      "sectionId": "SEC-A-B",
+      "capacityDelta": 2
+    }
+  ],
+  "baselineThroughput": 12,
+  "projectedThroughput": 15
+}
