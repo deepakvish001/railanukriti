@@ -1,0 +1,13 @@
+{
+  "scenario": "alert",
+  "alert": {
+    "id": "ALT-001",
+    "severity": "critical",
+    "status": "new",
+    "message": "Example section conflict",
+    "createdAt": "2026-01-10T08:00:00Z"
+  },
+  "expected": {
+    "acknowledgeable": true
+  }
+}
