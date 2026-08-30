@@ -1,0 +1,12 @@
+{
+  "scenario": "blocked-section",
+  "section": {
+    "id": "SEC-A-B",
+    "status": "blocked",
+    "reason": "maintenance",
+    "effectiveAt": "2026-01-10T07:30:00Z"
+  },
+  "expected": {
+    "movementAllowed": false
+  }
+}
