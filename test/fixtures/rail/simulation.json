@@ -1,0 +1,12 @@
+{
+  "scenario": "simulation",
+  "inputs": {
+    "horizonMinutes": 120,
+    "trainCount": 8,
+    "disruption": "signal-failure"
+  },
+  "expected": {
+    "liveDataModified": false,
+    "resultStatus": "completed"
+  }
+}
