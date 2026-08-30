@@ -1,0 +1,7 @@
+{
+  "scenario": "delayed-train",
+  "trainId": "TRAIN-12001",
+  "scheduledAt": "2026-01-10T08:00:00Z",
+  "observedAt": "2026-01-10T08:42:00Z",
+  "expectedDelayMinutes": 42
+}
