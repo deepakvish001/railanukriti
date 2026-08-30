@@ -1,0 +1,27 @@
+name: Feature request
+description: Propose a user or operational improvement
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: User need
+      description: Who needs this and what problem does it solve?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      placeholder: "- [ ] ..."
+  - type: textarea
+    id: risks
+    attributes:
+      label: Safety, privacy, data or operational risks
