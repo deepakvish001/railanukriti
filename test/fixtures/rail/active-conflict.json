@@ -1,0 +1,19 @@
+{
+  "scenario": "active-conflict",
+  "movements": [
+    {
+      "trainId": "TRAIN-12001",
+      "start": "2026-01-10T08:00:00Z",
+      "end": "2026-01-10T08:30:00Z"
+    },
+    {
+      "trainId": "TRAIN-12999",
+      "start": "2026-01-10T08:15:00Z",
+      "end": "2026-01-10T08:45:00Z"
+    }
+  ],
+  "expected": {
+    "conflict": true,
+    "severity": "high"
+  }
+}
