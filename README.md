@@ -1,119 +1,148 @@
-# RailAnukriti 🚂
+# RailAnukriti
 
-**AI-Powered Smart Train Traffic Optimizer for Indian Railways**
+> AI-assisted railway traffic optimisation and decision-support dashboard for section controllers.
 
-RailAnukriti is an intelligent railway traffic control system that optimizes train precedence, crossings, and platform allocation using advanced AI techniques including Reinforcement Learning, OR-Tools, and Graph Neural Networks. The system provides real-time simulation, explainable AI recommendations, and human-in-the-loop control for section controllers.
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-Backend-3FCF8E?logo=supabase&logoColor=white)
 
-![RailAnukriti Dashboard](src/assets/railanukriti-logo.png)
+RailAnukriti provides real-time train visibility, conflict analysis, delay predictions, operational recommendations, simulation tools and auditable controller actions. It is designed as decision support: safety-critical decisions remain with authorised railway personnel.
 
-## 🎯 Core Purpose
+## Core modules
 
-Assist section controllers with real-time, optimized decisions for train precedence and crossings to:
-- Maximize section throughput
-- Minimize train travel time
-- Support rapid re-optimization during disruptions
-- Provide clear AI recommendations with explanation and override capabilities
+| Module | Purpose |
+| --- | --- |
+| Dashboard | Section status, occupancy and operational overview |
+| Recommendations | Explainable precedence and crossing suggestions |
+| Conflicts | Detect and prioritise incompatible movements |
+| Predictions | Surface delay and congestion risk |
+| Schedule | Compare planned and actual train movement |
+| Simulation | Evaluate what-if operational scenarios |
+| Infrastructure | Model capacity and infrastructure changes |
+| Freight analysis | Review freight paths, throughput and stoppages |
+| Audit | Preserve controller action history |
+| Export | Produce controlled operational reports |
 
-## ✨ Key Features
+## Technology
 
-### Real-Time Operations
-- **Live Train Tracking**: Real-time visualization of train positions on track sections
-- **Interactive Map View**: Fullscreen Mapbox-powered map with train movement animations
-- **Conflict Detection**: Automatic identification of train conflicts with severity indicators
-- **Sound Notifications**: Audio alerts for critical events based on severity levels
+- React 18 and TypeScript
+- Vite and SWC
+- Tailwind CSS and shadcn/ui
+- TanStack Query
+- Supabase authentication and database
+- Mapbox GL for geographic views
+- Recharts for operational analytics
+- Framer Motion for interface transitions
 
-### AI-Powered Intelligence
-- **Smart Recommendations**: AI-generated suggestions for train precedence decisions
-- **Delay Prediction**: Forecasts upcoming delays using machine learning analysis
-- **Conflict Resolution**: AI-powered resolution suggestions for detected conflicts
-- **Congestion Forecasting**: Predictive analytics for section congestion
+## Prerequisites
 
-### Analytics & Monitoring
-- **KPI Dashboard**: Comprehensive metrics tracking across 5 categories
-- **Performance Charts**: Historical trends with interactive visualizations
-- **Schedule Gantt Chart**: Visual comparison of scheduled vs actual timings
-- **Audit Logging**: Complete trail of all controller actions
+- Node.js 18 or newer
+- npm 9 or newer
+- A Supabase project
+- A Mapbox token when map features are enabled
 
-### Simulation & Planning
-- **Scenario Simulation**: What-if analysis for decision planning
-- **Export Capabilities**: Data export for reports and analysis
+## Local setup
 
-## 🛠️ Technology Stack
+1. Clone the repository.
 
-- **Frontend**: React 18, TypeScript, Vite
-- **Styling**: Tailwind CSS, shadcn/ui components
-- **Animations**: Framer Motion
-- **Charts**: Recharts
-- **Maps**: Mapbox GL
-- **Backend**: Supabase (Database, Auth, Edge Functions)
-- **AI**: Google Gemini integration
+   ```bash
+   git clone https://github.com/deepakvish001/railanukriti.git
+   cd railanukriti
+   ```
 
-## 🚀 Getting Started
+2. Install dependencies.
 
-### Prerequisites
-- Node.js 18+ & npm
+   ```bash
+   npm ci
+   ```
 
-### Installation
+3. Create the local environment file.
 
-```bash
-# Clone the repository
-git clone <YOUR_GIT_URL>
+   ```bash
+   cp .env.example .env
+   ```
 
-# Navigate to project directory
-cd railanukriti
+4. Add the required public client configuration.
 
-# Install dependencies
-npm install
+   ```env
+   VITE_SUPABASE_URL=https://your-project.supabase.co
+   VITE_SUPABASE_PUBLISHABLE_KEY=your-anon-key
+   VITE_MAPBOX_TOKEN=your-mapbox-token
+   ```
 
-# Start development server
-npm run dev
+5. Start the development server.
+
+   ```bash
+   npm run dev
+   ```
+
+6. Open [http://localhost:8080](http://localhost:8080).
+
+## Available commands
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the local Vite server |
+| `npm run build` | Create a production build |
+| `npm run build:dev` | Build with development mode settings |
+| `npm run lint` | Run static analysis |
+| `npm run preview` | Preview the production build |
+
+## Application structure
+
+```text
+src/
+├── components/       reusable interface and dashboard modules
+├── hooks/            authentication, sound and shared React behaviour
+├── integrations/     Supabase and external service clients
+├── pages/            routed dashboard screens
+├── services/         operational and data-processing logic
+└── types/            shared TypeScript domain contracts
+supabase/
+├── functions/        server-side edge functions
+└── migrations/       database schema history
 ```
 
-The application will be available at `http://localhost:5173`
+## Security
 
-## 📊 Dashboard Modules
+- Use only the Supabase anonymous publishable key in the browser.
+- Never commit service-role keys, provider secrets or production datasets.
+- Enforce row-level security for every client-accessible table.
+- Authorise operations on the server; hiding a control is not access control.
+- Treat train, route and controller data according to its operational classification.
 
-| Module | Description |
-|--------|-------------|
-| **Overview** | Real-time section status with train positions and track occupancy |
-| **Recommendations** | AI-powered suggestions for optimal train operations |
-| **Conflicts** | Active conflict detection and resolution interface |
-| **Predictions** | Delay forecasting and risk assessment |
-| **Schedule** | Gantt chart visualization of train schedules |
-| **Analytics** | Historical performance metrics and trends |
-| **KPIs** | Key performance indicators across multiple categories |
-| **Charts** | Detailed performance visualizations |
-| **Simulation** | Scenario planning and what-if analysis |
-| **Alerts** | System notifications and warnings |
-| **Audit** | Complete log of controller actions |
-| **Export** | Data export functionality |
+## Quality checks
 
-## 🔐 Authentication
+Before opening a pull request:
 
-The system uses email/password authentication with user profiles including:
-- Full name
-- Role assignment
-- Section assignment
+```bash
+npm ci
+npm run lint
+npm run build
+```
 
-## 🎨 Design System
+Add focused tests for domain logic and manually verify the affected dashboard flow.
 
-RailAnukriti features a dark industrial aesthetic optimized for control room environments:
-- **Primary**: Electric blue/cyan for AI-powered elements
-- **Warning**: Amber for caution states
-- **Success**: Green for clear status
-- **Danger**: Red for conflicts and issues
+## Deployment
 
-## 📱 Responsive Design
+Build with environment variables supplied by the deployment platform:
 
-The dashboard is fully responsive and optimized for:
-- Desktop control room displays
-- Tablet devices for mobile controllers
-- Standard desktop browsers
+```bash
+npm ci
+npm run build
+```
 
-## 🤝 Contributing
+Deploy the generated `dist/` directory behind HTTPS. Configure single-page application fallback to `index.html` and restrict production environment access.
 
-Contributions are welcome! Please feel free to submit issues and pull requests.
+## Operational disclaimer
 
-## 📄 License
+RailAnukriti is a prototype decision-support system. Recommendations, predictions and simulations must not be treated as signalling authority or replace certified railway safety procedures.
 
-This project is proprietary software developed for Indian Railways by Deepak Vishwakarma.
+## Contributing
+
+Keep pull requests focused, document operational assumptions and include validation evidence. Security-sensitive reports should be disclosed privately.
+
+## License
+
+This repository currently identifies the project as proprietary software. Obtain explicit permission before reuse or redistribution.
